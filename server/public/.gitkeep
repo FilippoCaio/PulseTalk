@@ -1,0 +1,5 @@
+L'app web costruita finisce qui: `npm run build:web` dentro ../app la scrive
+in questa cartella, e il server la serve alla radice.
+
+La cartella esiste anche vuota perche' il Dockerfile la copia comunque, e una
+COPY di qualcosa che non c'e' fa fallire la build dell'immagine.

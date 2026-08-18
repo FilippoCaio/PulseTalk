@@ -1,0 +1,21 @@
+# Cosa NON entra nel contesto di build.
+#
+# node_modules soprattutto: better-sqlite3 e' un modulo nativo, e quello che
+# sta qui e' compilato per Windows. Nel container non servirebbe a niente —
+# il Dockerfile rifa' `npm ci` da solo — ma il contesto di build lo manda
+# comunque al demone Docker, e sono centinaia di megabyte a ogni build.
+node_modules
+npm-debug.log
+
+# Il database e i dati di prova: i dati veri stanno nel volume montato.
+*.db
+*.db-wal
+*.db-shm
+dati/
+
+# I segreti non entrano mai in un'immagine: arrivano dall'ambiente a runtime.
+.env
+
+# I test girano prima, sulla macchina di sviluppo. Nell'immagine sarebbero
+# codice in piu' che non viene mai eseguito.
+test

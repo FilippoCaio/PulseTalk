@@ -1,0 +1,37 @@
+{
+  "name": "pulse-talk",
+  "version": "0.1.0",
+  "description": "Voce, video e schermo senza i tetti di Discord, sul tuo NAS",
+  "type": "module",
+  "main": "./out/main/index.js",
+  "author": "Filippo Caio",
+  "license": "MIT",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "npm run typecheck && electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "build:web": "vite build --config vite.web.config.ts",
+    "dev:web": "vite --config vite.web.config.ts",
+    "icon": "node scripts/make-icon.mjs",
+    "dist": "npm run build && npm run icon && electron-builder --win --dir",
+    "dist:installer": "npm run build && npm run icon && electron-builder --win",
+    "postinstall": "electron-builder install-app-deps"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "^26.2.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@vitejs/plugin-react": "^5.2.0",
+    "electron": "43.3.0",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^5.0.0",
+    "livekit-client": "^2.21.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.6"
+  }
+}

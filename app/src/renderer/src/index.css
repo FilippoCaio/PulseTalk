@@ -1,0 +1,129 @@
+@import 'tailwindcss';
+
+/*
+ * Scuro e basta, senza chiaro.
+ *
+ * Non e' pigrizia: accanto a un riquadro che mostra uno schermo condiviso, ogni
+ * pixel di interfaccia chiara e' luce che l'occhio deve scavalcare per tornare
+ * a leggere il codice dell'altro. Le sale di regia sono nere per lo stesso
+ * motivo.
+ */
+
+@theme {
+  --color-fondo: #0b0e14;
+  --color-fondo-2: #121722;
+  --color-fondo-3: #1a2030;
+  --color-bordo: #232b3d;
+  --color-testo: #e6e9f0;
+  --color-testo-2: #98a2b8;
+  --color-testo-3: #6b7590;
+  --color-vivo: #4f9cf9;
+  --color-vivo-2: #7cb8ff;
+  --color-ok: #3ecf8e;
+  --color-attenzione: #f5a524;
+  --color-male: #f4525a;
+}
+
+html,
+body,
+#radice {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-fondo);
+  color: var(--color-testo);
+  font-family:
+    'Segoe UI Variable Text', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  overflow: hidden;
+}
+
+/* I numeri delle statistiche cambiano dieci volte al secondo: senza cifre di
+   larghezza fissa il riquadro balla. */
+.numeri {
+  font-variant-numeric: tabular-nums;
+  font-family: 'Cascadia Mono', 'Consolas', ui-monospace, monospace;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-bordo);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-fondo-3);
+}
+
+/* Niente selezione accidentale trascinando sopra ai riquadri. I campi di testo
+   la riattivano da soli. */
+button,
+label {
+  user-select: none;
+}
+
+input,
+textarea {
+  user-select: text;
+}
+
+@keyframes respiro {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+.respiro {
+  animation: respiro 1.6s ease-in-out infinite;
+}
+
+/* Il "guarda qui": due anelli che si allargano sfalsati e una targhetta che
+   svanisce. La stessa forma dell'alone disegnato sul monitor vero da
+   `main/puntatore.ts`, cosi' chi indica e chi guarda vedono la stessa cosa. */
+.alone {
+  width: 34px;
+  height: 34px;
+  margin-left: -17px;
+  margin-top: -17px;
+  border-width: 3px;
+  border-style: solid;
+  opacity: 0;
+  animation: onda 1.15s ease-out 2;
+}
+.alone.ritardo {
+  animation-delay: 0.42s;
+}
+.svanisci {
+  animation: svanisci 2.5s ease-out forwards;
+}
+
+@keyframes onda {
+  0% {
+    transform: scale(0.35);
+    opacity: 0.95;
+  }
+  100% {
+    transform: scale(3.8);
+    opacity: 0;
+  }
+}
+
+@keyframes svanisci {
+  0%,
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}

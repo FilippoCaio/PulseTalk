@@ -1,0 +1,114 @@
+# Due container, e nessun tunnel.
+#
+#   pulse-talk   decide chi entra e in quale stanza. Non vede un byte di audio.
+#   livekit      la SFU: riceve i pacchetti e li ripete. Non decodifica niente.
+#
+# Il TLS non lo fa questo compose: lo fa il reverse proxy che gia' gira sulla
+# macchina — Nginx Proxy Manager, Caddy, Traefik, nginx a mano, quello che c'e'.
+# PulseTalk pubblica le sue porte e non sa che il proxy esista: nessuna rete
+# condivisa, nessun volume in comune, nessun ordine di avvio. Le due voci da
+# aggiungere stanno in `proxy.md`.
+#
+# Un tunnel (Cloudflare o simili) davanti a tutto questo non guadagnerebbe
+# niente: le porte del media vanno aperte comunque, perche' l'audio e il video
+# non passano da nessun proxy. Aggiungerebbe un container da aggiornare e un
+# salto in mezzo al percorso della segnalazione.
+#
+# Quello che resta vero e non cambia: i pacchetti audio e video non passano da
+# Caddy ne' da nessun proxy. Vanno dall'app alla SFU in UDP, cifrati con
+# DTLS-SRTP, ed e' per questo che 7882/udp deve arrivare fin qui.
+
+services:
+  pulse-talk:
+    build: ../server
+    image: pulse-talk:1.0.0
+    container_name: pulse-talk
+    restart: unless-stopped
+    environment:
+      TALK_ROOT: /dati
+      SFU_API_KEY: ${SFU_API_KEY:-pulsetalk}
+      SFU_API_SECRET: "${SFU_API_SECRET:?manca SFU_API_SECRET nel .env}"
+      # Dove le app devono cercare la SFU. Non e' ricavato dal dominio di
+      # proposito: e' una scelta di installazione, non una conseguenza.
+      #
+      #   wss://sfu.<dominio>       da fuori, passando dal reverse proxy
+      #   ws://<ip-del-server>:7880 in rete locale, dritto alla SFU
+      #
+      # La seconda forma serve a provare tutto — schermo, audio, qualita' —
+      # prima ancora di avere un certificato, un DNS o una porta aperta. Le app
+      # la leggono da /api/config a ogni ingresso, quindi cambiarla qui e
+      # riavviare basta: non c'e' niente da reinstallare a nessuno.
+      SFU_URL: ${SFU_URL:?manca SFU_URL nel .env}
+      # Quello che usiamo noi. La SFU gira sulla rete dell'host (vedi sotto) e
+      # non ha un nome dentro la rete di compose: la si raggiunge passando dal
+      # gateway, che host-gateway risolve senza doverne scrivere l'indirizzo.
+      SFU_API_URL: http://host.docker.internal:7880
+      TALK_GETTONE_TTL: ${TALK_GETTONE_TTL:-21600}
+      TALK_LOG_LEVEL: ${TALK_LOG_LEVEL:-info}
+      # I tetti. Alzarli qui e riavviare basta: le app li rileggono da
+      # /api/config a ogni ingresso, e nessuno deve reinstallare niente.
+      TALK_MAX_BITRATE_SCHERMO: ${TALK_MAX_BITRATE_SCHERMO:-50000000}
+      TALK_MAX_FPS_SCHERMO: ${TALK_MAX_FPS_SCHERMO:-60}
+      TALK_MAX_ALTEZZA_SCHERMO: ${TALK_MAX_ALTEZZA_SCHERMO:-2160}
+      TALK_MAX_BITRATE_CAMERA: ${TALK_MAX_BITRATE_CAMERA:-12000000}
+      TALK_MAX_BITRATE_VOCE: ${TALK_MAX_BITRATE_VOCE:-510000}
+      TALK_MAX_STREAM_PER_PERSONA: ${TALK_MAX_STREAM_PER_PERSONA:-4}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      # L'unico punto in cui il container tocca il NAS, e ci mette dentro un
+      # file solo: talk.db, qualche decina di kilobyte. Niente registrazioni,
+      # niente cache dei media, niente che cresca.
+      - "${TALK_DATASET:?manca TALK_DATASET nel .env}:/dati"
+    networks: [talk]
+    ports:
+      # Sull'indirizzo della macchina, non sul solo loopback.
+      #
+      # Ci arrivano due cose: Caddy, che da un'altra rete di compose non
+      # potrebbe raggiungere un nome di container, e la SFU, che gira
+      # sull'host e deve poter consegnare i webhook.
+      #
+      # La prima stesura si attaccava alla rete di compose del proxy per farsi
+      # chiamare per nome. Funzionava, e legava l'avvio di questo stack
+      # all'esistenza di quella: se quella rete non c'era, `up` falliva
+      # per un motivo che non c'entrava niente. Cosi' invece i due stack non
+      # si conoscono, e l'unico punto di contatto resta un blocco di testo nel
+      # Caddyfile.
+      #
+      # In cambio, l'API e' raggiungibile dalla rete di casa. E' la stessa API
+      # che Caddy espone a internet, protetta dagli stessi token: l'unica rotta
+      # aperta e' il riscatto di un codice di invito.
+      - "8080:8080"
+
+  livekit:
+    # Non fissata a una versione di proposito: la si guarda partire una volta,
+    # si legge il numero nel log, e lo si scrive in SFU_VERSIONE. Un `latest`
+    # che si aggiorna da solo sotto a una chiamata in corso non e' quello che
+    # si vuole su una macchina che sta in casa.
+    image: livekit/livekit-server:${SFU_VERSIONE:-latest}
+    container_name: pulse-talk-sfu
+    restart: unless-stopped
+    command: --config /etc/livekit.yaml
+    environment:
+      # Le chiavi non stanno nel file di configurazione: il file finisce in
+      # git, il segreto no.
+      LIVEKIT_KEYS: "${SFU_API_KEY:-pulsetalk}: ${SFU_API_SECRET:?manca SFU_API_SECRET nel .env}"
+    volumes:
+      - ./livekit.yaml:/etc/livekit.yaml:ro
+    # `host` e non `bridge`, ed e' la riga piu' importante del file.
+    #
+    # WebRTC funziona scoprendo da che indirizzo e porta arrivano i pacchetti e
+    # rispondendo li'. Dentro una rete bridge ogni pacchetto viene riscritto
+    # dal NAT di Docker e ricopiato in spazio utente da docker-proxy: la SFU
+    # vedrebbe tutti i partecipanti arrivare dallo stesso indirizzo 172.x, e a
+    # cinquanta megabit al secondo quella copia diventa il collo di bottiglia.
+    #
+    # Il prezzo e' che 7880, 7881 e 7882 devono essere libere sul NAS.
+    network_mode: host
+
+networks:
+  # Una sola, e oggi ci sta dentro un container solo. Esiste perche' il giorno
+  # che se ne aggiunge un secondo non debba nascere dentro la rete di un altro
+  # progetto.
+  talk:
+    driver: bridge

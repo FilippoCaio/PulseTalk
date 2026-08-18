@@ -1,0 +1,121 @@
+# La SFU. Tutto quello che non e' qui dentro e' un default di LiveKit.
+#
+# Le chiavi non ci sono di proposito: arrivano da LIVEKIT_KEYS nel compose, che
+# le legge dal .env. Questo file puo' stare in git, il .env no.
+
+port: 7880                      # segnalazione: HTTP e WebSocket, dal tunnel
+
+rtc:
+  # Una porta UDP sola invece dell'intervallo 50000-60000 di default. Su un
+  # router di casa aprire diecimila porte per un servizio che ne usa una e'
+  # sproporzionato, e quasi nessuna interfaccia lo lascia fare senza dolore.
+  # Il multiplexing costa un pelo di CPU e vale ogni singolo microsecondo.
+  udp_port: 7882
+
+  # Il ripiego per chi sta su una rete che l'UDP non lo lascia uscire — uffici,
+  # hotel, qualche operatore mobile. Va piu' piano e soffre la perdita di
+  # pacchetti, ma la differenza e' fra una chiamata brutta e nessuna chiamata.
+  tcp_port: 7881
+
+  # La SFU chiede a uno STUN pubblico quale sia il suo indirizzo visto da
+  # fuori, e annuncia quello nei candidati ICE. Senza, annuncerebbe l'indirizzo
+  # privato del NAS e da internet non la troverebbe nessuno.
+  #
+  # ATTENZIONE, e' un aut-aut, non un "anche".
+  #
+  # Con `true` i candidati annunciati sono SOLO l'indirizzo pubblico. Un client
+  # sulla stessa rete di casa proverebbe quindi a raggiungere l'IP pubblico da
+  # dentro casa, e la maggior parte dei router domestici non sa rimandare
+  # indietro un pacchetto che esce e rientra da se' (il "NAT hairpinning").
+  # Risultato: la chiamata si collega — la segnalazione passa per HTTP e non
+  # c'entra niente — e poi resta muta per sempre.
+  #
+  # Quindi:
+  #   true   quando i partecipanti arrivano da internet. E' il caso normale.
+  #   false  mentre si prova tutto in rete locale, prima di aprire le porte.
+  #          Annuncia 192.168.x.x e in casa funziona; da fuori sparisce.
+  #
+  # Si cambia e si riavvia il solo container livekit: i client non se ne
+  # accorgono, ricevono i candidati nuovi al prossimo ingresso.
+  use_external_ip: true
+
+  # Da accendere solo per provare tutto sulla stessa macchina: senza, un client
+  # che gira sull'host non riesce a collegarsi alla SFU che gira sull'host.
+  # enable_loopback_candidate: true
+
+room:
+  # Le stanze le crea il piano di controllo, non chi arriva. Con auto_create
+  # acceso, un gettone per "stanza-inventata" farebbe nascere quella stanza:
+  # visto che i gettoni sono legittimi e li firmiamo noi non e' un buco, ma e'
+  # un modo per farsi trovare stanze che nessuno ha creato.
+  #
+  # Con questo spento, chi consegna il gettone ha l'obbligo di far esistere la
+  # stanza prima: lo fa `assicuraStanza` in `src/sfu.mjs`, chiamata a ogni
+  # ingresso. Se quella chiamata sparisse, la SFU risponderebbe 404 a ogni
+  # tentativo e la chiamata sembrerebbe entrare e uscire subito — senza che
+  # niente, da nessuna parte, dica che manca la stanza.
+  auto_create: false
+
+  # Cinque minuti di grazia dopo l'uscita dell'ultimo. Serve a chi cade e
+  # rientra: la stanza e' ancora li', e non si ricomincia da zero.
+  empty_timeout: 300
+  # Venti secondi prima di dare per uscito chi ha perso la connessione. Sotto
+  # ai dieci un wi-fi che salta ti butta fuori dalla riunione.
+  departure_timeout: 20
+
+  # Nessun limite. E' il punto di tutto questo.
+  max_participants: 0
+
+  # Ogni traccia ha il suo destino: chi trasmette decide qualita' e codec, e la
+  # SFU non ci mette bocca. Vedi `app/src/shared/qualita.ts` per i valori veri.
+
+# La SFU racconta al piano di controllo chi entra e chi esce, cosi' l'atrio si
+# aggiorna nell'istante in cui succede invece che al prossimo giro.
+#
+# 127.0.0.1 e non `pulse-talk`: questo container gira sulla rete dell'host, e i
+# nomi della rete di compose li' non esistono. Il piano di controllo pubblica
+# la sua porta sul solo loopback apposta per farsi trovare da qui.
+#
+# Il nome della chiave (non il segreto) dice con quale delle chiavi firmare la
+# richiesta. Se in .env cambi SFU_API_KEY, cambialo anche qui.
+#
+# Se questa parte non funziona non si rompe niente: l'atrio torna a chiedere
+# alla SFU chi c'e', una volta al secondo, invece che esserne avvisato.
+webhook:
+  api_key: pulsetalk
+  urls:
+    - http://127.0.0.1:8080/webhook/sfu
+
+# TURN spento, e vale la pena sapere perche'.
+#
+# TURN serve quando nessuno dei due capi e' raggiungibile dall'altro. Qui un
+# capo lo e' sempre: la SFU ha una porta aperta sul router, quindi anche un
+# client dietro al NAT piu' ostile puo' mandarle pacchetti e ricevere la
+# risposta sulla stessa strada. L'unico caso che resta scoperto e' una rete che
+# blocca l'UDP in uscita del tutto, e per quello c'e' gia' il tcp_port.
+#
+# Accenderlo costerebbe una terza porta da aprire e un certificato da tenere
+# valido, per coprire un caso che il ripiego TCP copre gia'.
+#
+# Resta scoperta una sola rete: quella che lascia uscire solo la 443, dove
+# nemmeno il ripiego TCP sulla 7881 passa. Per quella servirebbe TURN su TLS
+# sulla 443 — che pero' su una macchina dove la 443 e' gia' occupata da un
+# altro servizio vorrebbe dire mettere davanti un instradamento per SNI (il
+# modulo layer4 di Caddy) e smistare fra i due. E' fattibile, e non e' una riga:
+#
+# turn:
+#   enabled: true
+#   domain: sfu.esempio.it
+#   # Senza TLS, per il NAT simmetrico. Vuole la 3478/udp inoltrata.
+#   udp_port: 3478
+#   # Con TLS, per le reti che ammettono solo la 443. `external_tls` dice alla
+#   # SFU che il certificato lo termina qualcun altro davanti a lei.
+#   # tls_port: 5349
+#   # external_tls: true
+
+logging:
+  level: info
+  # Da mettere a true la prima volta che qualcosa non si collega: scrive tutti
+  # i candidati ICE che le due parti si sono scambiate, ed e' li' che si vede
+  # se la SFU sta annunciando l'indirizzo sbagliato.
+  pion_level: error

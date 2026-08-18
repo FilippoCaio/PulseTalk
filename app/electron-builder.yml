@@ -1,0 +1,30 @@
+appId: com.filippocaio.pulsetalk
+productName: PulseTalk
+copyright: Copyright © 2026 Filippo Caio
+
+directories:
+  output: release
+
+# Nel pacchetto va solo il compilato: i sorgenti in src/ li ha gia' tradotti
+# electron-vite dentro out/, e livekit-client e' finito dentro al bundle del
+# renderer invece che in node_modules — per questo non compare fra le
+# dipendenze di produzione.
+files:
+  - out/**
+  - build/icona.png
+  - package.json
+
+win:
+  icon: build/icon.ico
+  target:
+    - nsis
+    - portable
+  signAndEditExecutable: true
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  shortcutName: PulseTalk
+
+portable:
+  artifactName: PulseTalk-portable-${version}.exe

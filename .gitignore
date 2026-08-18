@@ -1,0 +1,29 @@
+node_modules/
+dist/
+out/
+release/
+*.tsbuildinfo
+
+# I segreti: il tunnel, la chiave della SFU, il dominio.
+deploy/.env
+.env
+
+# L'app web costruita: si rifa' con `npm run build:web`, e un bundle
+# minimizzato dentro a git rende illeggibile ogni diff.
+server/public/*
+!server/public/.gitkeep
+
+# La copia pronta da spingere sul NAS: e' server/ e deploy/ senza node_modules,
+# messi insieme da una robocopy. Si rifa' in un secondo, e dentro c'e' il .env.
+_nas/
+
+# Il database e i dati di prova
+*.db
+*.db-wal
+*.db-shm
+dati/
+
+# L'icona: la rigenera `npm run icon`, e un binario che cambia a ogni build
+# non ha niente da fare in un repository.
+app/build/icon.ico
+app/build/icona.png

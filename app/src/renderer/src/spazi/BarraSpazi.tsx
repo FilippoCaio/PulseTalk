@@ -1,0 +1,171 @@
+import { useState } from 'react'
+import type { Spazio, Utente } from '@shared/tipi'
+import { coloreDi, inizialiDi } from '../lib/avatar'
+import { Bottone, Campo, classiInput } from '../ui'
+import { Piu, Utenti } from '../icone'
+
+/**
+ * La colonna delle icone, a sinistra di tutto.
+ *
+ * Stretta apposta: e' un indice, non un elenco. Il nome per esteso compare
+ * passandoci sopra, perche' con quattro spazi le iniziali bastano e con venti
+ * un elenco di nomi occuperebbe un quarto dello schermo per sempre.
+ *
+ * Il pallino a sinistra dice quale e' aperto e dove ci sono cose da leggere:
+ * sono le due sole informazioni che servono guardando da lontano.
+ */
+export default function BarraSpazi({
+  spazi,
+  aperto,
+  utente,
+  scegli,
+  crea,
+  apriAmici,
+  richieste,
+  apriImpostazioni
+}: {
+  spazi: Spazio[]
+  aperto: number | null
+  utente: Utente
+  scegli: (id: number) => void
+  crea: (nome: string) => Promise<void>
+  apriAmici: () => void
+  /** Quante richieste di amicizia aspettano una risposta. */
+  richieste: number
+  apriImpostazioni: () => void
+}): React.JSX.Element {
+  const [creando, setCreando] = useState(false)
+  const [nome, setNome] = useState('')
+  const [inCorso, setInCorso] = useState(false)
+
+  const conferma = async (): Promise<void> => {
+    if (!nome.trim()) return
+    setInCorso(true)
+    try {
+      await crea(nome.trim())
+      setNome('')
+      setCreando(false)
+    } finally {
+      setInCorso(false)
+    }
+  }
+
+  return (
+    <nav className="flex w-16 shrink-0 flex-col items-center gap-2 border-r border-bordo bg-fondo py-3">
+      {spazi.map((spazio) => {
+        const daLeggere = spazio.canali.reduce((somma, c) => somma + c.nonLetti, 0)
+        const attivo = spazio.id === aperto
+
+        return (
+          <button
+            key={spazio.id}
+            onClick={() => scegli(spazio.id)}
+            title={spazio.nome}
+            className="group relative flex h-12 w-12 items-center justify-center"
+          >
+            {/* Il segno a sinistra: alto quando e' aperto, un punto quando ha
+                da leggere, niente quando non c'e' niente da dire. */}
+            <span
+              className={`absolute -left-3 w-1 rounded-r-full bg-testo transition-all ${
+                attivo ? 'h-8' : daLeggere > 0 ? 'h-2' : 'h-0'
+              }`}
+            />
+            <span
+              className={`flex h-12 w-12 items-center justify-center text-lg font-semibold transition-all ${
+                attivo ? 'rounded-2xl' : 'rounded-3xl group-hover:rounded-2xl'
+              }`}
+              style={{
+                background: attivo ? 'var(--color-vivo)' : coloreDi(`s${spazio.id}`),
+                color: '#0b0e14'
+              }}
+            >
+              {spazio.icona || inizialiDi(spazio.nome)}
+            </span>
+          </button>
+        )
+      })}
+
+      {utente.ruolo === 'admin' && (
+        <button
+          onClick={() => setCreando(true)}
+          title="Nuovo spazio"
+          aria-label="Nuovo spazio"
+          className="flex h-12 w-12 items-center justify-center rounded-3xl border border-dashed border-bordo text-testo-3 transition-all hover:rounded-2xl hover:border-vivo hover:text-vivo"
+        >
+          <Piu />
+        </button>
+      )}
+
+      <div className="flex-1" />
+
+      {/* Il pallino rosso e' l'unica cosa che porta ad aprire questo pannello:
+          una richiesta di amicizia non ha nessun altro posto in cui farsi
+          notare. */}
+      <button
+        onClick={apriAmici}
+        title={richieste > 0 ? `Amici — ${richieste} in attesa` : 'Amici'}
+        aria-label="Amici"
+        className="relative flex h-10 w-10 items-center justify-center rounded-2xl bg-fondo-2 text-testo-2 transition-colors hover:bg-fondo-3 hover:text-testo"
+      >
+        <Utenti />
+        {richieste > 0 && (
+          <span className="numeri absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-male px-1 text-[10px] font-semibold text-white">
+            {richieste > 9 ? '9+' : richieste}
+          </span>
+        )}
+      </button>
+
+      <button
+        onClick={apriImpostazioni}
+        title={`${utente.nome} — impostazioni`}
+        className="h-10 w-10 overflow-hidden rounded-full ring-2 ring-transparent transition-all hover:ring-vivo"
+      >
+        {utente.avatar ? (
+          <img src={utente.avatar} alt="" className="h-full w-full object-cover" />
+        ) : (
+          <span
+            className="flex h-full w-full items-center justify-center text-sm font-semibold text-black/75"
+            style={{ background: coloreDi(`u${utente.id}`) }}
+          >
+            {inizialiDi(utente.nome)}
+          </span>
+        )}
+      </button>
+
+      {creando && (
+        <div
+          className="absolute inset-0 z-30 flex items-center justify-center bg-black/70 p-6 backdrop-blur-sm"
+          onClick={() => setCreando(false)}
+        >
+          <div
+            className="w-full max-w-sm space-y-4 rounded-2xl border border-bordo bg-fondo-2 p-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="font-semibold">Nuovo spazio</h2>
+            <Campo
+              etichetta="Nome"
+              aiuto="Nasce con un canale di testo e uno vocale, cosi' si puo' cominciare subito."
+            >
+              <input
+                className={classiInput}
+                value={nome}
+                onChange={(e) => setNome(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && void conferma()}
+                placeholder="Musica"
+                autoFocus
+              />
+            </Campo>
+            <div className="flex gap-2">
+              <Bottone tono="vivo" disabled={inCorso || !nome.trim()} onClick={() => void conferma()}>
+                Crea
+              </Bottone>
+              <Bottone tono="fantasma" onClick={() => setCreando(false)}>
+                Annulla
+              </Bottone>
+            </div>
+          </div>
+        </div>
+      )}
+    </nav>
+  )
+}
