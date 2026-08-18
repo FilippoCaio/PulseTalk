@@ -259,6 +259,8 @@ export interface Sessione {
   /** Il volume di tutta la stanza, che moltiplica quelli delle singole persone. */
   volumeGenerale: number
   schermiAttivi: { id: string; etichetta: string }[]
+  /** Chi ha il microfono spento, dal vivo. Vale solo per il canale in cui si e'. */
+  microfoniSpenti: Set<string>
   /** Il browser non lascia partire il suono finche' non si clicca. */
   audioBloccato: boolean
   sbloccaAudio(): Promise<void>
@@ -735,7 +737,20 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
         if (prima.modo !== adesso.modo) {
           const locale = stanza.localParticipant
           const eraAcceso = locale.isMicrophoneEnabled
-          await locale.setMicrophoneEnabled(false)
+
+          // Si TOGLIE la traccia vecchia, non la si mette in muto.
+          //
+          // setMicrophoneEnabled(false) la lascia pubblicata e silenziosa: la
+          // nuova si aggiungeva accanto, e chi cambiava modo si sentiva due
+          // volte. In muto se ne sentiva una sola, che e' il sintomo da cui si
+          // capisce che le tracce vive erano due.
+          const vecchia = locale.getTrackPublication(Track.Source.Microphone)
+          if (vecchia?.track) {
+            await locale.unpublishTrack(vecchia.track, true)
+          } else {
+            await locale.setMicrophoneEnabled(false)
+          }
+
           if (eraAcceso) {
             await accendiMicrofono(
               stanza,
@@ -826,12 +841,33 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
   // Non si disiscrivono le tracce: si azzera il volume. Disiscriversi farebbe
   // smettere di ricevere, e riaccendere costerebbe una rinegoziazione e due
   // secondi di silenzio in piu'.
+  // Il microfono com'era prima della sordina, per rimetterlo com'era dopo.
+  const microfonoPrimaDellaSordina = useRef(false)
+
   const alternaSordina = useCallback(() => {
     sordinaRef.current = !sordinaRef.current
     setSordina(sordinaRef.current)
     applicaAudio()
+
+    // Sordina vuol dire fuori dalla conversazione in tutti e due i versi: non
+    // sento loro e non mi sentono. Mutare solo l'ascolto lascia la parte
+    // peggiore delle due, quella in cui uno continua a parlare a gente che non
+    // lo puo' sentire rispondere.
+    const stanza = stanzaRef.current
+    if (stanza) {
+      const locale = stanza.localParticipant
+      if (sordinaRef.current) {
+        microfonoPrimaDellaSordina.current = locale.isMicrophoneEnabled
+        if (locale.isMicrophoneEnabled) void locale.setMicrophoneEnabled(false).then(ridisegna)
+      } else if (microfonoPrimaDellaSordina.current) {
+        // Si riaccende solo se era acceso: chi era gia' muto prima resta muto,
+        // altrimenti togliere la sordina lo farebbe parlare per sbaglio.
+        void locale.setMicrophoneEnabled(true).then(ridisegna)
+      }
+    }
+
     suona(sordinaRef.current ? 'sordinaAccesa' : 'sordinaSpenta')
-  }, [applicaAudio])
+  }, [applicaAudio, ridisegna])
 
   const impostaVolumeGenerale = useCallback(
     (volume: number) => {
@@ -1146,6 +1182,20 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [giro, stato, cheParla])
 
+  /**
+   * Chi ha il microfono spento adesso, per identita'.
+   *
+   * La colonna dei canali riceve le presenze dal server, che le ricava da una
+   * fotografia della SFU: giusta quando viene scattata, ferma da li' in poi.
+   * Per il canale in cui si e' dentro il dato vero ce l'abbiamo qui, e va
+   * usato quello - altrimenti il simbolo del muto resta appeso addosso alla
+   * persona sbagliata finche' qualcuno non entra o non esce.
+   */
+  const microfoniSpenti = useMemo(
+    () => new Set(persone.filter((p) => !p.microfonoAcceso).map((p) => p.identita)),
+    [persone]
+  )
+
   const stanza = stanzaRef.current
 
   return {
@@ -1162,6 +1212,7 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
     sordina,
     volumeGenerale,
     schermiAttivi,
+    microfoniSpenti,
     audioBloccato,
     sbloccaAudio,
     riascoltoAttivo,

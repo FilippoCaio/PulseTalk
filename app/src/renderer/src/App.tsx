@@ -358,6 +358,7 @@ export default function App(): React.JSX.Element {
               apriRicerca={() => setMostraRicerca(true)}
               gestisciIscritti={(canale) => setIscrittiDi(canale)}
               profili={profili}
+              microfoniSpenti={sessione.microfoniSpenti}
             />
 
             {inVoce && (

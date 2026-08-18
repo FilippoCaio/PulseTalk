@@ -38,6 +38,7 @@ export default function ColonnaCanali({
   apriRicerca,
   gestisciIscritti,
   profili,
+  microfoniSpenti,
   parlanti
 }: {
   spazio: Spazio
@@ -65,6 +66,14 @@ export default function ColonnaCanali({
    * anche a chi un'immagine ce l'aveva caricata.
    */
   profili?: Map<number, { nome: string; avatar: string | null }>
+  /**
+   * Chi ha il microfono spento adesso, dal vivo.
+   *
+   * Ha la precedenza su quello che dicono le presenze: quelle vengono da una
+   * fotografia della SFU che non si riscatta a ogni muto, e mostrare il
+   * simbolo sulla persona sbagliata e' peggio che non mostrarlo.
+   */
+  microfoniSpenti?: Set<string>
   /**
    * Chi sta parlando adesso, per identita'.
    *
@@ -131,6 +140,7 @@ export default function ColonnaCanali({
                   esci={esciDallaVoce}
                   gestisciIscritti={() => gestisciIscritti(canale)}
                   profili={profili}
+                  microfoniSpenti={canale.id === inVoce ? microfoniSpenti : undefined}
                   parlanti={canale.id === inVoce ? parlanti : undefined}
                   elimina={async () => {
                     try {
@@ -197,6 +207,7 @@ function RigaCanale({
   elimina,
   gestisciIscritti,
   profili,
+  microfoniSpenti,
   parlanti
 }: {
   canale: Canale
@@ -208,6 +219,7 @@ function RigaCanale({
   elimina: () => Promise<void>
   gestisciIscritti: () => void
   profili?: Map<number, { nome: string; avatar: string | null }>
+  microfoniSpenti?: Set<string>
   /** Valorizzato solo per il canale in cui si sta parlando adesso. */
   parlanti?: Set<string>
 }): React.JSX.Element {
@@ -333,7 +345,7 @@ function RigaCanale({
                 </span>
               )}
               <span className="min-w-0 flex-1 truncate">{persona.nome}</span>
-              {!persona.microfono && (
+              {(microfoniSpenti ? microfoniSpenti.has(persona.identita) : !persona.microfono) && (
                 <span className="shrink-0 text-testo-3" title="Microfono spento">
                   <MicrofonoSpento className="h-3.5 w-3.5" />
                 </span>

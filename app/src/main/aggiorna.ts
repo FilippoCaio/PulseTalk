@@ -47,6 +47,16 @@ export function preparaAggiornamenti(): void {
     // Senza rete, o dietro a una rete che blocca GitHub, questo scatta a ogni
     // avvio: e' rumore, non un guasto. Resta nello stato per chi apre il
     // pannello, e non diventa mai una finestra in faccia a nessuno.
+    //
+    // Un caso pero' non e' un errore per niente: un repository senza nemmeno
+    // una release. Vuol dire solo che non c'e' ancora niente da scaricare, ed
+    // e' esattamente cio' che l'utente legge come "sei aggiornato". Mostrargli
+    // "No published versions on GitHub" e' farlo preoccupare di una cosa che
+    // riguarda chi pubblica, non lui.
+    if (/no published versions/i.test(e.message)) {
+      avvisa({ fase: 'aggiornato', errore: undefined })
+      return
+    }
     avvisa({ fase: 'errore', errore: e.message })
   })
 
