@@ -12,6 +12,7 @@ import {
   Stella
 } from '../icone'
 import { PannelloVolume, type VoceVolume } from './Volume'
+import { coloreDi, inizialiDi } from '../lib/avatar'
 
 const COLORE_QUALITA: Record<string, string> = {
   [ConnectionQuality.Excellent]: 'var(--color-ok)',
@@ -35,7 +36,8 @@ export default function Persone({
   volumiDi,
   impostaVolume,
   alternaMuto,
-  caccia
+  caccia,
+  fotoDi
 }: {
   persone: Persona[]
   moderatore: boolean
@@ -43,6 +45,8 @@ export default function Persone({
   impostaVolume: (identita: string, sorgente: SorgenteAudio, volume: number) => void
   alternaMuto: (identita: string, sorgente: SorgenteAudio) => void
   caccia: (identita: string) => Promise<void>
+  /** La foto profilo, se ce n'e' una: qui c'era solo il pallino della qualita'. */
+  fotoDi: (identita: string) => string | null
 }): React.JSX.Element {
   return (
     <div className="space-y-0.5 p-2">
@@ -55,6 +59,7 @@ export default function Persone({
           impostaVolume={impostaVolume}
           alternaMuto={alternaMuto}
           caccia={caccia}
+          foto={fotoDi(persona.identita)}
         />
       ))}
     </div>
@@ -67,7 +72,8 @@ function Riga({
   volumi,
   impostaVolume,
   alternaMuto,
-  caccia
+  caccia,
+  foto
 }: {
   persona: Persona
   moderatore: boolean
@@ -75,6 +81,7 @@ function Riga({
   impostaVolume: (identita: string, sorgente: SorgenteAudio, volume: number) => void
   alternaMuto: (identita: string, sorgente: SorgenteAudio) => void
   caccia: (identita: string) => Promise<void>
+  foto: string | null
 }): React.JSX.Element {
   const [aperta, setAperta] = useState(false)
 
@@ -111,6 +118,19 @@ function Riga({
     >
       <div className="flex items-center gap-2">
         <Pallino colore={COLORE_QUALITA[persona.qualita] ?? 'var(--color-testo-3)'} />
+
+        {/* La faccia, non solo il nome: e' l'unico posto della stanza dove si
+            leggeva chi c'e' senza vedere chi e'. */}
+        {foto ? (
+          <img src={foto} alt="" className="h-6 w-6 shrink-0 rounded-full object-cover" />
+        ) : (
+          <span
+            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-black/75"
+            style={{ background: coloreDi(persona.identita) }}
+          >
+            {inizialiDi(persona.nome)}
+          </span>
+        )}
 
         <span className="flex min-w-0 flex-1 items-center gap-1 truncate text-sm">
           {persona.moderatore && (

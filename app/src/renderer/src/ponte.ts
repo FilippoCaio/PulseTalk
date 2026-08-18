@@ -4,7 +4,8 @@ import {
   type Puntata,
   type SceltaCattura,
   type Scorciatoia,
-  type Sorgente
+  type Sorgente,
+  type StatoAggiornamento
 } from '@shared/tipi'
 
 /**
@@ -24,6 +25,18 @@ import {
 export interface Ponte {
   /** Vero dentro l'app installata. */
   elettrone: boolean
+
+  /**
+   * Gli aggiornamenti. Nel browser non esistono: la pagina e' sempre l'ultima
+   * versione per costruzione, ed e' l'unico posto dove il problema non c'e'.
+   */
+  aggiornamenti: {
+    stato(): Promise<StatoAggiornamento>
+    controlla(): Promise<StatoAggiornamento>
+    scarica(): Promise<StatoAggiornamento>
+    installa(): Promise<void>
+    ascolta(quando: (stato: StatoAggiornamento) => void): () => void
+  } | null
 
   /**
    * Il nostro selettore di sorgenti, con le anteprime. Nel browser torna vuoto
@@ -65,6 +78,7 @@ function ponteElettrone(api: NonNullable<Window['pulsetalk']>): Ponte {
   return {
     elettrone: true,
     audioDiSistema: true,
+    aggiornamenti: api.aggiornamento,
     sorgenti: () => api.sorgenti(),
     preparaCattura: (scelta) => api.preparaCattura(scelta),
     leggiImpostazioni: () => api.leggiImpostazioni(),
@@ -108,6 +122,7 @@ function ponteBrowser(): Ponte {
 
   return {
     elettrone: false,
+    aggiornamenti: null,
 
     // Chrome sa condividere l'audio di una scheda, e su Windows anche quello
     // di sistema, ma solo se e' l'utente a spuntarlo nella sua finestra. Da

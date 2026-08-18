@@ -13,6 +13,7 @@ import {
   type VideoTrack
 } from 'livekit-client'
 import type { Impostazioni, Ingresso, ModoAudioSistema, Sorgente } from '@shared/tipi'
+import type { ModoAudio } from '@shared/qualita'
 import { PRESET_CAMERA, type Limiti, type PresetSchermo } from '@shared/qualita'
 import {
   accendiCamera,
@@ -704,6 +705,81 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
     }
   }, [])
 
+  // Le impostazioni audio cambiate mentre si e' dentro alla chiamata.
+  //
+  // Prima valevano solo dal rientro successivo: si cambiava microfono nelle
+  // impostazioni, si continuava a parlare in quello vecchio, e non lo diceva
+  // nessuno. Sono due strade diverse perche' sono due cose diverse:
+  //
+  //  - il dispositivo si scambia sotto alla traccia gia' pubblicata, senza
+  //    rinegoziare niente e senza che gli altri sentano un buco;
+  //  - il modo (voce o musica) cambia i vincoli di cattura e il bitrate, che
+  //    su una traccia viva non si toccano: quella va ripubblicata.
+  //
+  // Il primo giro non fa niente: la traccia e' appena stata creata con questi
+  // stessi valori, e ripubblicarla subito sarebbe un secondo di silenzio
+  // regalato a ogni ingresso.
+  const audioApplicato = useRef<{ microfono: string | null; modo: ModoAudio } | null>(null)
+
+  useEffect(() => {
+    const stanza = stanzaRef.current
+    if (!stanza || stato !== ConnectionState.Connected) return
+
+    const prima = audioApplicato.current
+    const adesso = { microfono: impostazioni.microfonoId ?? null, modo: impostazioni.modoAudio }
+    audioApplicato.current = adesso
+    if (!prima) return
+
+    void (async () => {
+      try {
+        if (prima.modo !== adesso.modo) {
+          const locale = stanza.localParticipant
+          const eraAcceso = locale.isMicrophoneEnabled
+          await locale.setMicrophoneEnabled(false)
+          if (eraAcceso) {
+            await accendiMicrofono(
+              stanza,
+              adesso.modo,
+              limitiRef.current!,
+              adesso.microfono,
+              false,
+              impostazioni.volumeMicrofono ?? 1
+            )
+          }
+        } else if (prima.microfono !== adesso.microfono) {
+          await stanza.switchActiveDevice('audioinput', adesso.microfono ?? 'default')
+        }
+        ridisegna()
+      } catch (e) {
+        setErrore(`Non sono riuscito a cambiare microfono: ${(e as Error).message}`)
+      }
+    })()
+  }, [impostazioni.microfonoId, impostazioni.modoAudio, stato, ridisegna])
+
+  // L'altoparlante invece e' innocuo: cambia solo dove esce il suono gia'
+  // ricevuto, quindi si applica sempre, anche al primo giro.
+  useEffect(() => {
+    const stanza = stanzaRef.current
+    if (!stanza || stato !== ConnectionState.Connected) return
+    void stanza
+      .switchActiveDevice('audiooutput', impostazioni.altoparlanteId ?? 'default')
+      .catch(() => {
+        // Non tutti i sistemi lasciano scegliere l'uscita: se non si puo', si
+        // resta su quella di Windows senza dire niente. Non e' un guasto.
+      })
+  }, [impostazioni.altoparlanteId, stato])
+
+  // E la camera, ma solo se e' accesa: se e' spenta se ne riparla
+  // all'accensione, che gia' legge l'impostazione giusta.
+  useEffect(() => {
+    const stanza = stanzaRef.current
+    if (!stanza || stato !== ConnectionState.Connected) return
+    if (!stanza.localParticipant.isCameraEnabled) return
+    void stanza
+      .switchActiveDevice('videoinput', impostazioni.cameraId ?? 'default')
+      .catch(() => {})
+  }, [impostazioni.cameraId, stato])
+
   // -- Le azioni --------------------------------------------------------------
 
   const alternaMicrofono = useCallback(async () => {
@@ -836,7 +912,23 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
           audioSistema ?? impostazioni.audioSistema
         )
         const etichetta = sorgente?.nome ?? `Schermo ${schermiRef.current.size + 1}`
-        const pubblicato = await pubblicaSchermo(stanza, stream, preset, limiti, etichetta)
+        const pubblicato = await pubblicaSchermo(
+          stanza,
+          stream,
+          preset,
+          limiti,
+          etichetta,
+          (idTraccia) => {
+            // Chiusa dalla barra di Windows o perche' la finestra non c'e'
+            // piu': si toglie dall'elenco e si fa lo stesso rumore di quando
+            // la si chiude dal pulsante, perche' per chi guarda e' successa
+            // esattamente la stessa cosa.
+            schermiRef.current.delete(idTraccia)
+            schermiSuMonitorRef.current.delete(idTraccia)
+            suona('condivisioneFinita')
+            ridisegna()
+          }
+        )
         schermiRef.current.set(pubblicato.video.trackSid, pubblicato)
         // Serve al puntatore: quando qualcuno indica questo riquadro, e' su
         // questo monitor che va disegnato l'alone. Le finestre singole non

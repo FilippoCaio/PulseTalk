@@ -17,6 +17,7 @@ import { Altoparlante, Chiudi, Riavvolgi } from '../icone'
 import { Avviso } from '../ui'
 import Barra from './Barra'
 import Persone from './Persone'
+import MenuRiquadro from './MenuRiquadro'
 import Riquadro from './Riquadro'
 import SceltaSorgente from './SceltaSorgente'
 import type { VoceVolume } from './Volume'
@@ -158,6 +159,9 @@ export default function Sala({
   /** L'identita' sulla SFU e' `u<id>`: e' l'unica chiave su cui i due mondi combaciano. */
   const fotoDi = (identita: string): string | null =>
     profili.get(Number(identita.slice(1)))?.avatar ?? null
+
+  /** Il riquadro su cui e' aperto il menu del tasto destro, e dove. */
+  const [menu, setMenu] = useState<{ x: number; y: number; id: string } | null>(null)
 
   /** Gli aloni ancora vivi su questo riquadro. */
   const puntatoriDi = (riquadro: DatiRiquadro): typeof sessione.puntatori =>
@@ -373,6 +377,7 @@ export default function Sala({
                           ? (x, y) => sessione.punta(grande.id, x, y)
                           : undefined
                       }
+                      quandoMenu={(x, y) => setMenu({ x, y, id: grande.id })}
                       quandoScelto={togli}
                     />
                   </div>
@@ -406,6 +411,7 @@ export default function Sala({
                                   ? (x, y) => sessione.punta(riquadro.id, x, y)
                                   : undefined
                               }
+                              quandoMenu={(x, y) => setMenu({ x, y, id: riquadro.id })}
                               quandoScelto={() => metti(riquadro)}
                             />
                           </div>
@@ -449,6 +455,7 @@ export default function Sala({
                                 ? (x, y) => sessione.punta(riquadro.id, x, y)
                                 : undefined
                             }
+                            quandoMenu={(x, y) => setMenu({ x, y, id: riquadro.id })}
                             quandoScelto={() => metti(riquadro)}
                           />
                         </div>
@@ -475,6 +482,7 @@ export default function Sala({
             <Persone
               persone={persone}
               moderatore={moderatore}
+              fotoDi={fotoDi}
               volumiDi={sessione.volumiDi}
               impostaVolume={sessione.impostaVolume}
               alternaMuto={sessione.alternaMuto}
@@ -511,6 +519,39 @@ export default function Sala({
         apriImpostazioni={apriImpostazioni}
         esci={() => void esci()}
       />
+
+      {/* Il menu del tasto destro. Sta qui e non dentro al riquadro perche' e'
+          posizionato sulla finestra: dentro, il riquadro grande lo taglierebbe
+          ai bordi come taglia tutto il resto. */}
+      {(() => {
+        if (!menu) return null
+        const suo = riquadri.find((r) => r.id === menu.id)
+        if (!suo) return null
+        return (
+          <MenuRiquadro
+            x={menu.x}
+            y={menu.y}
+            dati={suo}
+            voci={vociDi(suo)}
+            aFuoco={grande?.id === suo.id}
+            moderatore={moderatore}
+            metti={() => (grande?.id === suo.id ? togli() : metti(suo))}
+            schermoIntero={grande?.id === suo.id ? schermoIntero : undefined}
+            caccia={
+              moderatore && !suo.locale
+                ? async () => {
+                    try {
+                      await api.caccia(ingresso.canale.id, suo.identita)
+                    } catch (e) {
+                      setErroreLocale((e as Error).message)
+                    }
+                  }
+                : undefined
+            }
+            chiudi={() => setMenu(null)}
+          />
+        )
+      })()}
     </div>
   )
 }

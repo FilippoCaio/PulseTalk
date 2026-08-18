@@ -50,6 +50,7 @@ export default function Riquadro({
   schermoIntero,
   puntatori,
   quandoPunta,
+  quandoMenu,
   quandoScelto
 }: {
   dati: Dati
@@ -65,6 +66,8 @@ export default function Riquadro({
   puntatori?: Puntatore[]
   /** Indica un punto: alt+clic, in frazioni di video da 0 a 1. */
   quandoPunta?: (x: number, y: number) => void
+  /** Tasto destro: apre il menu del riquadro alle coordinate del puntatore. */
+  quandoMenu?: (x: number, y: number) => void
   quandoScelto: () => void
 }): React.JSX.Element {
   const video = useRef<HTMLVideoElement>(null)
@@ -243,6 +246,13 @@ export default function Riquadro({
     <div
       ref={scatola}
       onClick={cliccato}
+      onContextMenu={(e) => {
+        if (!quandoMenu) return
+        // Senza questo esce il menu di Chromium ("Ricarica", "Ispeziona"), che
+        // dentro a un'applicazione non ha senso di esistere.
+        e.preventDefault()
+        quandoMenu(e.clientX, e.clientY)
+      }}
       onWheel={rotella}
       onPointerDown={premuto}
       onPointerMove={mosso}

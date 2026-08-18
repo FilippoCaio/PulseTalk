@@ -165,7 +165,17 @@ export async function pubblicaSchermo(
   stream: MediaStream,
   presetGrezzo: PresetSchermo,
   limiti: Limiti,
-  etichetta: string
+  etichetta: string,
+  /**
+   * Chiamata quando la condivisione finisce **da sola**: la finestra viene
+   * chiusa, o si preme "Interrompi condivisione" nella barra di Windows.
+   *
+   * Senza questo avviso la traccia spariva davvero ma la sessione continuava
+   * a contare quello schermo fra i suoi: restava il pulsante rosso per
+   * chiudere una cosa gia' chiusa, e non lo si poteva nemmeno premere due
+   * volte per farlo sparire.
+   */
+  quandoFinisce?: (idTraccia: string) => void
 ): Promise<SchermoPubblicato> {
   const preset = entroILimiti(presetGrezzo, limiti)
 
@@ -240,7 +250,14 @@ export async function pubblicaSchermo(
     for (const t of stream.getTracks()) t.stop()
   }
 
-  mediaVideo.addEventListener('ended', () => void chiudi(), { once: true })
+  mediaVideo.addEventListener(
+    'ended',
+    () => {
+      void chiudi()
+      quandoFinisce?.(video.trackSid)
+    },
+    { once: true }
+  )
 
   return { video, audio, chiudi }
 }

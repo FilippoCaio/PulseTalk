@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { agganciaCattura, elencaSorgenti, ricordaScelta } from './cattura'
 import { dimenticaToken, leggiImpostazioni, scriviImpostazioni, scriviToken } from './impostazioni'
 import { chiudiPuntatori, mostraPuntatore } from './puntatore'
+import { preparaAggiornamenti } from './aggiorna'
 import {
   IPC,
   type Impostazioni,
@@ -254,6 +255,7 @@ if (!app.requestSingleInstanceLock()) {
     agganciaPermessi()
     agganciaCanali()
     agganciaScorciatoie(leggiImpostazioni())
+    preparaAggiornamenti()
     creaFinestra()
 
     app.on('activate', () => {

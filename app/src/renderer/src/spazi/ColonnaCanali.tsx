@@ -37,6 +37,7 @@ export default function ColonnaCanali({
   elimina,
   apriRicerca,
   gestisciIscritti,
+  profili,
   parlanti
 }: {
   spazio: Spazio
@@ -56,6 +57,14 @@ export default function ColonnaCanali({
   apriRicerca: () => void
   /** Apre l'elenco di chi sta dentro a un canale privato. */
   gestisciIscritti: (canale: Canale) => void
+  /**
+   * Nome e foto di ognuno, per id.
+   *
+   * Le presenze che arrivano dal server portano solo il nome: la foto sta qui,
+   * ed e' il motivo per cui prima in questa colonna si vedevano le iniziali
+   * anche a chi un'immagine ce l'aveva caricata.
+   */
+  profili?: Map<number, { nome: string; avatar: string | null }>
   /**
    * Chi sta parlando adesso, per identita'.
    *
@@ -121,6 +130,7 @@ export default function ColonnaCanali({
                   scegli={() => (canale.tipo === 'voce' ? entraInVoce(canale) : scegli(canale))}
                   esci={esciDallaVoce}
                   gestisciIscritti={() => gestisciIscritti(canale)}
+                  profili={profili}
                   parlanti={canale.id === inVoce ? parlanti : undefined}
                   elimina={async () => {
                     try {
@@ -186,6 +196,7 @@ function RigaCanale({
   esci,
   elimina,
   gestisciIscritti,
+  profili,
   parlanti
 }: {
   canale: Canale
@@ -196,6 +207,7 @@ function RigaCanale({
   esci: () => void
   elimina: () => Promise<void>
   gestisciIscritti: () => void
+  profili?: Map<number, { nome: string; avatar: string | null }>
   /** Valorizzato solo per il canale in cui si sta parlando adesso. */
   parlanti?: Set<string>
 }): React.JSX.Element {
@@ -296,18 +308,30 @@ function RigaCanale({
           poi ha bisogno del suo spazio per non finire addosso al vicino. */}
       {canale.tipo === 'voce' && canale.presenti.length > 0 && (
         <div className="mt-1 mb-2 ml-6 space-y-2">
-          {canale.presenti.map((persona) => (
+          {canale.presenti.map((persona) => {
+            // L'identita' sulla SFU e' `u<id>`: e' l'unica chiave su cui una
+            // presenza e un profilo combaciano.
+            const foto = profili?.get(Number(persona.identita.slice(1)))?.avatar ?? null
+            const anello = parlanti?.has(persona.identita)
+              ? 'ring-2 ring-ok ring-offset-2 ring-offset-fondo-2'
+              : 'ring-0'
+
+            return (
             <div key={persona.identita} className="flex items-center gap-2 text-xs text-testo-2">
-              <span
-                className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-black/75 transition-all duration-150 ${
-                  parlanti?.has(persona.identita)
-                    ? 'ring-2 ring-ok ring-offset-2 ring-offset-fondo-2'
-                    : 'ring-0'
-                }`}
-                style={{ background: coloreDi(persona.identita) }}
-              >
-                {inizialiDi(persona.nome)}
-              </span>
+              {foto ? (
+                <img
+                  src={foto}
+                  alt=""
+                  className={`h-6 w-6 shrink-0 rounded-full object-cover transition-all duration-150 ${anello}`}
+                />
+              ) : (
+                <span
+                  className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-black/75 transition-all duration-150 ${anello}`}
+                  style={{ background: coloreDi(persona.identita) }}
+                >
+                  {inizialiDi(persona.nome)}
+                </span>
+              )}
               <span className="min-w-0 flex-1 truncate">{persona.nome}</span>
               {!persona.microfono && (
                 <span className="shrink-0 text-testo-3" title="Microfono spento">
@@ -320,7 +344,8 @@ function RigaCanale({
                 </span>
               )}
             </div>
-          ))}
+            )
+          })}
         </div>
       )}
     </div>

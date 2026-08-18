@@ -17,8 +17,40 @@ export const IPC = {
   apriEsterno: 'apri-esterno',
   versione: 'versione',
   puntatore: 'puntatore',
-  notifica: 'notifica'
+  notifica: 'notifica',
+  aggiornamento: 'aggiornamento',
+  aggiornamentoStato: 'aggiornamento-stato',
+  aggiornamentoControlla: 'aggiornamento-controlla',
+  aggiornamentoScarica: 'aggiornamento-scarica',
+  aggiornamentoInstalla: 'aggiornamento-installa'
 } as const
+
+/**
+ * A che punto sta il controllo degli aggiornamenti.
+ *
+ * Uno stato solo, spedito dal main a ogni cambiamento, invece di cinque eventi
+ * separati da riordinare nel renderer: chi apre il pannello a meta' download
+ * deve vedere il download, non l'ultimo evento che gli e' passato accanto.
+ */
+export interface StatoAggiornamento {
+  fase:
+    | 'fermo'
+    | 'controllo'
+    | 'disponibile'
+    | 'scarico'
+    | 'pronto'
+    | 'aggiornato'
+    | 'errore'
+    /** Portabile o versione di sviluppo: non c'e' niente da aggiornare. */
+    | 'nonSupportato'
+  /** Quella installata adesso. */
+  versione: string
+  /** Quella trovata, se ce n'e' una. */
+  disponibile?: string
+  note?: string
+  percento?: number
+  errore?: string
+}
 
 /** Uno schermo o una finestra che si puo' condividere. */
 export interface Sorgente {

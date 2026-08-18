@@ -5,7 +5,8 @@ import {
   type Puntata,
   type SceltaCattura,
   type Scorciatoia,
-  type Sorgente
+  type Sorgente,
+  type StatoAggiornamento
 } from '@shared/tipi'
 
 /**
@@ -47,6 +48,22 @@ const api = {
     ipcRenderer.on(IPC.scorciatoia, gestore)
     return (): void => {
       ipcRenderer.removeListener(IPC.scorciatoia, gestore)
+    }
+  },
+
+  /** Lo stato del controllo aggiornamenti, e i tre comandi che lo muovono. */
+  aggiornamento: {
+    stato: (): Promise<StatoAggiornamento> => ipcRenderer.invoke(IPC.aggiornamentoStato),
+    controlla: (): Promise<StatoAggiornamento> => ipcRenderer.invoke(IPC.aggiornamentoControlla),
+    scarica: (): Promise<StatoAggiornamento> => ipcRenderer.invoke(IPC.aggiornamentoScarica),
+    installa: (): Promise<void> => ipcRenderer.invoke(IPC.aggiornamentoInstalla),
+    /** Restituisce la funzione per smettere di ascoltare. */
+    ascolta: (quando: (stato: StatoAggiornamento) => void): (() => void) => {
+      const gestore = (_e: unknown, stato: StatoAggiornamento): void => quando(stato)
+      ipcRenderer.on(IPC.aggiornamento, gestore)
+      return () => {
+        ipcRenderer.off(IPC.aggiornamento, gestore)
+      }
     }
   },
 

@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import type { Impostazioni, PosizioneStriscia, Sessione, Utente } from '@shared/tipi'
+import type {
+  Impostazioni,
+  PosizioneStriscia,
+  Sessione,
+  StatoAggiornamento,
+  Utente
+} from '@shared/tipi'
 import {
   bitrateLeggibile,
   PRESET_CAMERA,
@@ -397,6 +403,8 @@ export default function PannelloImpostazioni({
 
             {pagina === 'app' && (
               <>
+                <SezioneAggiornamenti />
+
                 {ponte.elettrone ? (
                   <Sezione titolo="Applicazione">
                     <Interruttore
@@ -934,4 +942,97 @@ function Interruttore({
       </span>
     </label>
   )
+}
+
+/**
+ * Gli aggiornamenti.
+ *
+ * Tre stati e tre pulsanti, e mai piu' di un pulsante alla volta: cerca,
+ * scarica, riavvia. Non parte niente da solo — il controllo all'avvio si',
+ * ma trecento megabyte scaricati senza chiedere mentre uno e' in chiamata
+ * sono un modo sicuro di far saltare la chiamata.
+ */
+function SezioneAggiornamenti(): React.JSX.Element | null {
+  const aggiornamenti = ponte.aggiornamenti
+  const [stato, setStato] = useState<StatoAggiornamento | null>(null)
+
+  useEffect(() => {
+    if (!aggiornamenti) return
+    void aggiornamenti.stato().then(setStato)
+    return aggiornamenti.ascolta(setStato)
+  }, [aggiornamenti])
+
+  // Nel browser la sezione non esiste proprio: non c'e' niente da aggiornare,
+  // e una sezione che dice "qui non si puo'" e' solo una riga in piu' da
+  // leggere per scoprire che non serviva.
+  if (!aggiornamenti || !stato) return null
+
+  const fase = stato.fase
+
+  return (
+    <Sezione titolo="Aggiornamenti" sotto={`Stai usando la versione ${stato.versione}.`}>
+      {fase === 'nonSupportato' ? (
+        <Avviso tono="neutro">
+          Questa e' la versione portabile: si aggiorna sostituendo il file, che e' poi il motivo per
+          cui esiste un portabile.
+        </Avviso>
+      ) : (
+        <>
+          {fase === 'disponibile' && (
+            <Avviso tono="neutro">
+              C'e' la {stato.disponibile}.{stato.note ? ` ${primaRiga(stato.note)}` : ''}
+            </Avviso>
+          )}
+          {fase === 'aggiornato' && <Avviso tono="neutro">Sei all'ultima versione.</Avviso>}
+          {fase === 'pronto' && (
+            <Avviso tono="neutro">
+              La {stato.disponibile} e' scaricata. Si installa al riavvio dell'applicazione — e il
+              riavvio chiude la chiamata, se sei in una stanza.
+            </Avviso>
+          )}
+          {fase === 'errore' && (
+            <Avviso tono="attenzione">
+              Non sono riuscito a controllare: {stato.errore}
+            </Avviso>
+          )}
+
+          {fase === 'scarico' && (
+            <div className="space-y-1">
+              <div className="h-1.5 overflow-hidden rounded-full bg-fondo-3">
+                <div
+                  className="h-full rounded-full bg-vivo transition-[width] duration-200"
+                  style={{ width: `${stato.percento ?? 0}%` }}
+                />
+              </div>
+              <p className="text-xs text-testo-3">Scarico… {stato.percento ?? 0}%</p>
+            </div>
+          )}
+
+          <div className="flex gap-2">
+            {fase === 'disponibile' ? (
+              <Bottone onClick={() => void aggiornamenti.scarica()}>
+                Scarica la {stato.disponibile}
+              </Bottone>
+            ) : fase === 'pronto' ? (
+              <Bottone onClick={() => void aggiornamenti.installa()}>Riavvia e installa</Bottone>
+            ) : (
+              <Bottone
+                tono="fantasma"
+                disabled={fase === 'controllo' || fase === 'scarico'}
+                onClick={() => void aggiornamenti.controlla()}
+              >
+                {fase === 'controllo' ? 'Controllo…' : 'Controlla adesso'}
+              </Bottone>
+            )}
+          </div>
+        </>
+      )}
+    </Sezione>
+  )
+}
+
+/** Le note di rilascio in una riga: nel pannello non c'e' spazio per di piu'. */
+function primaRiga(note: string): string {
+  const pulite = note.replace(/<[^>]*>/g, ' ').replace(/s+/g, ' ').trim()
+  return pulite.length > 120 ? pulite.slice(0, 117) + '…' : pulite
 }

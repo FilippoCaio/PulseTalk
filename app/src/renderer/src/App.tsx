@@ -357,6 +357,7 @@ export default function App(): React.JSX.Element {
               }}
               apriRicerca={() => setMostraRicerca(true)}
               gestisciIscritti={(canale) => setIscrittiDi(canale)}
+              profili={profili}
             />
 
             {inVoce && (
