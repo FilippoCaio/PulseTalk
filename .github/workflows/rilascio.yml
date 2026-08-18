@@ -44,8 +44,16 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         shell: pwsh
         run: |
-          $versione = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          # Percorso assoluto e non relativo: se per qualunque motivo il passo
+          # non parte dalla cartella app/, un percorso relativo fallisce con un
+          # errore che non dice quale file cercava. Qui invece si vede.
+          $file = Join-Path $env:GITHUB_WORKSPACE 'app/package.json'
+          Write-Host "Leggo $file"
+          if (-not (Test-Path $file)) { throw "Non trovo $file" }
+
+          $versione = (Get-Content $file -Raw | ConvertFrom-Json).version
           $tag = '${{ github.ref_name }}' -replace '^v', ''
+          Write-Host "tag='$tag'  package.json='$versione'"
           # Questo controllo esiste per un motivo preciso: con package.json
           # fermo a 0.3.0 e il tag a v0.3.1, la release si chiamerebbe 0.3.1 ma
           # dentro latest.yml direbbe 0.3.0 - e i client, che confrontano quel
