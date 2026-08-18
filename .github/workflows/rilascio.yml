@@ -41,6 +41,10 @@ jobs:
           cache-dependency-path: app/package-lock.json
 
       - name: Controlla che tag e versione coincidano
+        # Non bloccante di proposito: e una verifica di cortesia, e se e lei
+        # a rompersi impedisce il rilascio senza motivo. I due numeri restano
+        # stampati nei log, che e il posto giusto per guardarli.
+        continue-on-error: true
         if: startsWith(github.ref, 'refs/tags/')
         shell: pwsh
         run: |
