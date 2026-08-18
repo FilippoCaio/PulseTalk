@@ -16,4 +16,10 @@
  * significa doverglielo dettare — e sbagliarlo. Resta comunque un campo
  * modificabile, sotto "Cambia server".
  */
-export const SERVER_PREDEFINITO = ''
+declare const __SERVER_PREDEFINITO__: string | undefined
+
+// Sostituito da vite al momento della compilazione. Quando non c'e' niente da
+// sostituire — i test, il controllo dei tipi — resta la stringa vuota, che e'
+// il comportamento giusto per chi compila dal repo pubblico.
+export const SERVER_PREDEFINITO =
+  typeof __SERVER_PREDEFINITO__ === 'string' ? __SERVER_PREDEFINITO__ : ''
