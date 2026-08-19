@@ -2,6 +2,15 @@ import { useEffect, useState } from 'react'
 import type { ModoAudioSistema, Sorgente } from '@shared/tipi'
 import { PRESET_SCHERMO, type PresetSchermo } from '@shared/qualita'
 import { ponte } from '../ponte'
+import { usaDispositivi } from '../lib/usaDispositivi'
+
+type Categoria = 'schermi' | 'applicazioni' | 'dispositivi'
+
+const CATEGORIE: [Categoria, string][] = [
+  ['schermi', 'Schermi'],
+  ['applicazioni', 'Applicazioni'],
+  ['dispositivi', 'Dispositivi']
+]
 import { Avviso, Bottone } from '../ui'
 
 /**
@@ -44,6 +53,27 @@ export default function SceltaSorgente({
    * da guardare dall'altra parte.
    */
   const [soloAudio, setSoloAudio] = useState(false)
+  const [categoria, setCategoria] = useState<Categoria>('schermi')
+
+  // Camere e schede di acquisizione, vestite da sorgente: cosi' proseguono
+  // per la stessa strada di uno schermo condiviso.
+  const { per } = usaDispositivi()
+  const dispositivi: Sorgente[] = per('videoinput').map((d) => ({
+    id: d.deviceId,
+    nome: d.label || 'Dispositivo senza nome',
+    tipo: 'dispositivo' as const,
+    anteprima: '',
+    icona: null,
+    schermoId: null,
+    larghezza: 0,
+    altezza: 0
+  }))
+
+  const quante = (id: Categoria): number =>
+    id === 'dispositivi'
+      ? dispositivi.length
+      : (sorgenti?.filter((s) => (id === 'schermi' ? s.tipo === 'schermo' : s.tipo === 'finestra'))
+          .length ?? 0)
   const [bitrateAudio, setBitrateAudio] = useState(510_000)
 
   useEffect(() => {
@@ -60,14 +90,18 @@ export default function SceltaSorgente({
   const nelBrowser = !ponte.elettrone
 
   const parti = (): void => {
-    const sorgente = nelBrowser ? null : (sorgenti?.find((s) => s.id === scelta) ?? null)
+    const sorgente = nelBrowser
+      ? null
+      : (sorgenti?.find((s) => s.id === scelta) ??
+        dispositivi.find((d) => d.id === scelta) ??
+        null)
     if (!nelBrowser && !sorgente) return
     conferma(sorgente, preset, audio, soloAudio, bitrateAudio)
   }
 
   return (
     <div
-      className="absolute inset-0 z-20 flex items-center justify-center bg-black/70 p-6 backdrop-blur-sm"
+      className="absolute inset-0 z-[60] flex items-center justify-center bg-black/70 p-6 backdrop-blur-sm"
       onClick={chiudi}
     >
       <div
@@ -92,18 +126,69 @@ export default function SceltaSorgente({
                 <Avviso>Windows non ha restituito nessuna finestra da condividere.</Avviso>
               )}
 
-              <ElencoSorgenti
-                titolo="Schermi"
-                sorgenti={sorgenti?.filter((s) => s.tipo === 'schermo') ?? []}
-                scelta={scelta}
-                scegli={setScelta}
-              />
-              <ElencoSorgenti
-                titolo="Finestre"
-                sorgenti={sorgenti?.filter((s) => s.tipo === 'finestra') ?? []}
-                scelta={scelta}
-                scegli={setScelta}
-              />
+              {/* Tre schede invece di due elenchi in fila.
+                  
+                  Con venti finestre aperte l'elenco unico costringeva a
+                  scorrere per trovare il proprio schermo, che e' la scelta
+                  piu' frequente di tutte. */}
+              <div className="mb-4 flex gap-1 border-b border-bordo">
+                {CATEGORIE.map(([id, nome]) => (
+                  <button
+                    key={id}
+                    onClick={() => setCategoria(id)}
+                    className={`-mb-px border-b-2 px-3 py-2 text-sm transition-colors ${
+                      categoria === id
+                        ? 'border-vivo text-testo'
+                        : 'border-transparent text-testo-3 hover:text-testo-2'
+                    }`}
+                  >
+                    {nome}
+                    <span className="numeri ml-1.5 text-[11px] text-testo-3">
+                      {quante(id)}
+                    </span>
+                  </button>
+                ))}
+              </div>
+
+              {categoria === 'dispositivi' ? (
+                dispositivi.length === 0 ? (
+                  <Avviso tono="neutro">
+                    Nessuna camera o scheda di acquisizione collegata. Qui compaiono le schede di
+                    cattura e le webcam, per mostrare una console o una fotocamera esterna come se
+                    fosse uno schermo.
+                  </Avviso>
+                ) : (
+                  <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+                    {dispositivi.map((d) => (
+                      <button
+                        key={d.id}
+                        onClick={() => setScelta(d.id)}
+                        className={`rounded-xl border p-3 text-left transition-colors ${
+                          scelta === d.id
+                            ? 'border-vivo bg-vivo/10'
+                            : 'border-bordo bg-fondo hover:border-fondo-3'
+                        }`}
+                      >
+                        <span className="block truncate text-sm">{d.nome}</span>
+                        <span className="mt-0.5 block text-[11px] text-testo-3">
+                          dispositivo di acquisizione
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )
+              ) : (
+                <ElencoSorgenti
+                  titolo=""
+                  sorgenti={
+                    sorgenti?.filter((s) =>
+                      categoria === 'schermi' ? s.tipo === 'schermo' : s.tipo === 'finestra'
+                    ) ?? []
+                  }
+                  scelta={scelta}
+                  scegli={setScelta}
+                />
+              )}
             </>
           )}
         </div>

@@ -56,7 +56,14 @@ export interface StatoAggiornamento {
 export interface Sorgente {
   id: string
   nome: string
-  tipo: 'schermo' | 'finestra'
+  /**
+   * `dispositivo` non viene da desktopCapturer: lo costruisce il selettore
+   * partendo dalle camere e dalle schede di acquisizione. Passa dalla stessa
+   * strada di tutto il resto perche' per chi guarda e' identico — un riquadro
+   * che arriva da te — e sdoppiare il percorso avrebbe voluto dire due
+   * pubblicazioni da tenere d'accordo.
+   */
+  tipo: 'schermo' | 'finestra' | 'dispositivo'
   /** JPEG in base64, gia' come data URL. Serve solo al selettore. */
   anteprima: string
   /** L'icona dell'applicazione, quando Windows la fornisce. */

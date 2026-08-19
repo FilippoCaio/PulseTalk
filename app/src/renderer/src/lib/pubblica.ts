@@ -120,6 +120,20 @@ export async function catturaSchermo(
   preset: PresetSchermo,
   audioSistema: ModoAudioSistema
 ): Promise<MediaStream> {
+  // Una scheda di acquisizione o una camera non passano da desktopCapturer:
+  // si aprono come un microfono, con il loro id. L'audio di sistema qui non
+  // c'entra — se il dispositivo ha un suo audio arriva insieme.
+  if (sorgente?.tipo === 'dispositivo') {
+    return navigator.mediaDevices.getUserMedia({
+      video: {
+        deviceId: { exact: sorgente.id },
+        frameRate: { ideal: preset.fps, max: preset.fps },
+        ...(preset.altezza > 0 ? { height: { max: preset.altezza } } : {})
+      },
+      audio: false
+    })
+  }
+
   if (ponte.elettrone && sorgente) {
     await ponte.preparaCattura({ sorgenteId: sorgente.id, audioSistema })
   }

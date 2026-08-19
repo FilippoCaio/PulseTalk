@@ -725,10 +725,17 @@ describe('messaggi', () => {
     assert.deepEqual(messaggi.map((m) => m.testo), ['primo', 'secondo', 'terzo']);
   });
 
-  it('rifiuta un messaggio vuoto e uno in un canale vocale', async (t) => {
-    const { admin, testo, voce } = await conCanale(t);
+  it('rifiuta un messaggio vuoto', async (t) => {
+    const { admin, testo } = await conCanale(t);
     assert.equal((await scrivi(admin, testo, { testo: '   ' })).status, 400);
-    assert.equal((await scrivi(admin, voce, { testo: 'ciao' })).status, 400);
+  });
+
+  it('accetta i messaggi anche in un canale vocale, che ha la sua chat', async (t) => {
+    const { admin, voce } = await conCanale(t);
+    assert.equal((await scrivi(admin, voce, { testo: 'ci sono' })).status, 201);
+
+    const letti = await (await admin.chiama(`/api/canali/${voce.id}/messaggi`)).json();
+    assert.deepEqual(letti.messaggi.map((m) => m.testo), ['ci sono']);
   });
 
   it('risale all\'indietro a pagine', async (t) => {

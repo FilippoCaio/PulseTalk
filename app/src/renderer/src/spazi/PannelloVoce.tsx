@@ -121,11 +121,17 @@ export default function PannelloVoce({
           <SchermoCondividi />
         </Comando>
 
-        {riascoltoAttivo && (
-          <Comando titolo={`Riascolta gli ultimi ${secondiRiascolto} secondi`} premi={riascolta}>
-            <Riavvolgi />
-          </Comando>
-        )}
+        <Comando
+          titolo={
+            riascoltoAttivo
+              ? `Riascolta gli ultimi ${secondiRiascolto} secondi`
+              : 'Riascolto spento: si riaccende nelle impostazioni, sezione Audio'
+          }
+          premi={riascoltoAttivo ? riascolta : apriImpostazioni}
+          spento={!riascoltoAttivo}
+        >
+          <Riavvolgi />
+        </Comando>
       </div>
 
       {/* Riga tre: chi sono, e i due comandi che valgono ovunque. */}
@@ -261,6 +267,7 @@ function Comando({
   titolo,
   premi,
   acceso = false,
+  spento = false,
   tono = 'normale',
   secondario
 }: {
@@ -268,12 +275,15 @@ function Comando({
   titolo: string
   premi: () => void
   acceso?: boolean
+  /** Presente ma disattivato: si vede che esiste, e il titolo dice perche'. */
+  spento?: boolean
   tono?: 'normale' | 'male'
   /** La freccetta accanto, per chi ne ha una. */
   secondario?: { titolo: string; premi: () => void }
 }): React.JSX.Element {
-  const colore =
-    tono === 'male'
+  const colore = spento
+    ? 'text-testo-3/60 hover:bg-fondo-3 hover:text-testo-3'
+    : tono === 'male'
       ? 'text-male hover:bg-male/10'
       : acceso
         ? 'text-ok hover:bg-ok/10'

@@ -141,6 +141,7 @@ export default function App(): React.JSX.Element {
 
   const chat = usaChat(api, canaleAperto?.tipo === 'testo' ? canaleAperto : null, mondo.iscrivi)
 
+
   // -- La voce ---------------------------------------------------------------
 
   const entraDavvero = useCallback(
@@ -257,6 +258,16 @@ export default function App(): React.JSX.Element {
   }, [spazi, impostazioni, profili, utente?.id])
 
   const inVoce = ingresso && sessione.stato !== ConnectionState.Disconnected ? ingresso.canale.id : null
+  /**
+   * La chat del canale VOCALE, che e' una cosa diversa da quella del canale
+   * aperto: mentre si parla si puo' stare a leggere un canale di testo, e le
+   * due conversazioni non devono mescolarsi.
+   *
+   * Sono due istanze separate apposta. Una sola, spostata avanti e indietro,
+   * ricaricherebbe i messaggi ogni volta che si cambia scheda.
+   */
+  const canaleVocale = spazioAperto?.canali.find((c) => c.id === inVoce) ?? null
+  const chatVocale = usaChat(api, canaleVocale, mondo.iscrivi)
 
   /**
    * Ctrl+Shift+R: riascolta, da qualunque schermata.
@@ -483,6 +494,9 @@ export default function App(): React.JSX.Element {
                 profili={profili}
                 moderatore={spazioAperto.ruoloMio === 'admin'}
                 salvaImpostazioni={salva}
+                chatVocale={chatVocale}
+                canaleVocale={canaleVocale}
+                utente={utente}
                 schermoIntero={{
                   attivo: chiamataPiena,
                   alterna: () => setChiamataPiena((v) => !v)

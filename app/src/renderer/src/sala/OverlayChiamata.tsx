@@ -176,11 +176,23 @@ export default function OverlayChiamata({
             </>
           )}
 
-          {riascoltoAttivo && (
-            <Tondo titolo={`Riascolta gli ultimi ${secondiRiascolto} secondi`} premi={riascolta}>
-              <Riavvolgi />
-            </Tondo>
-          )}
+          {/* Sempre presente, anche spento.
+              
+              Prima compariva solo con il riascolto attivo, e un pulsante che a
+              volte c'e' e a volte no e' un pulsante che non si impara mai: chi
+              l'ha disattivato senza accorgersene non ha modo di capire dove sia
+              finito. Spento dice dov'e' e come riaccenderlo. */}
+          <Tondo
+            titolo={
+              riascoltoAttivo
+                ? `Riascolta gli ultimi ${secondiRiascolto} secondi`
+                : 'Riascolto spento: si riaccende nelle impostazioni, sezione Audio'
+            }
+            premi={riascoltoAttivo ? riascolta : apriImpostazioni}
+            spento={!riascoltoAttivo}
+          >
+            <Riavvolgi />
+          </Tondo>
 
           <Tondo tono="male" titolo="Esci dalla chiamata" premi={esci}>
             <Esci />
@@ -192,14 +204,17 @@ export default function OverlayChiamata({
       {/* In fondo alla riga, cioe' nell'angolo: non e' un comando della
           chiamata ma della finestra, e tenerlo attaccato agli altri lo
           farebbe premere per sbaglio al posto di "esci". */}
-      <div className="pointer-events-auto absolute right-4 bottom-4 rounded-2xl border border-bordo bg-fondo-2/95 p-1.5 shadow-xl shadow-black/40 backdrop-blur">
-        <Tondo
-          titolo={schermoIntero.attivo ? 'Torna alle colonne' : 'A tutto schermo'}
-          premi={schermoIntero.alterna}
-        >
-          {schermoIntero.attivo ? <SchermoNormale /> : <SchermoIntero />}
-        </Tondo>
-      </div>
+      {/* Nuda, senza la scatola degli altri: non fa parte del gruppo dei
+          comandi della chiamata, e incorniciarla la faceva sembrare un
+          secondo gruppo da un pulsante solo. */}
+      <button
+        onClick={schermoIntero.alterna}
+        title={schermoIntero.attivo ? 'Torna alle colonne' : 'A tutto schermo'}
+        aria-label={schermoIntero.attivo ? 'Torna alle colonne' : 'A tutto schermo'}
+        className="pointer-events-auto absolute right-5 bottom-6 text-testo-3 transition-colors hover:text-testo [&>svg]:h-5 [&>svg]:w-5"
+      >
+        {schermoIntero.attivo ? <SchermoNormale /> : <SchermoIntero />}
+      </button>
     </div>
   )
 }
@@ -211,16 +226,20 @@ function Tondo({
   titolo,
   premi,
   acceso = false,
+  spento = false,
   tono = 'normale'
 }: {
   children: React.ReactNode
   titolo: string
   premi: () => void
   acceso?: boolean
+  /** Presente ma disattivato: si vede che esiste, e il titolo dice perche'. */
+  spento?: boolean
   tono?: 'normale' | 'male'
 }): React.JSX.Element {
-  const colore =
-    tono === 'male'
+  const colore = spento
+    ? 'bg-fondo-3/50 text-testo-3 hover:text-testo-2'
+    : tono === 'male'
       ? 'bg-male/90 text-white hover:bg-male'
       : acceso
         ? 'bg-vivo/20 text-vivo hover:bg-vivo/30'

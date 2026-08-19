@@ -436,3 +436,12 @@ export function Pile(props: Props): React.JSX.Element {
     </Base>
   )
 }
+
+/** La chat del canale: un fumetto. */
+export function Fumetto(props: Props): React.JSX.Element {
+  return (
+    <Base {...props}>
+      <path d="M20.5 12a7.5 7.5 0 0 1-7.5 7.5H8.2L4 22v-4.1A7.5 7.5 0 0 1 13 4.5a7.5 7.5 0 0 1 7.5 7.5Z" />
+    </Base>
+  )
+}

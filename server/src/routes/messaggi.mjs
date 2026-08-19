@@ -58,9 +58,9 @@ export function rotteMessaggi(app, { db, eventi }) {
     async (richiesta, risposta) => {
       const esito = accessoAlCanale(db, richiesta.utente, richiesta.params.canale);
       if (esito.errore) return risposta.code(esito.stato).send({ errore: esito.errore });
-      if (esito.canale.tipo !== 'testo') {
-        return risposta.code(400).send({ errore: 'questo e\' un canale vocale' });
-      }
+      // Anche i canali vocali hanno la loro chat, come su Discord: si apre
+      // dal fumetto mentre si e dentro. Il divieto che stava qui aveva senso
+      // quando quella chat non esisteva.
 
       const { testo = '', rispondeA = null, allegati = [] } = richiesta.body ?? {};
       const pulito = String(testo).trim().slice(0, TESTO_MAX);

@@ -1,21 +1,25 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ConnectionState } from 'livekit-client'
 import type {
+  Canale,
   Impostazioni,
   Ingresso,
   ModoAudioSistema,
   PosizioneStriscia,
-  Sorgente
+  Sorgente,
+  Utente
 } from '@shared/tipi'
 import { PRESET_SCHERMO, type PresetSchermo } from '@shared/qualita'
 import type { Api } from '../lib/api'
 import type { Riquadro as DatiRiquadro, Sessione } from '../lib/usaSessione'
 import { usaMisura } from '../lib/misura'
 import { ponte } from '../ponte'
-import { Altoparlante, Chiudi, Riavvolgi } from '../icone'
+import { Altoparlante, Chiudi, Fumetto, Riavvolgi } from '../icone'
 import { Avviso } from '../ui'
 import OverlayChiamata from './OverlayChiamata'
 import MenuRiquadro from './MenuRiquadro'
+import Chat from '../chat/Chat'
+import type { usaChat } from '../lib/usaChat'
 import Riquadro from './Riquadro'
 import SceltaSorgente from './SceltaSorgente'
 import type { VoceVolume } from './Volume'
@@ -50,7 +54,10 @@ export default function Sala({
   esci,
   apriImpostazioni,
   salvaImpostazioni,
-  schermoIntero
+  schermoIntero,
+  chatVocale,
+  canaleVocale,
+  utente
 }: {
   api: Api
   ingresso: Ingresso
@@ -74,6 +81,13 @@ export default function Sala({
    * la cosa chiesta e non puo' fallire.
    */
   schermoIntero: { attivo: boolean; alterna: () => void }
+  /**
+   * La chat di QUESTO canale vocale, distinta da quella del canale di testo
+   * che si sta magari leggendo altrove.
+   */
+  chatVocale: ReturnType<typeof usaChat>
+  canaleVocale: Canale | null
+  utente: Utente
 }): React.JSX.Element {
   const [aFuoco, setAFuoco] = useState<string | null>(null)
   // Vero quando l'utente ha tolto lui il fuoco. Serve a non rimetterlo subito:
@@ -175,6 +189,15 @@ export default function Sala({
 
   /** Il riquadro su cui e' aperto il menu del tasto destro, e dove. */
   const [menu, setMenu] = useState<{ x: number; y: number; id: string } | null>(null)
+
+  /**
+   * La chat del canale vocale, a destra.
+   *
+   * Chiusa di partenza: chi entra in una stanza vuole vedere le facce, non un
+   * pannello di testo che si mangia un terzo della larghezza. Si apre dal
+   * fumetto in alto a destra e resta com'e' stata lasciata.
+   */
+  const [mostraChat, setMostraChat] = useState(false)
 
   /** Gli aloni ancora vivi su questo riquadro. */
   const puntatoriDi = (riquadro: DatiRiquadro): typeof sessione.puntatori =>
@@ -312,8 +335,12 @@ export default function Sala({
   const aggancio: PosizioneStriscia = impostazioni.posizioneStriscia ?? 'sotto'
   const collegando = sessione.stato === ConnectionState.Reconnecting
 
+  // `relative` sulla radice qui sotto e l ancora della barra dei comandi.
+  // Senza, quella si aggrappava alla radice dell applicazione — che comprende
+  // le due colonne di sinistra — e finiva centrata sulla finestra invece che
+  // sulla schermata della chiamata.
   return (
-    <div ref={radice} className="flex h-full min-h-0 flex-col bg-fondo">
+    <div ref={radice} className="relative flex h-full min-h-0 flex-col bg-fondo">
       {/* A tutto schermo l'intestazione se ne va: chi ci e' andato l'ha fatto
           per vedere il video, e il nome del canale lo sa gia'. */}
       {!schermoIntero.attivo && (
@@ -343,7 +370,23 @@ export default function Sala({
               </p>
             </div>
           </div>
-          {collegando && <span className="respiro text-xs text-attenzione">riprendo la linea…</span>}
+          <div className="flex shrink-0 items-center gap-3">
+            {collegando && (
+              <span className="respiro text-xs text-attenzione">riprendo la linea…</span>
+            )}
+            {canaleVocale && (
+              <button
+                onClick={() => setMostraChat((v) => !v)}
+                title={mostraChat ? 'Chiudi la chat del canale' : 'Apri la chat del canale'}
+                aria-label={mostraChat ? 'Chiudi la chat del canale' : 'Apri la chat del canale'}
+                className={`transition-colors ${
+                  mostraChat ? 'text-vivo' : 'text-testo-3 hover:text-testo'
+                }`}
+              >
+                <Fumetto className="h-5 w-5" />
+              </button>
+            )}
+          </div>
         </header>
       )}
 
@@ -500,6 +543,21 @@ export default function Sala({
             />
           )}
         </main>
+
+        {/* La chat, a destra dei riquadri e non sopra: sovrapposta coprirebbe
+            proprio le persone che si stanno guardando mentre si scrive. */}
+        {mostraChat && canaleVocale && (
+          <aside className="flex w-80 shrink-0 flex-col border-l border-bordo bg-fondo-2">
+            <Chat
+              api={api}
+              canale={canaleVocale}
+              chat={chatVocale}
+              io={utente}
+              profili={profili}
+              amministra={moderatore}
+            />
+          </aside>
+        )}
 
       </div>
 
