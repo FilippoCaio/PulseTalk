@@ -351,34 +351,49 @@ function RigaCanale({
       {/* Chi sta dentro al canale vocale, sotto al suo nome.
           Aria fra una riga e l'altra, e non per gusto: senza, le pastiglie
           colorate si toccano e l'elenco diventa una colonna unica di colore in
-          cui le facce non si distinguono piu' l'una dall'altra. L'anello verde
-          poi ha bisogno del suo spazio per non finire addosso al vicino. */}
+          cui le facce non si distinguono piu' l'una dall'altra. */}
       {canale.tipo === 'voce' && canale.presenti.length > 0 && (
         <div className="mt-1 mb-2 ml-6 space-y-2">
           {canale.presenti.map((persona) => {
             // L'identita' sulla SFU e' `u<id>`: e' l'unica chiave su cui una
             // presenza e un profilo combaciano.
             const foto = profili?.get(Number(persona.identita.slice(1)))?.avatar ?? null
-            const anello = parlanti?.has(persona.identita)
-              ? 'ring-2 ring-ok ring-offset-2 ring-offset-fondo-2'
-              : 'ring-0'
+            const parla = parlanti?.has(persona.identita) ?? false
 
             return (
             <div key={persona.identita} className="flex items-center gap-2 text-xs text-testo-2">
+              {/* L'anello sta DENTRO l'icona, non fuori.
+                  
+                  Fuori — con ring-offset — ogni faccia si portava dietro due
+                  pixel di corona, e con tre persone che parlano insieme le
+                  corone si toccavano fra loro e con i nomi. Dentro occupa
+                  zero spazio in piu': l'elenco non si muove quando qualcuno
+                  attacca a parlare.
+                  
+                  E' un elemento sovrapposto e non un `ring-inset`, perche' un
+                  bordo interno disegnato con l'ombra finisce sotto al
+                  contenuto e su una foto profilo non si vedrebbe. */}
+              <span className="relative h-6 w-6 shrink-0">
               {foto ? (
                 <img
                   src={foto}
                   alt=""
-                  className={`h-6 w-6 shrink-0 rounded-full object-cover transition-all duration-150 ${anello}`}
+                  className="h-6 w-6 rounded-full object-cover"
                 />
               ) : (
                 <span
-                  className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-black/75 transition-all duration-150 ${anello}`}
+                  className="flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-semibold text-black/75"
                   style={{ background: coloreDi(persona.identita) }}
                 >
                   {inizialiDi(persona.nome)}
                 </span>
               )}
+                <span
+                  className={`pointer-events-none absolute inset-0 rounded-full border-2 transition-colors duration-100 ${
+                    parla ? 'border-ok' : 'border-transparent'
+                  }`}
+                />
+              </span>
               <span className="min-w-0 flex-1 truncate">{persona.nome}</span>
               {(microfoniSpenti ? microfoniSpenti.has(persona.identita) : !persona.microfono) && (
                 <span className="shrink-0 text-testo-3" title="Microfono spento">

@@ -23,6 +23,8 @@ import {
   catturaSchermo,
   chiudiCatenaMicrofono,
   impostaGuadagnoMicrofono,
+  livelloMicrofono,
+  microfonoPassa,
   impostaSogliaMicrofono,
   pubblicaSchermo,
   pubblicaSoloAudio,
@@ -31,6 +33,7 @@ import {
 import { configuraSuoni, suona } from './suoni'
 import { coloreDi } from './avatar'
 import { ponte } from '../ponte'
+import { creaRilevatoreVoci, type RilevatoreVoci } from './vociAttive'
 import { creaRiascolto, type Riascolto } from './riascolto'
 
 /**
@@ -354,6 +357,21 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
   const [motivoUscita, setMotivoUscita] = useState<string | null>(null)
   const [messaggi, setMessaggi] = useState<Messaggio[]>([])
   const [cheParla, setCheParla] = useState<Set<string>>(new Set())
+
+  /**
+   * Chi parla, misurato qui invece che chiesto alla SFU.
+   *
+   * Il calcolo del server ha una finestra di 400 ms smorzata: fra l'apertura
+   * di bocca e il bordo verde passa quasi un secondo. Le tracce pero' arrivano
+   * qui gia' decodificate, e misurarle sul posto toglie di mezzo sia la
+   * finestra sia il viaggio di ritorno.
+   *
+   * Il dato della SFU non si butta: resta valido per chi, per qualunque
+   * motivo, qui non si riesce a misurare.
+   */
+  const rilevatore = useRef<RilevatoreVoci | null>(null)
+  const [vociLocali, setVociLocali] = useState<Set<string>>(new Set())
+  const [vociSfu, setVociSfu] = useState<Set<string>>(new Set())
   const [sordina, setSordina] = useState(false)
   const [audioBloccato, setAudioBloccato] = useState(false)
   const [volumeGenerale, setVolumeGenerale] = useState(1)
@@ -447,6 +465,46 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
    * proprio schermo, non la finestra di PulseTalk, e un alone dentro all'app
    * sarebbe un alone che non vede nessuno.
    */
+  // Il rilevatore vive quanto la pagina: aprirlo e chiuderlo a ogni ingresso
+  // vorrebbe dire un AudioContext nuovo ogni volta, e Chromium ne concede un
+  // numero limitato per pagina.
+  useEffect(() => {
+    rilevatore.current = creaRilevatoreVoci(setVociLocali)
+    return () => {
+      rilevatore.current?.chiudi()
+      rilevatore.current = null
+    }
+  }, [])
+
+  // La propria voce non arriva da una traccia ricevuta: si legge dalla catena
+  // del microfono, che sta gia' misurando per il cancello e per il misuratore.
+  useEffect(() => {
+    const stanza = stanzaRef.current
+    if (!stanza || stato !== ConnectionState.Connected) return
+
+    const locale = stanza.localParticipant
+    rilevatore.current?.livelloLocale(locale.identity, () => {
+      // Due condizioni, e servono entrambe. A microfono spento la catena
+      // continua a misurare il dispositivo, e senza il primo controllo il
+      // proprio bordo si accenderebbe parlando da mutati. Con il cancello
+      // chiuso il suono c'e' ma non esce, e accendere il bordo direbbe agli
+      // altri una cosa che loro non stanno sentendo.
+      if (!locale.isMicrophoneEnabled) return 0
+      if (!microfonoPassa()) return 0
+      return livelloMicrofono()
+    })
+  }, [stato])
+
+  useEffect(() => {
+    const misurate = rilevatore.current?.misurate() ?? new Set<string>()
+    const unione = new Set(vociLocali)
+    // Della SFU si tiene solo chi non stiamo gia' misurando: sommare i due
+    // farebbe restare acceso il bordo per gli 800 ms di coda del server,
+    // buttando via il guadagno.
+    for (const chi of vociSfu) if (!misurate.has(chi)) unione.add(chi)
+    setCheParla(unione)
+  }, [vociLocali, vociSfu])
+
   const accogliPuntatore = useCallback((arrivato: Puntatore) => {
     setPuntatori((prima) => [...prima.filter((p) => p.id !== arrivato.id), arrivato])
 
@@ -519,7 +577,7 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
       })
 
       stanza.on(RoomEvent.ActiveSpeakersChanged, (parlanti: Participant[]) => {
-        setCheParla(new Set(parlanti.map((p) => p.identity)))
+        setVociSfu(new Set(parlanti.map((p) => p.identity)))
       })
 
       // L'audio degli altri, attaccato a mano.
@@ -538,6 +596,7 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
         // che si sta cercando di recuperare.
         if (pubblicazione.source === Track.Source.Microphone && traccia.mediaStreamTrack) {
           riascoltoRef.current?.aggiungi(partecipante.identity, traccia.mediaStreamTrack)
+          rilevatore.current?.aggiungi(partecipante.identity, traccia.mediaStreamTrack)
         }
         // Un elemento appena creato parte a volume pieno: se questa persona
         // era stata abbassata o zittita, senza questa riga il primo istante di
@@ -549,6 +608,7 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
         for (const elemento of traccia.detach()) elemento.remove()
         if (pubblicazione.source === Track.Source.Microphone) {
           riascoltoRef.current?.togli(partecipante.identity)
+          rilevatore.current?.togli(partecipante.identity)
         }
       })
 
