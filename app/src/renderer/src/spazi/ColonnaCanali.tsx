@@ -11,6 +11,7 @@ import {
   Esci,
   Lente,
   Lucchetto,
+  Matita,
   MicrofonoSpento,
   Piu,
   SchermoCondividi,
@@ -35,6 +36,7 @@ export default function ColonnaCanali({
   esciDallaVoce,
   crea,
   elimina,
+  modificaCanale,
   apriRicerca,
   gestisciIscritti,
   profili,
@@ -55,6 +57,8 @@ export default function ColonnaCanali({
     privato: boolean
   }) => Promise<void>
   elimina: (canale: Canale) => Promise<void>
+  /** Rinomina, cambia icona e argomento. */
+  modificaCanale: (canale: Canale, modifiche: { nome: string; icona: string; argomento: string }) => Promise<void>
   apriRicerca: () => void
   /** Apre l'elenco di chi sta dentro a un canale privato. */
   gestisciIscritti: (canale: Canale) => void
@@ -139,6 +143,7 @@ export default function ColonnaCanali({
                   scegli={() => (canale.tipo === 'voce' ? entraInVoce(canale) : scegli(canale))}
                   esci={esciDallaVoce}
                   gestisciIscritti={() => gestisciIscritti(canale)}
+                  modifica={(m) => modificaCanale(canale, m)}
                   profili={profili}
                   microfoniSpenti={canale.id === inVoce ? microfoniSpenti : undefined}
                   parlanti={canale.id === inVoce ? parlanti : undefined}
@@ -206,6 +211,7 @@ function RigaCanale({
   esci,
   elimina,
   gestisciIscritti,
+  modifica,
   profili,
   microfoniSpenti,
   parlanti
@@ -218,12 +224,14 @@ function RigaCanale({
   esci: () => void
   elimina: () => Promise<void>
   gestisciIscritti: () => void
+  modifica: (m: { nome: string; icona: string; argomento: string }) => Promise<void>
   profili?: Map<number, { nome: string; avatar: string | null }>
   microfoniSpenti?: Set<string>
   /** Valorizzato solo per il canale in cui si sta parlando adesso. */
   parlanti?: Set<string>
 }): React.JSX.Element {
   const [conferma, setConferma] = useState(false)
+  const [modificaAperta, setModificaAperta] = useState(false)
 
   return (
     <div>
@@ -233,8 +241,13 @@ function RigaCanale({
         }`}
       >
         <button onClick={scegli} className="flex min-w-0 flex-1 items-center gap-1.5 text-left">
+          {/* L'icona scelta prende il posto del simbolo del tipo. Il tipo
+              resta leggibile lo stesso: un canale vocale ha le persone
+              elencate sotto, e uno di testo no. */}
           <span className="shrink-0 text-testo-3">
-            {canale.tipo === 'voce' ? (
+            {canale.icona ? (
+              <span className="block w-4 text-center text-sm leading-4">{canale.icona}</span>
+            ) : canale.tipo === 'voce' ? (
               <Altoparlante className="h-4 w-4" />
             ) : (
               <Cancelletto className="h-4 w-4" />
@@ -280,6 +293,17 @@ function RigaCanale({
           </button>
         )}
 
+        {amministra && !inVoce && !conferma && (
+          <button
+            onClick={() => setModificaAperta(true)}
+            title={`Modifica ${canale.nome}`}
+            aria-label={`Modifica ${canale.nome}`}
+            className="shrink-0 text-testo-3 opacity-0 group-hover:opacity-100 hover:text-testo"
+          >
+            <Matita className="h-4 w-4" />
+          </button>
+        )}
+
         {amministra &&
           !inVoce &&
           (conferma ? (
@@ -312,6 +336,17 @@ function RigaCanale({
             </button>
           ))}
       </div>
+
+      {modifica && modificaAperta && (
+        <ModuloModifica
+          canale={canale}
+          salva={async (m) => {
+            await modifica(m)
+            setModificaAperta(false)
+          }}
+          annulla={() => setModificaAperta(false)}
+        />
+      )}
 
       {/* Chi sta dentro al canale vocale, sotto al suo nome.
           Aria fra una riga e l'altra, e non per gusto: senza, le pastiglie
@@ -458,6 +493,102 @@ function ModuloCanale({
             Annulla
           </Bottone>
         </div>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Rinomina un canale, gli mette un'icona, gli cambia argomento.
+ *
+ * Inline sotto alla riga e non in una finestra sopra a tutto: si sta
+ * modificando una voce di un elenco, e vedere le altre intorno mentre si
+ * sceglie il nome e' cio' che impedisce di chiamarne due allo stesso modo.
+ */
+function ModuloModifica({
+  canale,
+  salva,
+  annulla
+}: {
+  canale: Canale
+  salva: (m: { nome: string; icona: string; argomento: string }) => Promise<void>
+  annulla: () => void
+}): React.JSX.Element {
+  const [nome, setNome] = useState(canale.nome)
+  const [icona, setIcona] = useState(canale.icona ?? '')
+  const [argomento, setArgomento] = useState(canale.argomento)
+  const [errore, setErrore] = useState<string | null>(null)
+  const [salvando, setSalvando] = useState(false)
+
+  const invia = async (): Promise<void> => {
+    const pulito = nome.trim()
+    if (!pulito) {
+      setErrore("Il nome non puo' restare vuoto.")
+      return
+    }
+    setSalvando(true)
+    setErrore(null)
+    try {
+      await salva({ nome: pulito, icona: icona.trim(), argomento })
+    } catch (e) {
+      setErrore((e as Error).message)
+      setSalvando(false)
+    }
+  }
+
+  return (
+    <div className="mt-1 mb-2 ml-6 space-y-2 rounded-lg border border-bordo bg-fondo-2 p-2">
+      <div className="flex gap-1.5">
+        {/* Il campo dell'icona e' largo quanto un'emoji: cosi' si capisce da
+            solo che li' non ci va una parola. */}
+        <input
+          value={icona}
+          onChange={(e) => setIcona(e.target.value)}
+          placeholder="🎮"
+          maxLength={4}
+          aria-label="Icona"
+          className="w-10 shrink-0 rounded-md border border-bordo bg-fondo px-1 py-1 text-center text-sm"
+        />
+        <input
+          value={nome}
+          onChange={(e) => setNome(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') void invia()
+            if (e.key === 'Escape') annulla()
+          }}
+          maxLength={40}
+          aria-label="Nome del canale"
+          autoFocus
+          className="min-w-0 flex-1 rounded-md border border-bordo bg-fondo px-2 py-1 text-sm"
+        />
+      </div>
+
+      <input
+        value={argomento}
+        onChange={(e) => setArgomento(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') void invia()
+          if (e.key === 'Escape') annulla()
+        }}
+        placeholder="Argomento (facoltativo)"
+        maxLength={200}
+        aria-label="Argomento"
+        className="w-full rounded-md border border-bordo bg-fondo px-2 py-1 text-xs"
+      />
+
+      {errore && <p className="text-xs text-male">{errore}</p>}
+
+      <div className="flex gap-1.5">
+        <button
+          onClick={() => void invia()}
+          disabled={salvando}
+          className="rounded-md bg-vivo px-2 py-1 text-xs font-medium text-fondo disabled:opacity-50"
+        >
+          {salvando ? 'Salvo…' : 'Salva'}
+        </button>
+        <button onClick={annulla} className="rounded-md px-2 py-1 text-xs text-testo-3 hover:text-testo">
+          Annulla
+        </button>
       </div>
     </div>
   )

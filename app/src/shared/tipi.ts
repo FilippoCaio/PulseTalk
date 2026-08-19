@@ -135,6 +135,15 @@ export interface Impostazioni {
   volumeMicrofono: number
   volumeUscita: number
 
+  /**
+   * La soglia sotto la quale il microfono non trasmette, da 0 a 1.
+   *
+   * L'automute: si alza finche' il rumore di fondo resta sotto e la voce sopra.
+   * Zero e' spento, ed e' il valore di partenza — un cancello tarato a caso
+   * taglia le parole, e va regolato guardando il misuratore nelle impostazioni.
+   */
+  sogliaMicrofono: number
+
   /** I suoni delle azioni: muto, camera, condivisione, chi entra e chi esce. */
   suoni: boolean
   volumeSuoni: number
@@ -217,6 +226,7 @@ export const IMPOSTAZIONI_INIZIALI: Impostazioni = {
 
   volumeMicrofono: 1,
   volumeUscita: 1,
+  sogliaMicrofono: 0,
 
   suoni: true,
   volumeSuoni: 0.6,
@@ -259,6 +269,8 @@ export interface Utente {
   ruolo: 'ospite' | 'membro' | 'admin'
   /** La foto profilo come data URL. Nullo: si ripiega sulle iniziali. */
   avatar: string | null
+  /** Lo stato scelto a mano. Sul proprio profilo puo essere `invisibile`; su quello altrui mai. */
+  stato: StatoUtente
 }
 
 export interface Sessione {
@@ -286,10 +298,22 @@ export interface Categoria {
   posizione: number
 }
 
+/**
+ * Lo stato scelto a mano.
+ *
+ * `offline` non si sceglie: e cio che gli altri vedono al posto di
+ * `invisibile`, ed e il motivo per cui invisibile funziona — dal server esce
+ * gia tradotto, quindi nemmeno un client modificato saprebbe distinguerlo da
+ * chi ha davvero chiuso l applicazione.
+ */
+export type StatoUtente = 'online' | 'inattivo' | 'occupato' | 'invisibile' | 'offline'
+
 export interface Canale {
   id: number
   chiave: string
   nome: string
+  /** Un'emoji davanti al nome, per riconoscerlo a colpo d'occhio. */
+  icona: string | null
   tipo: 'testo' | 'voce'
   argomento: string
   categoria: number | null

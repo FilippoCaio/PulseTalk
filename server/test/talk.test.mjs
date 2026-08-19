@@ -512,6 +512,39 @@ describe('spazi e canali', () => {
     assert.equal((await admin.chiama(`/api/canali/${canale.id}`, { method: 'DELETE' })).status, 200);
   });
 
+  it("l'icona di un canale si mette, si cambia e si toglie", async (t) => {
+    const { talk, base } = await conServer(t);
+    const admin = await accesso(talk, base, { nome: 'Capo', ruolo: 'admin' });
+    const { spazio } = await conSpazio(admin.chiama, 'Casa');
+
+    const creato = await admin.chiama(`/api/spazi/${spazio.id}/canali`, {
+      method: 'POST',
+      body: JSON.stringify({ nome: 'Giochi', tipo: 'voce' }),
+    });
+    const { canale } = await creato.json();
+    assert.equal(canale.icona ?? null, null);
+
+    const conIcona = await admin.chiama(`/api/canali/${canale.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ icona: '🎮' }),
+    });
+    assert.equal(conIcona.status, 200);
+    assert.equal((await conIcona.json()).canale.icona, '🎮');
+
+    // Stringa vuota vuol dire "togli": e' la distinzione che senza codice
+    // apposta si perde, lasciando un'icona che non si leva piu'.
+    const senza = await admin.chiama(`/api/canali/${canale.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ icona: '' }),
+    });
+    const finale = (await senza.json()).canale;
+    assert.equal(finale.icona ?? null, null);
+    // E il nome non e' stato toccato da nessuna delle due PATCH: si stava
+    // cambiando solo l'icona, e un aggiornamento parziale che azzera il resto
+    // e' il modo classico in cui questa rotta si rompe.
+    assert.equal(finale.nome, 'Giochi');
+  });
+
   it('a due canali con lo stesso nome aggiunge un numero, invece di rifiutare', async (t) => {
     const { talk, base } = await conServer(t);
     const admin = await accesso(talk, base, { nome: 'Capo', ruolo: 'admin' });

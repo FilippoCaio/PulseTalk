@@ -6,6 +6,7 @@ import {
   Room,
   RoomEvent,
   Track,
+  VideoQuality,
   type LocalParticipant,
   type Participant,
   type RemoteParticipant,
@@ -14,14 +15,17 @@ import {
 } from 'livekit-client'
 import type { Impostazioni, Ingresso, ModoAudioSistema, Sorgente } from '@shared/tipi'
 import type { ModoAudio } from '@shared/qualita'
-import { PRESET_CAMERA, type Limiti, type PresetSchermo } from '@shared/qualita'
+import { PRESET_CAMERA, PRESET_SCHERMO, type Limiti, type PresetSchermo } from '@shared/qualita'
 import {
   accendiCamera,
   accendiMicrofono,
+  cambiaQualitaSchermo,
   catturaSchermo,
   chiudiCatenaMicrofono,
   impostaGuadagnoMicrofono,
+  impostaSogliaMicrofono,
   pubblicaSchermo,
+  pubblicaSoloAudio,
   type SchermoPubblicato
 } from './pubblica'
 import { configuraSuoni, suona } from './suoni'
@@ -261,6 +265,14 @@ export interface Sessione {
   schermiAttivi: { id: string; etichetta: string }[]
   /** Chi ha il microfono spento, dal vivo. Vale solo per il canale in cui si e'. */
   microfoniSpenti: Set<string>
+  /** Andata e ritorno verso la SFU in millisecondi. Null: non ancora misurabile. */
+  latenza: number | null
+  /** Dice quale schermo si sta guardando: gli altri scendono di qualita'. */
+  applicaQualita: (idAFuoco: string | null) => void
+  /** Cambia la qualita' di una propria condivisione senza interromperla. */
+  cambiaQualitaCondivisione: (idTraccia: string, presetId: string) => Promise<void>
+  /** Con quale preset sta andando una propria condivisione. */
+  presetDiCondivisione: (idTraccia: string) => string | null
   /** Il browser non lascia partire il suono finche' non si clicca. */
   audioBloccato: boolean
   sbloccaAudio(): Promise<void>
@@ -292,7 +304,9 @@ export interface Sessione {
   condividi(
     sorgente: Sorgente | null,
     preset: PresetSchermo,
-    audioSistema?: ModoAudioSistema
+    audioSistema?: ModoAudioSistema,
+    soloAudio?: boolean,
+    bitrateAudio?: number
   ): Promise<void>
   smettiDiCondividere(id?: string): Promise<void>
   manda(testo: string): void
@@ -869,6 +883,131 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
     suona(sordinaRef.current ? 'sordinaAccesa' : 'sordinaSpenta')
   }, [applicaAudio, ridisegna])
 
+  /**
+   * La qualita' di cio' che si RICEVE, decisa da cosa si sta guardando.
+   *
+   * Chi guarda uno schermo in primo piano lo vuole intero; gli altri schermi,
+   * grandi come francobolli nella striscia, non hanno bisogno di trenta
+   * fotogrammi al secondo per dire che sono ancora li'. Abbassarli fa
+   * risparmiare banda a chi riceve senza togliere niente a cio' che sta
+   * effettivamente guardando.
+   *
+   * Sugli schermi il simulcast e' spento di proposito — chi condivide lo fa per
+   * farsi leggere — quindi qui LOW non toglie pixel: toglie fotogrammi, grazie
+   * ai livelli temporali di VP9. E' la degradazione giusta per un francobollo.
+   *
+   * Le persone restano fuori: una faccia sgranata in un riquadro piccolo e' il
+   * genere di risparmio che si nota subito e non ripaga.
+   */
+  /** Con quale preset e' partita ogni condivisione, per id di traccia. */
+  const presetSchermiRef = useRef(new Map<string, string>())
+
+  /**
+   * Cambia la qualita' di una condivisione gia' accesa.
+   *
+   * Non la ferma e non la ripubblica: bitrate e fotogrammi si riscrivono sul
+   * mittente vivo, quindi chi sta guardando non vede nessuna interruzione. Chi
+   * condivide una partita puo' alzare il bitrate mentre gioca.
+   */
+  const cambiaQualitaCondivisione = useCallback(
+    async (idTraccia: string, presetId: string) => {
+      const pubblicato = schermiRef.current.get(idTraccia)
+      if (!pubblicato) return
+      const preset = PRESET_SCHERMO.find((p) => p.id === presetId)
+      if (!preset) return
+
+      try {
+        await cambiaQualitaSchermo(pubblicato, preset, limitiRef.current!)
+        presetSchermiRef.current.set(idTraccia, presetId)
+        ridisegna()
+      } catch (e) {
+        setErrore(`Non sono riuscito a cambiare la qualita': ${(e as Error).message}`)
+      }
+    },
+    [ridisegna]
+  )
+
+  /** Il preset con cui sta andando una condivisione, se e' una nostra. */
+  const presetDiCondivisione = useCallback(
+    (idTraccia: string): string | null => presetSchermiRef.current.get(idTraccia) ?? null,
+    []
+  )
+
+  const applicaQualita = useCallback(
+    (idAFuoco: string | null) => {
+      const stanza = stanzaRef.current
+      if (!stanza) return
+
+      // Con adaptiveStream acceso e' livekit a decidere in base alla
+      // dimensione del riquadro: mettere bocca qui vorrebbe dire litigare con
+      // lui a ogni ridisegno, e vincerebbe lui.
+      if (impostazioni.adattaAllaFinestra) return
+
+      for (const partecipante of stanza.remoteParticipants.values()) {
+        for (const pubblicazione of partecipante.trackPublications.values()) {
+          if (pubblicazione.source !== Track.Source.ScreenShare) continue
+          if (!pubblicazione.isSubscribed) continue
+
+          // Senza nessuno in primo piano si torna tutti pieni: in griglia si
+          // guardano davvero tutti.
+          const alta = idAFuoco === null || pubblicazione.trackSid === idAFuoco
+          pubblicazione.setVideoQuality(alta ? VideoQuality.HIGH : VideoQuality.LOW)
+        }
+      }
+    },
+    [impostazioni.adattaAllaFinestra]
+  )
+
+  /**
+   * Il tempo di andata e ritorno verso la SFU, in millisecondi.
+   *
+   * Si legge dalle statistiche WebRTC della propria traccia, che e' l'unica
+   * strada pubblica: livekit-client non espone un RTT suo, e frugare dentro al
+   * suo motore vorrebbe dire rompersi al primo aggiornamento della libreria.
+   *
+   * Null finche' non c'e' niente da misurare — appena entrati, o con il
+   * microfono mai acceso: meglio niente che uno zero che sembra un valore.
+   */
+  const [latenza, setLatenza] = useState<number | null>(null)
+
+  useEffect(() => {
+    if (stato !== ConnectionState.Connected) {
+      setLatenza(null)
+      return
+    }
+
+    const misura = async (): Promise<void> => {
+      const stanza = stanzaRef.current
+      if (!stanza) return
+
+      // La propria traccia se c'e', altrimenti una qualunque ricevuta: la
+      // coppia di connessioni e' la stessa, e il numero pure.
+      const locale = stanza.localParticipant.getTrackPublication(Track.Source.Microphone)
+      const traccia =
+        locale?.track ??
+        [...stanza.remoteParticipants.values()]
+          .flatMap((p) => [...p.trackPublications.values()])
+          .find((pu) => pu.isSubscribed && pu.track)?.track
+
+      const rapporto = await traccia?.getRTCStatsReport().catch(() => undefined)
+      if (!rapporto) return
+
+      for (const voce of rapporto.values()) {
+        if (voce.type === 'candidate-pair' && voce.state === 'succeeded') {
+          const secondi = voce.currentRoundTripTime
+          if (typeof secondi === 'number') {
+            setLatenza(Math.round(secondi * 1000))
+            return
+          }
+        }
+      }
+    }
+
+    void misura()
+    const battito = window.setInterval(() => void misura(), 3000)
+    return () => window.clearInterval(battito)
+  }, [stato])
+
   const impostaVolumeGenerale = useCallback(
     (volume: number) => {
       generaleRef.current = volume
@@ -924,7 +1063,11 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
     async (
       sorgente: Sorgente | null,
       preset: PresetSchermo,
-      audioSistema?: ModoAudioSistema
+      audioSistema?: ModoAudioSistema,
+      /** Solo l'audio, senza immagine: per la musica. */
+      soloAudio = false,
+      /** Il bitrate dell'audio condiviso. Serve solo con soloAudio. */
+      bitrateAudio = 510_000
     ) => {
       const stanza = stanzaRef.current
       const limiti = limitiRef.current
@@ -942,13 +1085,31 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
         // La scelta fatta nel selettore vince su quella di serie: si puo'
         // mandare l'audio di questa condivisione e non della prossima senza
         // dover cambiare le impostazioni e poi rimetterle a posto.
+        // Senza immagine l'audio va chiesto comunque: Chromium non cattura
+        // l'audio di una sorgente senza catturarne anche il video, e la
+        // traccia video la butteremo via subito dopo.
         const stream = await catturaSchermo(
           sorgente,
           preset,
-          audioSistema ?? impostazioni.audioSistema
+          soloAudio ? 'condiviso' : (audioSistema ?? impostazioni.audioSistema)
         )
         const etichetta = sorgente?.nome ?? `Schermo ${schermiRef.current.size + 1}`
-        const pubblicato = await pubblicaSchermo(
+
+        const finita = (idTraccia: string): void => {
+          // Chiusa dalla barra di Windows o perche' la finestra non c'e'
+          // piu': si toglie dall'elenco e si fa lo stesso rumore di quando la
+          // si chiude dal pulsante, perche' per chi guarda e' successa
+          // esattamente la stessa cosa.
+          schermiRef.current.delete(idTraccia)
+          schermiSuMonitorRef.current.delete(idTraccia)
+          presetSchermiRef.current.delete(idTraccia)
+          suona('condivisioneFinita')
+          ridisegna()
+        }
+
+        const pubblicato = soloAudio
+          ? await pubblicaSoloAudio(stanza, stream, limiti, etichetta, bitrateAudio, finita)
+          : await pubblicaSchermo(
           stanza,
           stream,
           preset,
@@ -959,19 +1120,19 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
             // piu': si toglie dall'elenco e si fa lo stesso rumore di quando
             // la si chiude dal pulsante, perche' per chi guarda e' successa
             // esattamente la stessa cosa.
-            schermiRef.current.delete(idTraccia)
-            schermiSuMonitorRef.current.delete(idTraccia)
-            suona('condivisioneFinita')
-            ridisegna()
+            finita(idTraccia)
           }
         )
-        schermiRef.current.set(pubblicato.video.trackSid, pubblicato)
+        schermiRef.current.set(pubblicato.id, pubblicato)
+        // Serve a sapere quale voce e' spuntata nel menu, e a non riapplicare
+        // una qualita' che c'e' gia'.
+        presetSchermiRef.current.set(pubblicato.id, preset.id)
         // Serve al puntatore: quando qualcuno indica questo riquadro, e' su
         // questo monitor che va disegnato l'alone. Le finestre singole non
         // hanno un monitor proprio — di quelle Electron non conosce la
         // posizione — e li' il cerchietto resta dentro all'app.
         schermiSuMonitorRef.current.set(
-          pubblicato.video.trackSid,
+          pubblicato.id,
           sorgente?.tipo === 'schermo' ? sorgente.schermoId : null
         )
         suona('condivisioneIniziata')
@@ -998,6 +1159,7 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
       }
       if (id) {
         schermiRef.current.delete(id)
+        presetSchermiRef.current.delete(id)
         schermiSuMonitorRef.current.delete(id)
       } else {
         schermiRef.current.clear()
@@ -1098,6 +1260,13 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
     impostaGuadagnoMicrofono(impostazioni.volumeMicrofono ?? 1)
   }, [impostazioni.volumeMicrofono])
 
+  // La soglia dell'automute, applicata mentre si parla come il guadagno: la si
+  // regola guardando il misuratore, e aspettare un rientro in stanza per
+  // sentire l'effetto renderebbe la regolazione impossibile.
+  useEffect(() => {
+    impostaSogliaMicrofono(impostazioni.sogliaMicrofono ?? 0)
+  }, [impostazioni.sogliaMicrofono])
+
   useEffect(() => {
     const valore = impostazioni.volumeUscita ?? 1
     generaleRef.current = valore
@@ -1173,7 +1342,7 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
 
     const schermiAttivi = [...schermiRef.current.entries()].map(([id, s]) => ({
       id,
-      etichetta: s.video.trackName || 'Schermo'
+      etichetta: s.etichetta
     }))
 
     return { riquadri, persone, schermiAttivi }
@@ -1213,6 +1382,10 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
     volumeGenerale,
     schermiAttivi,
     microfoniSpenti,
+    latenza,
+    applicaQualita,
+    cambiaQualitaCondivisione,
+    presetDiCondivisione,
     audioBloccato,
     sbloccaAudio,
     riascoltoAttivo,

@@ -87,6 +87,27 @@ export async function creaTalk(config) {
   // (Docker la vuole per la COPY, e dentro c'e' un .gitkeep), ma una cartella
   // con dentro solo un segnaposto non e' un'app web, e servirla produrrebbe
   // un 500 al primo percorso sconosciuto.
+  // Gli aggiornamenti, se la cartella c'e'. Prima del resto, perche' il
+  // ripiego della pagina singola qui sotto risponde a qualunque percorso e si
+  // mangerebbe anche questo.
+  //
+  // decorateReply: false perche' @fastify/static aggiunge reply.sendFile una
+  // volta sola: registrandolo due volte senza questa riga, il server non parte
+  // proprio.
+  if (existsSync(config.aggiornamentiDir)) {
+    await app.register(statico, {
+      root: config.aggiornamentiDir,
+      prefix: '/aggiornamenti/',
+      decorateReply: false,
+      index: false,
+      // Elencare il contenuto non serve a nessuno: il client sa gia' quali
+      // file chiedere, e una pagina che mostra tutti gli installer e' solo un
+      // invito a scaricarne uno vecchio.
+      list: false,
+    });
+    app.log.info({ cartella: config.aggiornamentiDir }, 'aggiornamenti serviti su /aggiornamenti');
+  }
+
   if (existsSync(join(config.publicDir, 'index.html'))) {
     await app.register(statico, { root: config.publicDir, prefix: '/', index: ['index.html'] });
 

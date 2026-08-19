@@ -21,15 +21,20 @@ files:
 # senza quello caricato nella release l'aggiornatore non trova niente anche se
 # l'exe c'e'. Vale solo per l'installer: il portabile non si aggiorna da solo,
 # e l'app lo sa e lo dice invece di provarci.
+# Dove l app installata cerca le versioni nuove.
+#
+# Il server di PulseTalk stesso, non GitHub: e lo stesso indirizzo a cui il
+# client e gia collegato, quindi non c e un nome nuovo da esporre ne un
+# repository da tenere pubblico. Chi puo entrare in una stanza puo gia
+# scaricare l aggiornamento, e non serve altro permesso.
+#
+# L indirizzo qui e un segnaposto: quello vero lo passa la compilazione,
+# letto da server.local, cosi il repo pubblico resta senza riferimenti a
+# nessuna rete. Il file che conta e latest.yml, che electron-builder genera
+# accanto all installer.
 publish:
-  provider: github
-  owner: FilippoCaio
-  repo: PulseTalk
-  # Senza questa riga la release nasce come bozza - e' il valore
-  # predefinito di electron-builder. Una bozza non compare fra le release
-  # pubblicate, quindi l'aggiornatore dei client non la trova mai: Action
-  # verde, release che sembra esserci, e nessuno che si aggiorna.
-  releaseType: release
+  provider: generic
+  url: https://esempio.invalid/aggiornamenti
 
 win:
   icon: build/icon.ico

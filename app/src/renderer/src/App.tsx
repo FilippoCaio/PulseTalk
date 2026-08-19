@@ -11,13 +11,14 @@ import Accesso, { Completa } from './atrio/Accesso'
 import Inviti from './atrio/Inviti'
 import BarraSpazi from './spazi/BarraSpazi'
 import ColonnaCanali from './spazi/ColonnaCanali'
-import BarraVoce from './spazi/BarraVoce'
+import PannelloVoce from './spazi/PannelloVoce'
 import Amici from './spazi/Amici'
 import IscrittiCanale from './spazi/IscrittiCanale'
 import Chat from './chat/Chat'
 import Ricerca from './chat/Ricerca'
 import Sala from './sala/Sala'
 import PannelloImpostazioni from './Impostazioni'
+import PopupProfilo from './PopupProfilo'
 import { Avviso, Conferma } from './ui'
 
 /**
@@ -40,6 +41,9 @@ export default function App(): React.JSX.Element {
   const [ingresso, setIngresso] = useState<Ingresso | null>(null)
 
   const [mostraImpostazioni, setMostraImpostazioni] = useState(false)
+  const [mostraProfilo, setMostraProfilo] = useState(false)
+  /** Con quale sezione aprire le impostazioni. Null: l'ultima usata. */
+  const [sezioneImpostazioni, setSezioneImpostazioni] = useState<string | null>(null)
   const [mostraInviti, setMostraInviti] = useState(false)
   const [mostraRicerca, setMostraRicerca] = useState(false)
   const [mostraAmici, setMostraAmici] = useState(false)
@@ -311,10 +315,34 @@ export default function App(): React.JSX.Element {
     )
   }
 
+  /**
+   * La chiamata a tutto schermo: via le due colonne di sinistra.
+   *
+   * Sta qui e non dentro alla stanza perche' le colonne da nascondere sono di
+   * qui: uno stato tenuto piu' in basso non potrebbe toccarle.
+   */
+  const [chiamataPiena, setChiamataPiena] = useState(false)
+
+  // Uscire con Escape, che e' dove la mano va da sola.
+  useEffect(() => {
+    if (!chiamataPiena) return
+    const tasto = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') setChiamataPiena(false)
+    }
+    window.addEventListener('keydown', tasto)
+    return () => window.removeEventListener('keydown', tasto)
+  }, [chiamataPiena])
+
+  // Uscendo dalla chiamata non si resta a tutto schermo su una stanza vuota.
+  useEffect(() => {
+    if (!inVoce) setChiamataPiena(false)
+  }, [inVoce])
+
   // -- Le tre colonne ---------------------------------------------------------
 
   return (
     <div className="relative flex h-full">
+      {!chiamataPiena && (
       <BarraSpazi
         spazi={spazi}
         aperto={spazioAperto?.id ?? null}
@@ -329,15 +357,77 @@ export default function App(): React.JSX.Element {
         }}
         apriAmici={() => setMostraAmici(true)}
         richieste={amicizie?.ricevute.length ?? 0}
-        apriImpostazioni={() => setMostraImpostazioni(true)}
+        apriProfilo={() => setMostraProfilo(true)}
       />
+      )}
+
+      {/* Il pannello della chiamata copre le due colonne insieme.
+          
+          La larghezza e' la somma delle due qui accanto — w-16 della barra
+          degli spazi e w-60 dei canali — e sta scritta a mano perche' un
+          overlay non puo' misurarle: cambiando una delle due, va cambiata
+          anche questa. Senza spazio aperto la colonna dei canali non esiste, e
+          il pannello si restringe sulla sola barra. */}
+      {inVoce && utente && !chiamataPiena && (
+        <div
+          className={`absolute bottom-0 left-0 z-20 ${spazioAperto ? 'w-[19rem]' : 'w-16'}`}
+        >
+          <PannelloVoce
+            utente={utente}
+            canale={ingresso!.canale.nome}
+            stato={sessione.stato}
+            latenza={sessione.latenza}
+            microfonoAcceso={sessione.microfonoAcceso}
+            cameraAccesa={sessione.cameraAccesa}
+            sordina={sessione.sordina}
+            condivide={sessione.schermiAttivi.length > 0}
+            riascoltoAttivo={sessione.riascoltoAttivo}
+            secondiRiascolto={impostazioni.secondiRiascolto || 30}
+            guardando={canaleAperto?.id === inVoce}
+            alternaMicrofono={() => void sessione.alternaMicrofono()}
+            alternaCamera={() => void sessione.alternaCamera()}
+            alternaSordina={sessione.alternaSordina}
+            apriCondivisione={() => setCanaleApertoId(inVoce)}
+            riascolta={sessione.riascolta}
+            torna={() => setCanaleApertoId(inVoce)}
+            esci={() => void esciDallaVoce()}
+            apriProfilo={() => setMostraProfilo(true)}
+            apriImpostazioni={() => {
+              setSezioneImpostazioni(null)
+              setMostraImpostazioni(true)
+            }}
+          />
+        </div>
+      )}
+
+      {mostraProfilo && utente && (
+        <PopupProfilo
+          utente={utente}
+          cambiaStato={(stato) => {
+            void api.profilo({ stato }).then((r) => setUtente(r.utente))
+          }}
+          apriImpostazioni={() => {
+            setSezioneImpostazioni(null)
+            setMostraImpostazioni(true)
+          }}
+          apriProfilo={() => {
+            setSezioneImpostazioni('profilo')
+            setMostraImpostazioni(true)
+          }}
+          chiudi={() => setMostraProfilo(false)}
+        />
+      )}
 
       {spazioAperto ? (
         <>
           {/* Bordo e sfondo stanno qui e non sulla colonna: la riga verticale
               deve correre dall'alto al basso senza spezzarsi dove finisce
               l'elenco dei canali e comincia la barra della voce. */}
-          <div className="flex w-60 shrink-0 flex-col border-r border-bordo bg-fondo-2">
+          <div
+            className={`flex w-60 shrink-0 flex-col border-r border-bordo bg-fondo-2 ${
+              chiamataPiena ? 'hidden' : ''
+            }`}
+          >
             <ColonnaCanali
               spazio={spazioAperto}
               apertoId={canaleAperto?.id ?? null}
@@ -357,25 +447,14 @@ export default function App(): React.JSX.Element {
               }}
               apriRicerca={() => setMostraRicerca(true)}
               gestisciIscritti={(canale) => setIscrittiDi(canale)}
+              modificaCanale={async (canale, modifiche) => {
+                await api.aggiornaCanale(canale.id, modifiche)
+                mondo.ricarica()
+              }}
               profili={profili}
               microfoniSpenti={sessione.microfoniSpenti}
             />
 
-            {inVoce && (
-              <BarraVoce
-                nome={ingresso!.canale.nome}
-                stato={sessione.stato}
-                microfonoAcceso={sessione.microfonoAcceso}
-                condivide={sessione.schermiAttivi.length > 0}
-                guardando={canaleAperto?.id === inVoce}
-                riascoltoAttivo={sessione.riascoltoAttivo}
-                secondiRiascolto={impostazioni.secondiRiascolto || 30}
-                riascolta={sessione.riascolta}
-                alternaMicrofono={() => void sessione.alternaMicrofono()}
-                torna={() => setCanaleApertoId(inVoce)}
-                esci={() => void esciDallaVoce()}
-              />
-            )}
           </div>
 
           <main className="flex min-w-0 flex-1 flex-col">
@@ -398,6 +477,11 @@ export default function App(): React.JSX.Element {
                 impostazioni={impostazioni}
                 profili={profili}
                 moderatore={spazioAperto.ruoloMio === 'admin'}
+                salvaImpostazioni={salva}
+                schermoIntero={{
+                  attivo: chiamataPiena,
+                  alterna: () => setChiamataPiena((v) => !v)
+                }}
                 esci={esciDallaVoce}
                 apriImpostazioni={() => setMostraImpostazioni(true)}
               />
@@ -521,6 +605,7 @@ export default function App(): React.JSX.Element {
 
       {mostraImpostazioni && (
         <PannelloImpostazioni
+          paginaIniziale={sezioneImpostazioni === 'profilo' ? 'profilo' : undefined}
           api={api}
           impostazioni={impostazioni}
           utente={utente}

@@ -417,3 +417,22 @@ export function CampanellaSpenta(props: Props): React.JSX.Element {
     </Base>
   )
 }
+
+/** La freccetta verso l'alto dei sottomenu della barra. */
+export function Su(props: Props): React.JSX.Element {
+  return (
+    <Base {...props}>
+      <path d="m6 14 6-6 6 6" />
+    </Base>
+  )
+}
+
+/** Le condivisioni aperte: due rettangoli sovrapposti. */
+export function Pile(props: Props): React.JSX.Element {
+  return (
+    <Base {...props}>
+      <rect x="3" y="7" width="13" height="10" rx="1.6" />
+      <path d="M8 4h11a1.6 1.6 0 0 1 1.6 1.6v9" />
+    </Base>
+  )
+}

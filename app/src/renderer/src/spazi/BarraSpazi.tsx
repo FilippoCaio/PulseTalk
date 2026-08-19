@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { Spazio, Utente } from '@shared/tipi'
 import { coloreDi, inizialiDi } from '../lib/avatar'
+import { PallinoStato } from '../PopupProfilo'
 import { Bottone, Campo, classiInput } from '../ui'
 import { Piu, Utenti } from '../icone'
 
@@ -22,7 +23,7 @@ export default function BarraSpazi({
   crea,
   apriAmici,
   richieste,
-  apriImpostazioni
+  apriProfilo
 }: {
   spazi: Spazio[]
   aperto: number | null
@@ -32,7 +33,8 @@ export default function BarraSpazi({
   apriAmici: () => void
   /** Quante richieste di amicizia aspettano una risposta. */
   richieste: number
-  apriImpostazioni: () => void
+  /** Apre il pannello del profilo, quello con gli stati. */
+  apriProfilo: () => void
 }): React.JSX.Element {
   const [creando, setCreando] = useState(false)
   const [nome, setNome] = useState('')
@@ -115,21 +117,25 @@ export default function BarraSpazi({
         )}
       </button>
 
+      {/* Apre il pannello, non le impostazioni: nove volte su dieci si preme
+          per cambiare stato o per guardarsi il nome, e aprire un pannello a
+          tutta pagina per quello e' un salto sproporzionato. */}
       <button
-        onClick={apriImpostazioni}
-        title={`${utente.nome} — impostazioni`}
-        className="h-10 w-10 overflow-hidden rounded-full ring-2 ring-transparent transition-all hover:ring-vivo"
+        onClick={apriProfilo}
+        title={utente.nome}
+        className="relative h-10 w-10 rounded-full ring-2 ring-transparent transition-all hover:ring-vivo"
       >
         {utente.avatar ? (
-          <img src={utente.avatar} alt="" className="h-full w-full object-cover" />
+          <img src={utente.avatar} alt="" className="h-full w-full rounded-full object-cover" />
         ) : (
           <span
-            className="flex h-full w-full items-center justify-center text-sm font-semibold text-black/75"
+            className="flex h-full w-full items-center justify-center rounded-full text-sm font-semibold text-black/75"
             style={{ background: coloreDi(`u${utente.id}`) }}
           >
             {inizialiDi(utente.nome)}
           </span>
         )}
+        <PallinoStato stato={utente.stato ?? 'online'} className="h-3 w-3" fondo="var(--color-fondo)" />
       </button>
 
       {creando && (

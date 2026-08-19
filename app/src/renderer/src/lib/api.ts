@@ -10,7 +10,8 @@ import type {
   Reazione,
   Sessione,
   Spazio,
-  Utente
+  Utente,
+  StatoUtente
 } from '@shared/tipi'
 import type { Limiti } from '@shared/qualita'
 
@@ -170,12 +171,18 @@ export class Api {
     })
   }
 
-  profilo(modifiche: { nome?: string; avatar?: string | null }): Promise<{ utente: Utente }> {
+  profilo(modifiche: {
+    nome?: string
+    avatar?: string | null
+    stato?: StatoUtente
+  }): Promise<{ utente: Utente }> {
     return this.chiama('/api/auth/profilo', { method: 'POST', body: JSON.stringify(modifiche) })
   }
 
   /** Nome e foto di tutti, per disegnare i riquadri di chi ha la camera spenta. */
-  utenti(): Promise<{ utenti: Pick<Utente, 'id' | 'nome' | 'utente' | 'avatar'>[] }> {
+  utenti(): Promise<{
+    utenti: (Pick<Utente, 'id' | 'nome' | 'utente' | 'avatar'> & { stato: StatoUtente })[]
+  }> {
     return this.chiama('/api/utenti')
   }
 
@@ -259,6 +266,7 @@ export class Api {
     id: number,
     modifiche: {
       nome?: string
+      icona?: string
       argomento?: string
       categoria?: number | null
       privato?: boolean

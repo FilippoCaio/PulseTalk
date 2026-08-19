@@ -31,8 +31,12 @@ function vistaUtente(utente) {
     utente: utente.utente ?? null,
     ruolo: utente.ruolo,
     avatar: utente.avatar ?? null,
+    stato: utente.stato ?? 'online',
   };
 }
+
+/** Gli unici stati che accettiamo: qualunque altra cosa e' un errore di chi chiama. */
+const STATI = ['online', 'inattivo', 'occupato', 'invisibile'];
 
 export function rotteAuth(app, { db, config }) {
   // Un freno per il nome utente e uno per l'indirizzo: chi prova mille
@@ -224,7 +228,11 @@ export function rotteAuth(app, { db, config }) {
     '/api/auth/profilo',
     { onRequest: richiedeRuolo('ospite') },
     async (richiesta, risposta) => {
-      const { nome, avatar } = richiesta.body ?? {};
+      const { nome, avatar, stato } = richiesta.body ?? {};
+
+      if (stato !== undefined && !STATI.includes(stato)) {
+        return risposta.code(400).send({ errore: `stato sconosciuto: ${stato}` });
+      }
 
       if (nome !== undefined && (typeof nome !== 'string' || !nome.trim())) {
         return risposta.code(400).send({ errore: 'il nome visibile non puo\' essere vuoto' });
@@ -243,6 +251,7 @@ export function rotteAuth(app, { db, config }) {
       db.aggiornaProfilo(richiesta.utente.id, {
         nome: nome === undefined ? undefined : nome.trim().slice(0, 60),
         avatar,
+        stato,
       });
       return { utente: vistaUtente(db.utente(richiesta.utente.id)) };
     },
@@ -302,6 +311,9 @@ export function rotteAuth(app, { db, config }) {
         nome: u.nome,
         utente: u.utente,
         avatar: u.avatar,
+        // Invisibile non si dice: dall'altra parte deve sembrare offline, e
+        // l'unico modo per non tradirlo e' non mandare mai quella parola.
+        stato: (u.stato ?? 'online') === 'invisibile' ? 'offline' : (u.stato ?? 'online'),
       })),
     }),
   );

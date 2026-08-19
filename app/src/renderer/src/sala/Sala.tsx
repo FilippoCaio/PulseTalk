@@ -7,16 +7,14 @@ import type {
   PosizioneStriscia,
   Sorgente
 } from '@shared/tipi'
-import type { PresetSchermo } from '@shared/qualita'
+import { PRESET_SCHERMO, type PresetSchermo } from '@shared/qualita'
 import type { Api } from '../lib/api'
 import type { Riquadro as DatiRiquadro, Sessione } from '../lib/usaSessione'
 import { usaMisura } from '../lib/misura'
-import { usaSchermoIntero } from '../lib/schermoIntero'
 import { ponte } from '../ponte'
 import { Altoparlante, Chiudi, Riavvolgi } from '../icone'
 import { Avviso } from '../ui'
-import Barra from './Barra'
-import Persone from './Persone'
+import OverlayChiamata from './OverlayChiamata'
 import MenuRiquadro from './MenuRiquadro'
 import Riquadro from './Riquadro'
 import SceltaSorgente from './SceltaSorgente'
@@ -50,7 +48,9 @@ export default function Sala({
   profili,
   moderatore,
   esci,
-  apriImpostazioni
+  apriImpostazioni,
+  salvaImpostazioni,
+  schermoIntero
 }: {
   api: Api
   ingresso: Ingresso
@@ -60,6 +60,20 @@ export default function Sala({
   moderatore: boolean
   esci: () => Promise<void>
   apriImpostazioni: () => void
+  /** Salva un'impostazione dal menu del microfono, senza aprire il pannello. */
+  salvaImpostazioni: (modifiche: Partial<Impostazioni>) => Promise<unknown>
+  /**
+   * Tutto schermo, ma dell'APPLICAZIONE: spariscono le due colonne di sinistra
+   * e resta solo la chiamata.
+   *
+   * Non passa dall'API del browser, e non e' un ripiego: e' cio' che serve
+   * davvero. `requestFullscreen` porta fuori dalla finestra, fallisce in
+   * silenzio quando l'ambiente non la concede — ed e' esattamente cio' che
+   * faceva qui, con un catch vuoto che se ne mangiava l'errore — e comunque
+   * non toglierebbe di mezzo le colonne: le coprirebbe. Uno stato di React fa
+   * la cosa chiesta e non puo' fallire.
+   */
+  schermoIntero: { attivo: boolean; alterna: () => void }
 }): React.JSX.Element {
   const [aFuoco, setAFuoco] = useState<string | null>(null)
   // Vero quando l'utente ha tolto lui il fuoco. Serve a non rimetterlo subito:
@@ -82,7 +96,6 @@ export default function Sala({
   const [sopra, setSopra] = useState<string | null>(null)
 
   const radice = useRef<HTMLDivElement>(null)
-  const schermoIntero = usaSchermoIntero(radice)
   const [contenitore, spazio] = usaMisura<HTMLDivElement>()
 
   const { persone } = sessione
@@ -264,6 +277,15 @@ export default function Sala({
     [griglia.length, spazio.larghezza, spazio.altezza]
   )
 
+  // Chi e' in primo piano riceve tutto, gli altri schermi calano.
+  //
+  // Sta in un effetto e non dentro a `metti`/`togli` perche' il primo piano
+  // cambia anche da solo: quando resta un solo schermo condiviso viene scelto
+  // in automatico, e in quel caso non passa da nessun clic.
+  useEffect(() => {
+    sessione.applicaQualita(grande?.tipo === 'schermo' ? grande.id : null)
+  }, [grande?.id, grande?.tipo, sessione.applicaQualita])
+
   const metti = (riquadro: DatiRiquadro): void => {
     setAFuoco(riquadro.id)
     setSenzaFuoco(false)
@@ -277,12 +299,14 @@ export default function Sala({
   const condividi = async (
     sorgente: Sorgente | null,
     preset: PresetSchermo,
-    audio: ModoAudioSistema
+    audio: ModoAudioSistema,
+    soloAudio: boolean,
+    bitrateAudio: number
   ): Promise<void> => {
     setScegliSorgente(false)
     // La scelta fatta qui vale per questa condivisione: quella di serie resta
     // nelle impostazioni e non viene riscritta da un ripensamento di un minuto.
-    await sessione.condividi(sorgente, preset, audio)
+    await sessione.condividi(sorgente, preset, audio, soloAudio, bitrateAudio)
   }
 
   const aggancio: PosizioneStriscia = impostazioni.posizioneStriscia ?? 'sotto'
@@ -471,51 +495,36 @@ export default function Sala({
             <SceltaSorgente
               presetIniziale={impostazioni.presetSchermo}
               audioIniziale={impostazioni.audioSistema}
-              conferma={(s, p, a) => void condividi(s, p, a)}
+              conferma={(s, p, a, solo, bit) => void condividi(s, p, a, solo, bit)}
               chiudi={() => setScegliSorgente(false)}
             />
           )}
         </main>
 
-        {!schermoIntero.attivo && (
-          <aside className="w-56 shrink-0 overflow-y-auto border-l border-bordo bg-fondo-2">
-            <Persone
-              persone={persone}
-              moderatore={moderatore}
-              fotoDi={fotoDi}
-              volumiDi={sessione.volumiDi}
-              impostaVolume={sessione.impostaVolume}
-              alternaMuto={sessione.alternaMuto}
-              caccia={async (identita) => {
-                try {
-                  await api.caccia(ingresso.canale.id, identita)
-                } catch (e) {
-                  setErroreLocale((e as Error).message)
-                }
-              }}
-            />
-          </aside>
-        )}
       </div>
 
-      <Barra
-        riascoltoAttivo={sessione.riascoltoAttivo}
-        riascoltoInCorso={!!sessione.riascoltoInCorso}
-        secondiRiascolto={impostazioni.secondiRiascolto || 30}
-        riascolta={sessione.riascolta}
+      {/* I comandi non sono piu' una striscia fissa: compaiono muovendo il
+          cursore e si tolgono di mezzo da soli. Le cuffie che silenziano tutto
+          non stanno qui ma nel pannello a sinistra, che e' l'unico posto in cui
+          si spegne l'ascolto: averle in due posti vorrebbe dire due stati da
+          tenere d'accordo e nessuno che sa quale comanda. */}
+      <OverlayChiamata
         microfonoAcceso={sessione.microfonoAcceso}
         cameraAccesa={sessione.cameraAccesa}
-        sordina={sessione.sordina}
-        volumeGenerale={sessione.volumeGenerale}
-        schermiAttivi={sessione.schermiAttivi}
         puoTrasmettere={ingresso.permessi.puoTrasmettere}
+        schermiAttivi={sessione.schermiAttivi}
+        riascoltoAttivo={sessione.riascoltoAttivo}
+        secondiRiascolto={impostazioni.secondiRiascolto || 30}
+        impostazioni={impostazioni}
         schermoIntero={schermoIntero}
         alternaMicrofono={() => void sessione.alternaMicrofono()}
         alternaCamera={() => void sessione.alternaCamera()}
-        alternaSordina={sessione.alternaSordina}
-        impostaVolumeGenerale={sessione.impostaVolumeGenerale}
         apriCondivisione={() => setScegliSorgente(true)}
         smettiDiCondividere={(id) => void sessione.smettiDiCondividere(id)}
+        cambiaQualita={(id, presetId) => void sessione.cambiaQualitaCondivisione(id, presetId)}
+        presetDi={sessione.presetDiCondivisione}
+        riascolta={sessione.riascolta}
+        salva={(modifiche) => void salvaImpostazioni(modifiche)}
         apriImpostazioni={apriImpostazioni}
         esci={() => void esci()}
       />
@@ -545,6 +554,19 @@ export default function Sala({
                     } catch (e) {
                       setErroreLocale((e as Error).message)
                     }
+                  }
+                : undefined
+            }
+            qualita={
+              suo.locale && suo.tipo === 'schermo'
+                ? {
+                    scelte: PRESET_SCHERMO.map((p) => ({
+                      id: p.id,
+                      nome: p.nome,
+                      spiegazione: p.spiegazione
+                    })),
+                    attuale: sessione.presetDiCondivisione(suo.id),
+                    cambia: (id) => void sessione.cambiaQualitaCondivisione(suo.id, id)
                   }
                 : undefined
             }

@@ -265,8 +265,12 @@ export function rotteSpazi(app, { db, config, presenze, eventi }) {
       const esito = accessoAlCanale(db, richiesta.utente, richiesta.params.canale, 'admin');
       if (esito.errore) return risposta.code(esito.stato).send({ errore: esito.errore });
 
-      const { nome, argomento, categoria, posizione, soloAscolto, privato } = richiesta.body ?? {};
+      const { nome, argomento, categoria, posizione, soloAscolto, privato, icona } =
+        richiesta.body ?? {};
       db.aggiornaCanale(esito.canale.id, {
+        // Due caratteri bastano per un'emoji: il taglio serve a impedire che
+        // qualcuno ci infili una frase e sfondi la colonna.
+        icona: typeof icona === 'string' ? icona.trim().slice(0, 4) : undefined,
         nome: typeof nome === 'string' ? nome.trim().slice(0, 40) : undefined,
         argomento: typeof argomento === 'string' ? argomento.slice(0, 200) : undefined,
         categoria: categoria === undefined ? undefined : categoria === null ? null : Number(categoria),

@@ -4,6 +4,7 @@ import type {
   PosizioneStriscia,
   Sessione,
   StatoAggiornamento,
+  StatoUtente,
   Utente
 } from '@shared/tipi'
 import {
@@ -16,6 +17,8 @@ import {
 import type { Api } from './lib/api'
 import { coloreDi, inizialiDi } from './lib/avatar'
 import { ponte } from './ponte'
+import { STATI } from './PopupProfilo'
+import { avviaProva, type Prova } from './lib/provaMicrofono'
 import { Avviso, Bottone, BottoneIcona, Campo, classiInput } from './ui'
 import { Altoparlante, Camera, Chiudi, Esci, Ingranaggio, Persona } from './icone'
 import { configuraSuoni, suona } from './lib/suoni'
@@ -36,7 +39,8 @@ export default function PannelloImpostazioni({
   chiudi,
   esciDallAccount,
   quandoCambiaUtente,
-  apriInviti
+  apriInviti,
+  paginaIniziale
 }: {
   api: Api
   impostazioni: Impostazioni
@@ -47,6 +51,8 @@ export default function PannelloImpostazioni({
   esciDallAccount: () => Promise<void>
   quandoCambiaUtente: (utente: Utente) => void
   apriInviti: () => void
+  /** Con quale sezione aprirsi. Senza, quella di sempre. */
+  paginaIniziale?: Pagina
 }): React.JSX.Element {
   const [dispositivi, setDispositivi] = useState<MediaDeviceInfo[]>([])
   const [confermaUscita, setConfermaUscita] = useState(false)
@@ -75,7 +81,11 @@ export default function PannelloImpostazioni({
   const per = (tipo: MediaDeviceKind): MediaDeviceInfo[] =>
     dispositivi.filter((d) => d.kind === tipo)
 
-  const [pagina, setPagina] = useState<Pagina>('audio')
+  // Chi arriva da "Il tuo profilo" nel pannellino in basso a sinistra deve
+  // trovarsi gia' sulla sua pagina: farlo atterrare sull'audio e poi cercare
+  // e' esattamente il passaggio in piu' che quel pannellino esiste per
+  // togliere.
+  const [pagina, setPagina] = useState<Pagina>(paginaIniziale ?? 'audio')
 
   const profilo = PROFILI_AUDIO[impostazioni.modoAudio]
 
@@ -149,6 +159,12 @@ export default function PannelloImpostazioni({
                     massimo={2}
                     passo={0.05}
                     cambia={(v) => void salva({ volumeMicrofono: v })}
+                  />
+
+                  <ProvaMicrofono
+                    dispositivoId={impostazioni.microfonoId ?? null}
+                    soglia={impostazioni.sogliaMicrofono ?? 0}
+                    cambiaSoglia={(v) => void salva({ sogliaMicrofono: v })}
                   />
 
                   <Interruttore
@@ -397,6 +413,7 @@ export default function PannelloImpostazioni({
             {pagina === 'profilo' && (
               <>
                 <Profilo api={api} utente={utente} quandoCambia={quandoCambiaUtente} />
+                <StatoDiProfilo api={api} utente={utente} quandoCambia={quandoCambiaUtente} />
                 <CambioPassword api={api} />
               </>
             )}
@@ -1035,4 +1052,205 @@ function SezioneAggiornamenti(): React.JSX.Element | null {
 function primaRiga(note: string): string {
   const pulite = note.replace(/<[^>]*>/g, ' ').replace(/s+/g, ' ').trim()
   return pulite.length > 120 ? pulite.slice(0, 117) + '…' : pulite
+}
+
+/**
+ * Prova del microfono e soglia dell'automute, insieme.
+ *
+ * Stanno insieme perche' separati non servono a niente: una soglia si regola
+ * guardando dove arriva la propria voce e dove arriva il proprio silenzio, e
+ * un misuratore senza soglia dice solo che il microfono e' vivo. Qui si parla,
+ * si guarda la barra, e si mette il segno in mezzo.
+ *
+ * La prova apre un microfono suo: cosi' funziona anche fuori da una chiamata,
+ * che e' poi il momento in cui uno controlla se ha scelto il dispositivo
+ * giusto.
+ */
+function ProvaMicrofono({
+  dispositivoId,
+  soglia,
+  cambiaSoglia
+}: {
+  dispositivoId: string | null
+  soglia: number
+  cambiaSoglia: (valore: number) => void
+}): React.JSX.Element {
+  const [prova, setProva] = useState<Prova | null>(null)
+  const [livello, setLivello] = useState(0)
+  const [ritorno, setRitorno] = useState(false)
+  const [errore, setErrore] = useState<string | null>(null)
+
+  // Il livello si legge a ogni fotogramma, non con un timer: e' l'unica cadenza
+  // in cui la barra sembra seguire la voce invece di inseguirla.
+  useEffect(() => {
+    if (!prova) return
+    let vivo = true
+    const giro = (): void => {
+      if (!vivo) return
+      setLivello(prova.livello())
+      requestAnimationFrame(giro)
+    }
+    requestAnimationFrame(giro)
+    return () => {
+      vivo = false
+    }
+  }, [prova])
+
+  // Chiudendo il pannello a prova accesa, il microfono resterebbe aperto e la
+  // spia accesa: qui si spegne comunque.
+  useEffect(() => {
+    return () => {
+      void prova?.chiudi()
+    }
+  }, [prova])
+
+  const avvia = async (): Promise<void> => {
+    setErrore(null)
+    try {
+      const nuova = await avviaProva(dispositivoId)
+      nuova.sentiti(ritorno)
+      setProva(nuova)
+    } catch (e) {
+      setErrore((e as Error).message)
+    }
+  }
+
+  const ferma = async (): Promise<void> => {
+    const vecchia = prova
+    setProva(null)
+    setLivello(0)
+    await vecchia?.chiudi()
+  }
+
+  // La barra e' logaritmica: la voce parlata sta fra 0.02 e 0.2 di valore
+  // efficace, e su una scala lineare quei numeri stanno tutti schiacciati
+  // contro il bordo sinistro, dove non si distingue niente.
+  const perCento = (v: number): number => Math.min(100, Math.max(0, (Math.sqrt(v) / 0.6) * 100))
+  const passa = soglia <= 0 || livello >= soglia
+
+  return (
+    <Campo
+      etichetta="Prova e automute"
+      aiuto="Parla e guarda dove arriva la barra. Il segno e' la soglia: sotto, il microfono non
+        trasmette. Si alza finche' il silenzio resta a sinistra del segno e la voce lo supera."
+    >
+      <div className="space-y-2">
+        <div className="relative h-2.5 overflow-hidden rounded-full bg-fondo-3">
+          <div
+            className={`h-full rounded-full transition-[width] duration-75 ${
+              passa ? 'bg-ok' : 'bg-testo-3'
+            }`}
+            style={{ width: `${perCento(livello)}%` }}
+          />
+          {soglia > 0 && (
+            <div
+              className="absolute inset-y-0 w-0.5 bg-attenzione"
+              style={{ left: `${perCento(soglia)}%` }}
+            />
+          )}
+        </div>
+
+        <input
+          type="range"
+          min={0}
+          max={0.35}
+          step={0.005}
+          value={soglia}
+          onChange={(e) => cambiaSoglia(Number(e.target.value))}
+          className="w-full"
+          aria-label="Soglia dell'automute"
+        />
+
+        <div className="flex items-center gap-2">
+          <Bottone tono="fantasma" onClick={() => void (prova ? ferma() : avvia())}>
+            {prova ? 'Ferma la prova' : 'Prova il microfono'}
+          </Bottone>
+
+          {prova && (
+            <Bottone
+              tono="fantasma"
+              onClick={() => {
+                const nuovo = !ritorno
+                setRitorno(nuovo)
+                prova.sentiti(nuovo)
+              }}
+            >
+              {ritorno ? 'Smetti di sentirti' : 'Sentiti'}
+            </Bottone>
+          )}
+
+          <span className="text-xs text-testo-3">
+            {soglia <= 0 ? 'automute spento' : `soglia ${Math.round(soglia * 100)}`}
+          </span>
+        </div>
+
+        {ritorno && (
+          <p className="text-xs text-attenzione">
+            Con le casse accese questo fischia: e' un microfono che si risente da solo.
+          </p>
+        )}
+        {errore && <Avviso tono="attenzione">Non riesco ad aprire il microfono: {errore}</Avviso>}
+      </div>
+    </Campo>
+  )
+}
+
+/**
+ * Lo stato, anche da qui.
+ *
+ * Sta nel pannellino in basso a sinistra, dove serve di corsa, ma appartiene
+ * al profilo: chi apre le impostazioni per sistemare nome e foto si aspetta di
+ * trovarlo insieme a quelli, non di doverlo cercare in un altro posto.
+ */
+function StatoDiProfilo({
+  api,
+  utente,
+  quandoCambia
+}: {
+  api: Api
+  utente: Utente
+  quandoCambia: (utente: Utente) => void
+}): React.JSX.Element {
+  const [errore, setErrore] = useState<string | null>(null)
+  const attuale = utente.stato ?? 'online'
+
+  const scegli = async (stato: StatoUtente): Promise<void> => {
+    setErrore(null)
+    try {
+      const { utente: nuovo } = await api.profilo({ stato })
+      quandoCambia(nuovo)
+    } catch (e) {
+      setErrore((e as Error).message)
+    }
+  }
+
+  return (
+    <Sezione titolo="Stato" sotto="Resta quello che scegli finche' non lo cambi.">
+      <div className="grid grid-cols-2 gap-2">
+        {(['online', 'inattivo', 'occupato', 'invisibile'] as StatoUtente[]).map((quale) => (
+          <button
+            key={quale}
+            onClick={() => void scegli(quale)}
+            className={`flex items-start gap-2 rounded-lg border px-3 py-2 text-left transition-colors ${
+              quale === attuale
+                ? 'border-vivo bg-vivo/10'
+                : 'border-bordo bg-fondo hover:border-fondo-3'
+            }`}
+          >
+            <span
+              className="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full"
+              style={{ background: STATI[quale].colore }}
+            />
+            <span className="min-w-0">
+              <span className="block text-sm text-testo">{STATI[quale].nome}</span>
+              {STATI[quale].sotto && (
+                <span className="block text-[11px] text-testo-3">{STATI[quale].sotto}</span>
+              )}
+            </span>
+          </button>
+        ))}
+      </div>
+      {errore && <Avviso tono="attenzione">{errore}</Avviso>}
+    </Sezione>
+  )
 }

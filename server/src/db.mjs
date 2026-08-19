@@ -85,6 +85,15 @@ const COLONNE_AGGIUNTE = [
   ['inviti', 'usi', 'INTEGER NOT NULL DEFAULT 0'],
   ['inviti', 'creatoDa', 'INTEGER'],
   ['canali', 'privato', 'INTEGER NOT NULL DEFAULT 0'],
+  // Un'emoji davanti al nome. Solo estetica, ma e' l'unico modo per far
+  // riconoscere un canale in una colonna di venti a colpo d'occhio.
+  ['canali', 'icona', 'TEXT'],
+  // Lo stato scelto a mano: online, inattivo, occupato, invisibile.
+  //
+  // Sta sull'utente e non sulla sessione perche' deve sopravvivere alla
+  // chiusura dell'applicazione: chi si mette "non disturbare" la sera non
+  // vuole ritrovarsi online il mattino dopo per aver riavviato il computer.
+  ['utenti', 'stato', "TEXT NOT NULL DEFAULT 'online'"],
 ];
 
 export class TalkDb {
@@ -335,14 +344,15 @@ export class TalkDb {
   }
 
   /** Nome visibile e foto: non toccano le credenziali. */
-  aggiornaProfilo(utenteId, { nome, avatar }) {
+  aggiornaProfilo(utenteId, { nome, avatar, stato }) {
     const attuale = this.utente(utenteId);
     if (!attuale) return 0;
     return this.sql
-      .prepare('UPDATE utenti SET nome = ?, avatar = ? WHERE id = ?')
+      .prepare('UPDATE utenti SET nome = ?, avatar = ?, stato = ? WHERE id = ?')
       .run(
         nome === undefined ? attuale.nome : nome,
         avatar === undefined ? attuale.avatar : avatar,
+        stato === undefined ? (attuale.stato ?? 'online') : stato,
         utenteId,
       ).changes;
   }
@@ -741,12 +751,12 @@ export class TalkDb {
     };
   }
 
-  aggiornaCanale(id, { nome, argomento, categoria, posizione, soloAscolto, privato }) {
+  aggiornaCanale(id, { nome, argomento, categoria, posizione, soloAscolto, privato, icona }) {
     const attuale = this.canale(id);
     if (!attuale) return 0;
     return this.sql
       .prepare(
-        `UPDATE canali SET nome = ?, argomento = ?, categoria = ?, posizione = ?, soloAscolto = ?, privato = ?
+        `UPDATE canali SET nome = ?, argomento = ?, categoria = ?, posizione = ?, soloAscolto = ?, privato = ?, icona = ?
           WHERE id = ?`,
       )
       .run(
@@ -756,6 +766,10 @@ export class TalkDb {
         posizione ?? attuale.posizione,
         (soloAscolto === undefined ? attuale.soloAscolto : soloAscolto) ? 1 : 0,
         (privato === undefined ? attuale.privato : privato) ? 1 : 0,
+        // Stringa vuota vuol dire "togli l'icona": undefined vuol dire "non
+        // toccarla". Senza questa distinzione un'icona messa non si leverebbe
+        // piu'.
+        icona === undefined ? attuale.icona : icona || null,
         id,
       ).changes;
   }

@@ -21,13 +21,30 @@ export default function SceltaSorgente({
 }: {
   presetIniziale: string
   audioIniziale: ModoAudioSistema
-  conferma: (sorgente: Sorgente | null, preset: PresetSchermo, audio: ModoAudioSistema) => void
+  conferma: (
+    sorgente: Sorgente | null,
+    preset: PresetSchermo,
+    audio: ModoAudioSistema,
+    soloAudio: boolean,
+    bitrateAudio: number
+  ) => void
   chiudi: () => void
 }): React.JSX.Element {
   const [sorgenti, setSorgenti] = useState<Sorgente[] | null>(null)
   const [scelta, setScelta] = useState<string | null>(null)
   const [presetId, setPresetId] = useState(presetIniziale)
   const [audio, setAudio] = useState<ModoAudioSistema>(audioIniziale)
+
+  /**
+   * Solo l'audio, senza immagine.
+   *
+   * Per la musica il video non e' un di piu': e' un danno. Trenta megabit al
+   * secondo per mostrare la finestra ferma di un lettore, mentre quello che
+   * conta sono i 510 kbit dell'audio. Spento, non compare nemmeno un riquadro
+   * da guardare dall'altra parte.
+   */
+  const [soloAudio, setSoloAudio] = useState(false)
+  const [bitrateAudio, setBitrateAudio] = useState(510_000)
 
   useEffect(() => {
     void ponte.sorgenti().then((elenco) => {
@@ -45,7 +62,7 @@ export default function SceltaSorgente({
   const parti = (): void => {
     const sorgente = nelBrowser ? null : (sorgenti?.find((s) => s.id === scelta) ?? null)
     if (!nelBrowser && !sorgente) return
-    conferma(sorgente, preset, audio)
+    conferma(sorgente, preset, audio, soloAudio, bitrateAudio)
   }
 
   return (
@@ -115,6 +132,51 @@ export default function SceltaSorgente({
           </div>
 
           {ponte.audioDiSistema && (
+            <div>
+              <p className="mb-2 text-xs font-medium tracking-wide text-testo-2 uppercase">
+                Solo audio
+              </p>
+              <button
+                onClick={() => setSoloAudio(!soloAudio)}
+                className={`w-full rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
+                  soloAudio ? 'border-vivo bg-vivo/10' : 'border-bordo bg-fondo hover:border-fondo-3'
+                }`}
+              >
+                Condividi solo l'audio, senza immagine
+                <span className="block text-[11px] text-testo-3">
+                  Per la musica. Niente riquadro da guardare dall'altra parte, e tutta la banda va
+                  al suono invece che a una finestra ferma.
+                </span>
+              </button>
+
+              {soloAudio && (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {(
+                    [
+                      [510_000, 'Massima', '510 kbit/s stereo. Musica.'],
+                      [256_000, 'Alta', '256 kbit/s. Quasi indistinguibile.'],
+                      [128_000, 'Leggera', '128 kbit/s. Per linee lente.']
+                    ] as [number, string, string][]
+                  ).map(([valore, nome, sotto]) => (
+                    <button
+                      key={valore}
+                      onClick={() => setBitrateAudio(valore)}
+                      className={`rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
+                        bitrateAudio === valore
+                          ? 'border-vivo bg-vivo/10'
+                          : 'border-bordo bg-fondo hover:border-fondo-3'
+                      }`}
+                    >
+                      {nome}
+                      <span className="block text-[11px] text-testo-3">{sotto}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {ponte.audioDiSistema && !soloAudio && (
             <div>
               <p className="mb-2 text-xs font-medium tracking-wide text-testo-2 uppercase">
                 Audio di sistema

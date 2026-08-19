@@ -6,6 +6,7 @@ import {
   AltoparlanteMuto,
   Espelli,
   Ingrandisci,
+  Lente,
   Rimpicciolisci,
   SchermoIntero,
   SchermoNormale
@@ -32,6 +33,7 @@ export default function MenuRiquadro({
   metti,
   schermoIntero,
   caccia,
+  qualita,
   chiudi
 }: {
   x: number
@@ -45,6 +47,18 @@ export default function MenuRiquadro({
   /** Solo sul riquadro grande: il vero schermo intero. */
   schermoIntero?: { attivo: boolean; alterna: () => void }
   caccia?: () => Promise<void>
+  /**
+   * Solo sulla PROPRIA condivisione: cambiare qualita' mentre e' accesa.
+   *
+   * Il cambio non interrompe niente — bitrate e fotogrammi si riscrivono sul
+   * mittente vivo — quindi si puo' alzare la qualita' a meta' partita senza
+   * sparire per un secondo dagli schermi degli altri.
+   */
+  qualita?: {
+    scelte: { id: string; nome: string; spiegazione: string }[]
+    attuale: string | null
+    cambia: (id: string) => void
+  }
   chiudi: () => void
 }): React.JSX.Element {
   const scatola = useRef<HTMLDivElement>(null)
@@ -142,6 +156,26 @@ export default function MenuRiquadro({
             chiudi()
           }}
         />
+      )}
+
+      {qualita && qualita.scelte.length > 0 && (
+        <>
+          <div className="my-1 border-t border-bordo" />
+          <div className="px-1.5 pt-0.5 pb-1 text-[11px] uppercase tracking-wide text-testo-3">
+            Qualita' della condivisione
+          </div>
+          {qualita.scelte.map((scelta) => (
+            <Riga
+              key={scelta.id}
+              icona={<Lente />}
+              testo={scelta.nome + (scelta.id === qualita.attuale ? ' ·' : '')}
+              fai={() => {
+                qualita.cambia(scelta.id)
+                chiudi()
+              }}
+            />
+          ))}
+        </>
       )}
 
       {moderatore && caccia && !dati.locale && (

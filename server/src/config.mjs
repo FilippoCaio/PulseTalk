@@ -49,6 +49,18 @@ export function leggiConfig(env = process.env) {
     root: resolve(root),
     dbPath: env.TALK_DB ? resolve(env.TALK_DB) : resolve(root, 'talk.db'),
 
+    // Dove stanno gli aggiornamenti dell'applicazione: l'installer, la sua
+    // mappa a blocchi e latest.yml, che e' l'elenco che il client legge per
+    // sapere se e' vecchio.
+    //
+    // Serviti dal server invece che da GitHub perche' e' lo stesso indirizzo a
+    // cui il client e' gia' collegato: nessun nome nuovo da esporre, nessun
+    // repository da tenere pubblico, e chi puo' entrare in una stanza puo'
+    // gia' scaricare l'aggiornamento.
+    aggiornamentiDir: env.TALK_AGGIORNAMENTI
+      ? resolve(env.TALK_AGGIORNAMENTI)
+      : resolve(root, 'aggiornamenti'),
+
     host: env.TALK_HOST ?? '0.0.0.0',
     port: intero(env, 'TALK_PORT', 8080, { min: 0, max: 65535 }),
 

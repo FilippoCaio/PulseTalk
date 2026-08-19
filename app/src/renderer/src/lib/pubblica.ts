@@ -154,10 +154,115 @@ export async function catturaSchermo(
 }
 
 export interface SchermoPubblicato {
-  video: LocalTrackPublication
+  /**
+   * Come questa condivisione si chiama per tutti gli altri.
+   *
+   * E' il trackSid del video, o quello dell'audio quando video non ce n'e'.
+   * Esiste come campo suo perche' con la condivisione di solo audio nessuno
+   * puo' piu' scrivere `pubblicato.video.trackSid` e sperare che ci sia.
+   */
+  id: string
+  /** Manca nelle condivisioni di solo audio. */
+  video: LocalTrackPublication | null
   audio: LocalTrackPublication | null
+  /** Il nome da mostrare: la finestra, o cio' che si sta suonando. */
+  etichetta: string
   /** Ferma la cattura e toglie le tracce dalla stanza. */
   chiudi: () => Promise<void>
+}
+
+/**
+ * Condivide SOLO l'audio di una sorgente, senza immagine.
+ *
+ * Serve per la musica, ed e' il caso in cui il video non e' un di piu' ma un
+ * danno: trenta megabit al secondo per mostrare la finestra ferma di un
+ * lettore multimediale, mentre quello che conta sono i 510 kbit dell'audio.
+ * Senza video la banda va tutta dove serve, e dall'altra parte non compare un
+ * riquadro da guardare che non ha niente da mostrare.
+ *
+ * La cattura resta quella di sempre — Chromium non sa catturare l'audio di una
+ * finestra senza catturarne anche l'immagine — ma la traccia video viene
+ * fermata subito e non pubblicata mai.
+ */
+export async function pubblicaSoloAudio(
+  stanza: Room,
+  stream: MediaStream,
+  limiti: Limiti,
+  etichetta: string,
+  bitrate: number,
+  quandoFinisce?: (idTraccia: string) => void
+): Promise<SchermoPubblicato> {
+  const tracceAudio = stream.getAudioTracks()
+
+  // Il video si ferma subito: non pubblicarlo basterebbe a non farlo viaggiare,
+  // ma lasciarlo vivo terrebbe accesa la cattura dello schermo, con la sua
+  // cornice gialla e il suo costo, per niente.
+  for (const t of stream.getVideoTracks()) t.stop()
+
+  if (!tracceAudio.length) {
+    throw new Error(
+      "Questa sorgente non da' audio. Su Windows l'audio si prende da uno schermo intero, " +
+        'oppure da una finestra spuntando "Condividi audio" nella finestra di scelta.'
+    )
+  }
+
+  const traccia = new LocalAudioTrack(tracceAudio[0], undefined, false)
+  const audio = await stanza.localParticipant.publishTrack(traccia, {
+    source: Track.Source.ScreenShareAudio,
+    name: etichetta,
+    audioPreset: { maxBitrate: Math.min(bitrate, limiti.bitrateVoce) },
+    forceStereo: true,
+    // DTX taglia i silenzi: su una voce fa risparmiare, su una traccia
+    // musicale mangia le code delle note e i passaggi in dissolvenza.
+    dtx: false,
+    red: false
+  })
+
+  tracceAudio[0].addEventListener(
+    'ended',
+    () => {
+      void chiudi()
+      quandoFinisce?.(audio.trackSid)
+    },
+    { once: true }
+  )
+
+  const chiudi = async (): Promise<void> => {
+    await stanza.localParticipant.unpublishTrack(traccia, true)
+    for (const t of stream.getTracks()) t.stop()
+  }
+
+  return { id: audio.trackSid, video: null, audio, etichetta, chiudi }
+}
+
+/**
+ * Cambia la qualita' di una condivisione **gia' accesa**, senza spegnerla.
+ *
+ * Bitrate, fotogrammi e preferenza di degradazione si riscrivono direttamente
+ * sul mittente WebRTC: non serve ripubblicare, quindi chi sta guardando non
+ * vede il buco nero di un secondo che una ripubblicazione costerebbe. E' anche
+ * il motivo per cui questa strada esiste invece di "chiudi e riapri": chi
+ * condivide una partita o una compilazione non puo' permettersi di sparire per
+ * alzare il bitrate.
+ *
+ * Quello che NON si puo' cambiare cosi' e' il codec e la sorgente: per quelli
+ * la traccia va rifatta, e chi chiama deve saperlo.
+ */
+export async function cambiaQualitaSchermo(
+  pubblicato: SchermoPubblicato,
+  presetGrezzo: PresetSchermo,
+  limiti: Limiti
+): Promise<void> {
+  const preset = entroILimiti(presetGrezzo, limiti)
+  // Su una condivisione di solo audio non c e niente da riqualificare.
+  const traccia = pubblicato.video?.track as LocalVideoTrack | undefined
+  if (!traccia) return
+
+  await forzaParametri(traccia, {
+    bitrate: preset.bitrate,
+    fps: preset.fps,
+    degradazione: preset.degradazione
+  })
 }
 
 export async function pubblicaSchermo(
@@ -259,7 +364,7 @@ export async function pubblicaSchermo(
     { once: true }
   )
 
-  return { video, audio, chiudi }
+  return { id: video.trackSid, video, audio, etichetta, chiudi }
 }
 
 // -- Camera -------------------------------------------------------------------
@@ -312,15 +417,71 @@ export async function accendiCamera(
 interface CatenaMicrofono {
   contesto: AudioContext
   guadagno: GainNode
+  /** Legge il livello PRIMA del guadagno: serve al misuratore e al cancello. */
+  analizzatore: AnalyserNode
   /** Lo stream vero del dispositivo: va fermato a mano, o resta la spia accesa. */
   grezzo: MediaStream
+  /** Il campionamento periodico del livello, da fermare smontando. */
+  battito: number
 }
 
 let catena: CatenaMicrofono | null = null
 
+/** Quanto vuole l'utente, prima che il cancello ci metta bocca. */
+let guadagnoVoluto = 1
+
+/** Sotto questo livello non esce niente. Zero tiene il cancello sempre aperto. */
+let soglia = 0
+
+/** L'ultimo livello misurato, da 0 a 1. Lo legge il misuratore nelle impostazioni. */
+let livello = 0
+
+/** Fino a quando tenere aperto dopo l'ultimo suono sopra soglia. */
+let apertoFino = 0
+
+/**
+ * Quanto il cancello resta aperto dopo che si e' scesi sotto la soglia.
+ *
+ * Senza questa coda il cancello taglia la fine delle parole: le consonanti
+ * finali stanno sotto soglia quasi sempre, e chiudere di netto da' un parlato
+ * mozzato che si sente peggio del rumore che si voleva togliere.
+ */
+const CODA_MS = 350
+
 /** Gira la manopola dell'entrata, senza toccare la traccia pubblicata. */
 export function impostaGuadagnoMicrofono(valore: number): void {
+  guadagnoVoluto = valore
+  applicaGuadagno()
+}
+
+/**
+ * La soglia sotto la quale il microfono non trasmette, da 0 a 1.
+ *
+ * E' l'automute alla Discord: si alza finche' il rumore di fondo — la ventola,
+ * la tastiera, la strada — resta sotto e la voce sopra. Zero lo spegne del
+ * tutto, ed e' il valore di partenza: un cancello tarato male taglia le parole,
+ * e va acceso da chi ha davanti il misuratore per regolarlo.
+ */
+export function impostaSogliaMicrofono(valore: number): void {
+  soglia = Math.max(0, Math.min(1, valore))
+  applicaGuadagno()
+}
+
+/** Il livello del microfono adesso, da 0 a 1. Zero se non c'e' una catena viva. */
+export function livelloMicrofono(): number {
+  return catena ? livello : 0
+}
+
+/** Vero se il cancello sta lasciando passare: il misuratore lo mostra. */
+export function microfonoPassa(): boolean {
+  if (!catena) return false
+  if (soglia <= 0) return true
+  return performance.now() < apertoFino
+}
+
+function applicaGuadagno(): void {
   if (!catena) return
+  const valore = soglia > 0 && !microfonoPassa() ? 0 : guadagnoVoluto
   // A rampa e non di scatto: un salto secco del guadagno fa un "click" udibile
   // dall'altra parte.
   catena.guadagno.gain.setTargetAtTime(valore, catena.contesto.currentTime, 0.05)
@@ -337,7 +498,11 @@ export function impostaGuadagnoMicrofono(valore: number): void {
 export async function chiudiCatenaMicrofono(): Promise<void> {
   const vecchia = catena
   catena = null
+  livello = 0
   if (!vecchia) return
+  // Il battito continuerebbe a girare su un contesto chiuso: ogni ingresso in
+  // stanza ne lascerebbe uno in piu' acceso per tutta la vita dell'app.
+  window.clearInterval(vecchia.battito)
   for (const traccia of vecchia.grezzo.getTracks()) traccia.stop()
   await vecchia.contesto.close().catch(() => {})
 }
@@ -391,8 +556,39 @@ export async function accendiMicrofono(
   const nodo = contesto.createGain()
   nodo.gain.value = guadagno
   const uscita = contesto.createMediaStreamDestination()
+
+  // L'analizzatore sta PRIMA del guadagno, e non e' un dettaglio: deve
+  // misurare quanto forte parli, non quanto forte esce. Messo dopo il cancello
+  // leggerebbe zero appena il cancello chiude, e non riaprirebbe mai piu'.
+  const analizzatore = contesto.createAnalyser()
+  analizzatore.fftSize = 1024
+  sorgente.connect(analizzatore)
+
   sorgente.connect(nodo).connect(uscita)
-  catena = { contesto, guadagno: nodo, grezzo }
+
+  guadagnoVoluto = guadagno
+  livello = 0
+  apertoFino = 0
+
+  const campioni = new Float32Array(analizzatore.fftSize)
+  const battito = window.setInterval(() => {
+    const viva = catena
+    if (!viva) return
+    viva.analizzatore.getFloatTimeDomainData(campioni)
+
+    // Valore efficace, non il picco: il picco salta a un colpo sul tavolo,
+    // l'efficace segue la voce, ed e' la voce che deve aprire il cancello.
+    let somma = 0
+    for (let i = 0; i < campioni.length; i++) somma += campioni[i] * campioni[i]
+    livello = Math.sqrt(somma / campioni.length)
+
+    if (soglia > 0) {
+      if (livello >= soglia) apertoFino = performance.now() + CODA_MS
+      applicaGuadagno()
+    }
+  }, 50)
+
+  catena = { contesto, guadagno: nodo, analizzatore, grezzo, battito }
 
   const traccia = new LocalAudioTrack(uscita.stream.getAudioTracks()[0], undefined, false)
 
