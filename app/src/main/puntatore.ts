@@ -27,7 +27,24 @@ const LATO = 260
 /** Le finestre vive, per non lasciarne in giro se l'app si chiude nel mezzo. */
 const aperte = new Set<BrowserWindow>()
 
+/**
+ * I puntatori tenuti premuti, per id di chi li tiene.
+ *
+ * Questi non muoiono da soli: restano finche' chi li tiene non lascia, e nel
+ * frattempo si spostano. Per questo servono qui — una finestra da ritrovare,
+ * non una da dimenticare.
+ */
+const tenuti = new Map<string, BrowserWindow>()
+
 export function mostraPuntatore(punta: Puntata): void {
+  // Chi lascia: si chiude quello che aveva in mano e non si disegna niente.
+  if (punta.lascia) {
+    const vecchia = tenuti.get(punta.lascia)
+    tenuti.delete(punta.lascia)
+    if (vecchia && !vecchia.isDestroyed()) vecchia.close()
+    return
+  }
+
   const display = screen
     .getAllDisplays()
     .find((d) => String(d.id) === String(punta.schermoId))
@@ -38,6 +55,16 @@ export function mostraPuntatore(punta: Puntata): void {
   // cui Electron posiziona le finestre.
   const x = Math.round(display.bounds.x + punta.x * display.bounds.width - LATO / 2)
   const y = Math.round(display.bounds.y + punta.y * display.bounds.height - LATO / 2)
+
+  // Un puntatore tenuto che esiste gia' si sposta e basta: ricrearne uno a
+  // ogni movimento del mouse farebbe cento finestre al secondo, e si vedrebbe.
+  if (punta.tenuto) {
+    const gia = tenuti.get(punta.tenuto)
+    if (gia && !gia.isDestroyed()) {
+      gia.setPosition(limitato(x, display.bounds.x, display.bounds.width), limitato(y, display.bounds.y, display.bounds.height))
+      return
+    }
+  }
 
   const finestra = new BrowserWindow({
     x: Math.min(Math.max(x, display.bounds.x - LATO / 2), display.bounds.x + display.bounds.width - LATO / 2),
@@ -68,12 +95,25 @@ export function mostraPuntatore(punta: Puntata): void {
 
   aperte.add(finestra)
   finestra.on('closed', () => aperte.delete(finestra))
+
+  if (punta.tenuto) {
+    // Nessun timer: vive finche' chi lo tiene non lascia la presa.
+    tenuti.set(punta.tenuto, finestra)
+    return
+  }
+
   setTimeout(() => {
     if (!finestra.isDestroyed()) finestra.close()
   }, DURATA)
 }
 
+/** Tiene la finestra dentro al monitor su cui e' stata chiesta. */
+function limitato(valore: number, inizio: number, lato: number): number {
+  return Math.min(Math.max(valore, inizio - LATO / 2), inizio + lato - LATO / 2)
+}
+
 export function chiudiPuntatori(): void {
+  tenuti.clear()
   for (const finestra of [...aperte]) {
     if (!finestra.isDestroyed()) finestra.close()
   }
@@ -87,7 +127,7 @@ export function chiudiPuntatori(): void {
  * al centro — la forma che l'occhio riconosce come "qui", la stessa di un
  * tocco su una mappa.
  */
-function pagina({ colore, nome }: Puntata): string {
+function pagina({ colore, nome, tenuto }: Puntata): string {
   const sicuro = /^#[0-9a-fA-F]{3,8}$/.test(colore) ? colore : '#4f9cf9'
   const etichetta = (nome || '').replace(/[<>&"]/g, '').slice(0, 24)
 
@@ -103,10 +143,19 @@ function pagina({ colore, nome }: Puntata): string {
     .nome{position:absolute;top:calc(50% + 26px);padding:2px 8px;border-radius:999px;
       background:rgba(0,0,0,.72);color:#fff;font-size:12px;font-weight:600;white-space:nowrap;
       animation:svanisci 2.5s ease-out forwards}
+
+    /* Tenuto premuto: nessuna onda e niente che svanisce.
+       Le onde dicono "guarda qui adesso", e ripetute mentre si trascina
+       diventano un lampeggio continuo. Qui serve un dito fermo che indica,
+       non un richiamo. */
+    .fermo .anello{display:none}
+    .fermo .punto{animation:none;opacity:1;width:18px;height:18px;
+      border:3px solid rgba(255,255,255,.9)}
+    .fermo .nome{animation:none;opacity:1}
     @keyframes onda{0%{transform:scale(.35);opacity:.95}100%{transform:scale(4.2);opacity:0}}
     @keyframes battito{0%{transform:scale(.5);opacity:1}70%{transform:scale(1);opacity:1}100%{opacity:0}}
     @keyframes svanisci{0%,70%{opacity:1}100%{opacity:0}}
-  </style><div class="centro">
+  </style><div class="centro${tenuto ? ' fermo' : ''}">
     <div class="anello"></div><div class="anello due"></div><div class="punto"></div>
     ${etichetta ? `<div class="nome">${etichetta}</div>` : ''}
   </div>`

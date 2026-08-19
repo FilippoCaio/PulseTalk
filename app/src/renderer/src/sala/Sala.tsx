@@ -324,12 +324,13 @@ export default function Sala({
     preset: PresetSchermo,
     audio: ModoAudioSistema,
     soloAudio: boolean,
-    bitrateAudio: number
+    bitrateAudio: number,
+    permettiInterazione: boolean
   ): Promise<void> => {
     setScegliSorgente(false)
     // La scelta fatta qui vale per questa condivisione: quella di serie resta
     // nelle impostazioni e non viene riscritta da un ripensamento di un minuto.
-    await sessione.condividi(sorgente, preset, audio, soloAudio, bitrateAudio)
+    await sessione.condividi(sorgente, preset, audio, soloAudio, bitrateAudio, permettiInterazione)
   }
 
   const aggancio: PosizioneStriscia = impostazioni.posizioneStriscia ?? 'sotto'
@@ -440,10 +441,16 @@ export default function Sala({
                       schermoIntero={schermoIntero}
                       puntatori={puntatoriDi(grande)}
                       quandoPunta={
-                        grande.tipo === 'schermo'
+                        grande.tipo === 'schermo' && !grande.locale
                           ? (x, y) => sessione.punta(grande.id, x, y)
                           : undefined
                       }
+                      quandoTiene={
+                        grande.tipo === 'schermo' && !grande.locale
+                          ? (x, y) => sessione.punta(grande.id, x, y, true)
+                          : undefined
+                      }
+                      quandoLascia={() => sessione.lascia(grande.id)}
                       quandoMenu={(x, y) => setMenu({ x, y, id: grande.id })}
                       quandoScelto={togli}
                     />
@@ -474,10 +481,16 @@ export default function Sala({
                               // regola che vale a meta' e' una regola che
                               // bisogna ricordarsi, e nessuno se la ricorda.
                               quandoPunta={
-                                riquadro.tipo === 'schermo'
+                                riquadro.tipo === 'schermo' && !riquadro.locale
                                   ? (x, y) => sessione.punta(riquadro.id, x, y)
                                   : undefined
                               }
+                              quandoTiene={
+                                riquadro.tipo === 'schermo' && !riquadro.locale
+                                  ? (x, y) => sessione.punta(riquadro.id, x, y, true)
+                                  : undefined
+                              }
+                              quandoLascia={() => sessione.lascia(riquadro.id)}
                               quandoMenu={(x, y) => setMenu({ x, y, id: riquadro.id })}
                               quandoScelto={() => metti(riquadro)}
                             />
@@ -518,10 +531,16 @@ export default function Sala({
                             volumi={vociDi(riquadro)}
                             puntatori={puntatoriDi(riquadro)}
                             quandoPunta={
-                              riquadro.tipo === 'schermo'
+                              riquadro.tipo === 'schermo' && !riquadro.locale
                                 ? (x, y) => sessione.punta(riquadro.id, x, y)
                                 : undefined
                             }
+                            quandoTiene={
+                              riquadro.tipo === 'schermo' && !riquadro.locale
+                                ? (x, y) => sessione.punta(riquadro.id, x, y, true)
+                                : undefined
+                            }
+                            quandoLascia={() => sessione.lascia(riquadro.id)}
                             quandoMenu={(x, y) => setMenu({ x, y, id: riquadro.id })}
                             quandoScelto={() => metti(riquadro)}
                           />
@@ -538,7 +557,7 @@ export default function Sala({
             <SceltaSorgente
               presetIniziale={impostazioni.presetSchermo}
               audioIniziale={impostazioni.audioSistema}
-              conferma={(s, p, a, solo, bit) => void condividi(s, p, a, solo, bit)}
+              conferma={(s, p, a, solo, bit, inter) => void condividi(s, p, a, solo, bit, inter)}
               chiudi={() => setScegliSorgente(false)}
             />
           )}

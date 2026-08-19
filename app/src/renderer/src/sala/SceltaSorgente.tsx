@@ -35,7 +35,8 @@ export default function SceltaSorgente({
     preset: PresetSchermo,
     audio: ModoAudioSistema,
     soloAudio: boolean,
-    bitrateAudio: number
+    bitrateAudio: number,
+    permettiInterazione: boolean
   ) => void
   chiudi: () => void
 }): React.JSX.Element {
@@ -54,6 +55,16 @@ export default function SceltaSorgente({
    */
   const [soloAudio, setSoloAudio] = useState(false)
   const [categoria, setCategoria] = useState<Categoria>('schermi')
+
+  /**
+   * Se gli altri possono indicare punti su questa condivisione.
+   *
+   * Acceso di partenza, perche' e' il motivo per cui la condivisione esiste:
+   * si mostra qualcosa per parlarne insieme. Si toglie quando si mostra una
+   * cosa e basta — una presentazione, un documento — e gli aloni sopra
+   * sarebbero solo un disturbo.
+   */
+  const [permettiInterazione, setPermettiInterazione] = useState(true)
 
   // Camere e schede di acquisizione, vestite da sorgente: cosi' proseguono
   // per la stessa strada di uno schermo condiviso.
@@ -96,7 +107,7 @@ export default function SceltaSorgente({
         dispositivi.find((d) => d.id === scelta) ??
         null)
     if (!nelBrowser && !sorgente) return
-    conferma(sorgente, preset, audio, soloAudio, bitrateAudio)
+    conferma(sorgente, preset, audio, soloAudio, bitrateAudio, permettiInterazione)
   }
 
   return (
@@ -194,6 +205,30 @@ export default function SceltaSorgente({
         </div>
 
         <div className="space-y-4 border-t border-bordo p-5">
+          {!soloAudio && (
+            <button
+              onClick={() => setPermettiInterazione((v) => !v)}
+              className="flex w-full items-start gap-2.5 rounded-lg border border-bordo bg-fondo px-3 py-2 text-left transition-colors hover:border-fondo-3"
+            >
+              <span
+                className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[10px] ${
+                  permettiInterazione
+                    ? 'border-vivo bg-vivo text-fondo'
+                    : 'border-bordo text-transparent'
+                }`}
+              >
+                ✓
+              </span>
+              <span>
+                <span className="block text-sm">Lascia che indichino sulla tua condivisione</span>
+                <span className="block text-[11px] text-testo-3">
+                  Con la spunta, chi guarda puo' segnare un punto e te lo vedi comparire sul
+                  monitor. Senza, resta una cosa da guardare e basta.
+                </span>
+              </span>
+            </button>
+          )}
+
           <div>
             <p className="mb-2 text-xs font-medium tracking-wide text-testo-2 uppercase">Qualita'</p>
             <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">

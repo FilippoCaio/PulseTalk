@@ -41,6 +41,14 @@ import { BottoneVolume, type VoceVolume } from './Volume'
  * sopra col puntatore, e vengono da `getStats()`: sono cio' che il
  * codificatore sta facendo adesso, non cio' che gli e' stato chiesto.
  */
+/**
+ * Quanto tenere premuto perche' il puntatore diventi persistente.
+ *
+ * 1,35 secondi: abbastanza da non scattare per un clic un po' lento,
+ * abbastanza poco da non far pensare che non stia succedendo niente.
+ */
+const ATTESA_PRESSIONE = 1350
+
 export default function Riquadro({
   dati,
   foto,
@@ -50,6 +58,8 @@ export default function Riquadro({
   schermoIntero,
   puntatori,
   quandoPunta,
+  quandoTiene,
+  quandoLascia,
   quandoMenu,
   quandoScelto
 }: {
@@ -64,8 +74,17 @@ export default function Riquadro({
   schermoIntero?: { attivo: boolean; alterna: () => void }
   /** I "guarda qui" da disegnare qui sopra, gia' filtrati per questo riquadro. */
   puntatori?: Puntatore[]
-  /** Indica un punto: alt+clic, in frazioni di video da 0 a 1. */
+  /** Indica un punto con un tocco, in frazioni di video da 0 a 1. */
   quandoPunta?: (x: number, y: number) => void
+  /**
+   * Tiene premuto: un puntatore che resta e si trascina.
+   *
+   * La seconda modalita'. Il tocco dice "guarda qui adesso" e si spegne da
+   * solo; questo e' un dito appoggiato che segue quello di cui si sta
+   * parlando, e resta finche' non si lascia.
+   */
+  quandoTiene?: (x: number, y: number) => void
+  quandoLascia?: () => void
   /** Tasto destro: apre il menu del riquadro alle coordinate del puntatore. */
   quandoMenu?: (x: number, y: number) => void
   quandoScelto: () => void
@@ -83,6 +102,25 @@ export default function Riquadro({
   // Da dove e' partito il trascinamento, e se si e' mosso abbastanza da non
   // essere piu' un clic.
   const presa = useRef<{ x: number; y: number; zoom: Zoom; mosso: boolean } | null>(null)
+
+  /**
+   * La pressione lunga che accende il puntatore tenuto.
+   *
+   * `attesa` e' il timer che deve maturare senza che il dito scappi; `vivo`
+   * dice che il puntatore c'e' e che ogni movimento va mandato.
+   */
+  const lunga = useRef<{
+    attesa: number | null
+    vivo: boolean
+    /** Da dove e' partita la pressione: serve a capire se il dito e' scappato. */
+    da: { x: number; y: number } | null
+  }>({ attesa: null, vivo: false, da: null })
+
+  const fermaAttesa = (): void => {
+    if (lunga.current.attesa !== null) window.clearTimeout(lunga.current.attesa)
+    lunga.current.attesa = null
+    lunga.current.da = null
+  }
 
   // Solo gli schermi si ingrandiscono: su un volto non serve, e un volto
   // trascinabile per sbaglio e' solo un modo per spostare la faccia di
@@ -195,12 +233,48 @@ export default function Riquadro({
   }
 
   const premuto = (evento: React.PointerEvent): void => {
+    // La pressione lunga vale anche a zoom 1, dove non c'e' niente da
+    // trascinare: e' il caso normale, e legarla allo zoom la renderebbe una
+    // funzione che si scopre per sbaglio.
+    if (quandoTiene) {
+      const punto = dove(evento)
+      ;(evento.target as HTMLElement).setPointerCapture?.(evento.pointerId)
+      fermaAttesa()
+      lunga.current.da = punto
+      lunga.current.attesa = window.setTimeout(() => {
+        lunga.current = { attesa: null, vivo: true, da: null }
+        const frazione = versoContenuto(punto, zoom, misure)
+        quandoTiene(frazione.x, frazione.y)
+      }, ATTESA_PRESSIONE)
+    }
+
     if (!ingrandibile || zoom.scala <= 1) return
     presa.current = { ...dove(evento), zoom, mosso: false }
     ;(evento.target as HTMLElement).setPointerCapture?.(evento.pointerId)
   }
 
   const mosso = (evento: React.PointerEvent): void => {
+    // Puntatore tenuto acceso: da qui in poi il movimento e' suo, e non
+    // sposta l'immagine.
+    if (lunga.current.vivo && quandoTiene) {
+      const frazione = versoContenuto(dove(evento), zoom, misure)
+      quandoTiene(frazione.x, frazione.y)
+      return
+    }
+
+    // Il dito si e' mosso prima che l'attesa maturasse: era un trascinamento,
+    // non una pressione lunga.
+    //
+    // Il punto di partenza e' quello della pressione lunga e non quello del
+    // trascinamento: a zoom 1 il secondo non esiste — non c'e' niente da
+    // spostare — e il puntatore sarebbe comparso dopo 1,35 s dove il dito non
+    // era piu'.
+    const partenza = lunga.current.da
+    if (lunga.current.attesa !== null && partenza) {
+      const punto = dove(evento)
+      if (Math.abs(punto.x - partenza.x) + Math.abs(punto.y - partenza.y) > 6) fermaAttesa()
+    }
+
     const da = presa.current
     if (!da) return
     const adesso = dove(evento)
@@ -211,6 +285,15 @@ export default function Riquadro({
   }
 
   const lasciato = (): void => {
+    fermaAttesa()
+
+    if (lunga.current.vivo) {
+      lunga.current.vivo = false
+      quandoLascia?.()
+      // Il clic che segue il rilascio non deve indicare una seconda volta.
+      pretesa.current = true
+    }
+
     // Un trascinamento non e' un clic: senza questa riga, ogni spostamento
     // dell'immagine toglierebbe anche il fuoco al riquadro.
     if (presa.current?.mosso) pretesa.current = true

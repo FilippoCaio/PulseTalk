@@ -128,6 +128,14 @@ export interface Puntatore {
   y: number
   colore: string
   nome: string
+  /**
+   * Tenuto premuto: niente onde, e non svanisce da solo.
+   *
+   * Sono due gesti con due significati. Il tocco dice "guarda qui adesso" e si
+   * spegne da solo; il tenuto e' un dito appoggiato che segue quello di cui si
+   * sta parlando, e resta finche' serve.
+   */
+  tenuto?: boolean
 }
 
 export interface Messaggio {
@@ -293,7 +301,10 @@ export interface Sessione {
   /** I "guarda qui" ancora vivi, da disegnare sopra ai riquadri. */
   puntatori: Puntatore[]
   /** Indica un punto dello schermo di qualcuno: lo vedono tutti, lui sul monitor. */
-  punta(schermo: string, x: number, y: number): void
+  /** Un tocco, oppure — con `tenuto` — un puntatore che resta finche' non si lascia. */
+  punta(schermo: string, x: number, y: number, tenuto?: boolean): void
+  /** Lascia la presa sul puntatore tenuto: sparisce per tutti. */
+  lascia(schermo: string): void
 
   entra(ingresso: Ingresso, impostazioni: Impostazioni): Promise<void>
   esci(): Promise<void>
@@ -306,7 +317,8 @@ export interface Sessione {
     preset: PresetSchermo,
     audioSistema?: ModoAudioSistema,
     soloAudio?: boolean,
-    bitrateAudio?: number
+    bitrateAudio?: number,
+    permettiInterazione?: boolean
   ): Promise<void>
   smettiDiCondividere(id?: string): Promise<void>
   manda(testo: string): void
@@ -437,9 +449,15 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
    */
   const accogliPuntatore = useCallback((arrivato: Puntatore) => {
     setPuntatori((prima) => [...prima.filter((p) => p.id !== arrivato.id), arrivato])
-    setTimeout(() => {
-      setPuntatori((prima) => prima.filter((p) => p.id !== arrivato.id))
-    }, 2600)
+
+    // Solo il tocco scade da solo. Il tenuto se ne va quando arriva il
+    // rilascio, e un timer qui lo farebbe sparire sotto al dito di chi lo
+    // tiene ancora premuto.
+    if (!arrivato.tenuto) {
+      setTimeout(() => {
+        setPuntatori((prima) => prima.filter((p) => p.id !== arrivato.id))
+      }, 2600)
+    }
 
     const monitor = schermiSuMonitorRef.current.get(arrivato.schermo)
     if (monitor) {
@@ -448,7 +466,24 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
         x: arrivato.x,
         y: arrivato.y,
         colore: arrivato.colore,
-        nome: arrivato.nome
+        nome: arrivato.nome,
+        tenuto: arrivato.tenuto ? arrivato.id : undefined
+      })
+    }
+  }, [])
+
+  /** Toglie un puntatore tenuto, qui e sul monitor di chi condivide. */
+  const lasciaPuntatore = useCallback((id: string, schermo: string) => {
+    setPuntatori((prima) => prima.filter((p) => p.id !== id))
+    const monitor = schermiSuMonitorRef.current.get(schermo)
+    if (monitor) {
+      ponte.puntatoreSulloSchermo({
+        schermoId: monitor,
+        x: 0,
+        y: 0,
+        colore: '#000000',
+        nome: '',
+        lascia: id
       })
     }
   }, [])
@@ -586,14 +621,28 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
             const dati = JSON.parse(new TextDecoder().decode(carico))
 
             if (dati.tipo === 'punta' && da) {
+              // Su una propria condivisione con l'interazione tolta, i
+              // puntatori altrui si buttano via qui.
+              //
+              // Il controllo sta da questa parte e non da quella di chi indica
+              // perche' e' l'unica che conta: chi condivide decide sul proprio
+              // schermo, e un client modificato non puo' aggirarlo.
+              if (senzaInterazioneRef.current.has(String(dati.schermo))) return
+
               accogliPuntatore({
-                id: `${da.identity}-${dati.istante}`,
+                id: String(dati.id ?? `${da.identity}-${dati.istante}`),
                 schermo: String(dati.schermo),
                 x: Number(dati.x),
                 y: Number(dati.y),
                 colore: coloreDi(da.identity),
-                nome: da.name || da.identity
+                nome: da.name || da.identity,
+                tenuto: Boolean(dati.tenuto)
               })
+              return
+            }
+
+            if (dati.tipo === 'lascia' && da) {
+              lasciaPuntatore(String(dati.id), String(dati.schermo))
               return
             }
 
@@ -615,7 +664,7 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
         }
       )
     },
-    [accogliPuntatore, applicaAudio, ridisegna]
+    [accogliPuntatore, lasciaPuntatore, applicaAudio, ridisegna]
   )
 
   const entra = useCallback(
@@ -903,6 +952,15 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
   const presetSchermiRef = useRef(new Map<string, string>())
 
   /**
+   * Le proprie condivisioni su cui gli altri non possono indicare.
+   *
+   * Serve a chi condivide, non a chi guarda: e' qui che i puntatori in arrivo
+   * vengono ignorati. La spunta nel selettore decide, e da quel momento nessun
+   * alone compare piu' sul proprio monitor per quella condivisione.
+   */
+  const senzaInterazioneRef = useRef(new Set<string>())
+
+  /**
    * Cambia la qualita' di una condivisione gia' accesa.
    *
    * Non la ferma e non la ripubblica: bitrate e fotogrammi si riscrivono sul
@@ -1067,7 +1125,9 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
       /** Solo l'audio, senza immagine: per la musica. */
       soloAudio = false,
       /** Il bitrate dell'audio condiviso. Serve solo con soloAudio. */
-      bitrateAudio = 510_000
+      bitrateAudio = 510_000,
+      /** Se falso, gli altri non possono indicare punti su questa condivisione. */
+      permettiInterazione = true
     ) => {
       const stanza = stanzaRef.current
       const limiti = limitiRef.current
@@ -1103,6 +1163,7 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
           schermiRef.current.delete(idTraccia)
           schermiSuMonitorRef.current.delete(idTraccia)
           presetSchermiRef.current.delete(idTraccia)
+          senzaInterazioneRef.current.delete(idTraccia)
           suona('condivisioneFinita')
           ridisegna()
         }
@@ -1127,6 +1188,7 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
         // Serve a sapere quale voce e' spuntata nel menu, e a non riapplicare
         // una qualita' che c'e' gia'.
         presetSchermiRef.current.set(pubblicato.id, preset.id)
+        if (!permettiInterazione) senzaInterazioneRef.current.add(pubblicato.id)
         // Serve al puntatore: quando qualcuno indica questo riquadro, e' su
         // questo monitor che va disegnato l'alone. Le finestre singole non
         // hanno un monitor proprio — di quelle Electron non conosce la
@@ -1160,6 +1222,7 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
       if (id) {
         schermiRef.current.delete(id)
         presetSchermiRef.current.delete(id)
+        senzaInterazioneRef.current.delete(id)
         schermiSuMonitorRef.current.delete(id)
       } else {
         schermiRef.current.clear()
@@ -1221,29 +1284,55 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
   }, [])
 
   const punta = useCallback(
-    (schermo: string, x: number, y: number) => {
+    (schermo: string, x: number, y: number, tenuto = false) => {
       const stanza = stanzaRef.current
       if (!stanza) return
 
       const io = stanza.localParticipant
-      const carico = { tipo: 'punta', schermo, x, y, istante: Date.now() }
+
+      // Un puntatore tenuto ha un id stabile — uno per persona — cosi' i
+      // movimenti aggiornano quello che c'e' invece di accumularne uno nuovo a
+      // ogni pixel. Il tocco invece ha l'istante, perche' due tocchi vicini
+      // sono due cose distinte.
+      const id = tenuto ? `${io.identity}-tenuto` : `${io.identity}-${Date.now()}`
+      const carico = { tipo: 'punta', id, schermo, x, y, tenuto }
+
       void stanza.localParticipant.publishData(
         new TextEncoder().encode(JSON.stringify(carico)),
-        { reliable: true }
+        // I movimenti di un puntatore tenuto sono tanti e sostituibili: se uno
+        // si perde, quello dopo lo rimpiazza un centesimo di secondo dopo.
+        // Chiederli affidabili li metterebbe in coda dietro a se stessi.
+        { reliable: !tenuto }
       )
 
       // Anche a se stessi, subito: chi indica deve vedere dove ha indicato
       // senza aspettare che il pacchetto faccia il giro.
       accogliPuntatore({
-        id: `${io.identity}-${carico.istante}`,
+        id,
         schermo,
         x,
         y,
         colore: coloreDi(io.identity),
-        nome: io.name || 'tu'
+        nome: io.name || 'tu',
+        tenuto
       })
     },
     [accogliPuntatore]
+  )
+
+  /** Lascia la presa: il puntatore tenuto sparisce per tutti. */
+  const lascia = useCallback(
+    (schermo: string) => {
+      const stanza = stanzaRef.current
+      if (!stanza) return
+      const id = `${stanza.localParticipant.identity}-tenuto`
+      void stanza.localParticipant.publishData(
+        new TextEncoder().encode(JSON.stringify({ tipo: 'lascia', id, schermo })),
+        { reliable: true }
+      )
+      lasciaPuntatore(id, schermo)
+    },
+    [lasciaPuntatore]
   )
 
   const sbloccaAudio = useCallback(async () => {
@@ -1394,6 +1483,7 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
     fermaRiascolto,
     puntatori,
     punta,
+    lascia,
     entra,
     esci,
     alternaMicrofono,

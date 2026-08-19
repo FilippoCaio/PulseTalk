@@ -109,6 +109,16 @@ export interface Puntata {
   y: number
   colore: string
   nome: string
+  /**
+   * Chi lo tiene premuto, e quindi quale finestra spostare.
+   *
+   * Assente: e' un tocco: nasce, fa l'onda, muore da solo. Presente: e' un
+   * puntatore tenuto, che si sposta finche' chi lo tiene non lascia — e
+   * allora arriva `lascia` con lo stesso id.
+   */
+  tenuto?: string
+  /** Chiude il puntatore tenuto con questo id. Gli altri campi si ignorano. */
+  lascia?: string
 }
 
 export interface SceltaCattura {
