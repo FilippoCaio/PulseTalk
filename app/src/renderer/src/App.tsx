@@ -278,6 +278,34 @@ export default function App(): React.JSX.Element {
     return () => window.removeEventListener('keydown', tasto)
   }, [sessione])
 
+  /**
+   * La chiamata a tutto schermo: via le due colonne di sinistra.
+   *
+   * Sta qui e non dentro alla stanza perche' le colonne da nascondere sono di
+   * qui: uno stato tenuto piu' in basso non potrebbe toccarle.
+   *
+   * E sta SOPRA ai ritorni anticipati qui sotto, non sotto: gli hook devono
+   * essere gli stessi a ogni disegno. Messo dopo, non veniva mai eseguito
+   * finche' si era alla schermata d'accesso, e al primo disegno da dentro
+   * React ne trovava tre in piu' e si fermava — pagina vuota, errore 310.
+   */
+  const [chiamataPiena, setChiamataPiena] = useState(false)
+
+  // Uscire con Escape, che e' dove la mano va da sola.
+  useEffect(() => {
+    if (!chiamataPiena) return
+    const tasto = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') setChiamataPiena(false)
+    }
+    window.addEventListener('keydown', tasto)
+    return () => window.removeEventListener('keydown', tasto)
+  }, [chiamataPiena])
+
+  // Uscendo dalla chiamata non si resta a tutto schermo su una stanza vuota.
+  useEffect(() => {
+    if (!inVoce) setChiamataPiena(false)
+  }, [inVoce])
+
   // -- Le schermate che vengono prima ----------------------------------------
 
   if (!impostazioni) {
@@ -314,29 +342,6 @@ export default function App(): React.JSX.Element {
       />
     )
   }
-
-  /**
-   * La chiamata a tutto schermo: via le due colonne di sinistra.
-   *
-   * Sta qui e non dentro alla stanza perche' le colonne da nascondere sono di
-   * qui: uno stato tenuto piu' in basso non potrebbe toccarle.
-   */
-  const [chiamataPiena, setChiamataPiena] = useState(false)
-
-  // Uscire con Escape, che e' dove la mano va da sola.
-  useEffect(() => {
-    if (!chiamataPiena) return
-    const tasto = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') setChiamataPiena(false)
-    }
-    window.addEventListener('keydown', tasto)
-    return () => window.removeEventListener('keydown', tasto)
-  }, [chiamataPiena])
-
-  // Uscendo dalla chiamata non si resta a tutto schermo su una stanza vuota.
-  useEffect(() => {
-    if (!inVoce) setChiamataPiena(false)
-  }, [inVoce])
 
   // -- Le tre colonne ---------------------------------------------------------
 

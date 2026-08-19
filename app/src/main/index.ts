@@ -1,4 +1,5 @@
 import { app, BrowserWindow, globalShortcut, ipcMain, Notification, session, shell } from 'electron'
+import { appendFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { agganciaCattura, elencaSorgenti, ricordaScelta } from './cattura'
 import { dimenticaToken, leggiImpostazioni, scriviImpostazioni, scriviToken } from './impostazioni'
@@ -27,6 +28,26 @@ import {
 const DEV = !!process.env.ELECTRON_RENDERER_URL
 
 let finestra: BrowserWindow | null = null
+
+/**
+ * Quante volte la pagina e' stata rianimata dopo un crollo.
+ *
+ * Serve a non entrare in un giro infinito: se muore subito ogni volta,
+ * ricaricarla all'infinito e' peggio che fermarsi e dirlo.
+ */
+let rianimazioni = 0
+
+/** Dove finiscono le morti del renderer, per poterle leggere il giorno dopo. */
+function registraGuasto(testo: string): void {
+  const riga = `[${new Date().toISOString()}] ${testo}
+`
+  try {
+    appendFileSync(join(app.getPath('userData'), 'guasti.log'), riga)
+  } catch {
+    // Se non si puo' scrivere non si puo' fare altro: almeno resta a schermo.
+  }
+  console.error(riga.trim())
+}
 
 // Su una macchina con due schede video, la finestra che codifica un 4K60 vuole
 // quella vera. Senza, Windows la lascia sulla integrata "per risparmiare".
@@ -246,9 +267,37 @@ if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
   app.on('second-instance', () => {
-    if (!finestra) return
+    // Se la finestra non c'e' piu' ma il processo e' rimasto in piedi, si
+    // rifa'. Senza questo ramo il doppio clic muore in silenzio contro il
+    // lucchetto: l'app risulta gia' aperta, non ha niente da mostrare, e
+    // l'unico modo di riaverla e' il Task Manager. E' il genere di guasto che
+    // l'utente descrive come "non compare nulla", perche' e' esattamente cio'
+    // che vede.
+    if (!finestra || finestra.isDestroyed()) {
+      creaFinestra()
+      return
+    }
     if (finestra.isMinimized()) finestra.restore()
+    finestra.show()
     finestra.focus()
+  })
+
+  // Un renderer che muore lascia una finestra grigia e nient'altro: nessun
+  // errore, nessuna traccia, e l'utente che scrive "non compare nulla". Qui la
+  // morte viene scritta su file e la pagina viene rianimata una volta sola.
+  app.on('render-process-gone', (_evento, contenuti, dettagli) => {
+    registraGuasto(
+      `renderer morto: motivo=${dettagli.reason} codice=${dettagli.exitCode ?? '?'}`
+    )
+    if (rianimazioni >= 2) {
+      registraGuasto('gia rianimato due volte: mi fermo, sarebbe un giro infinito')
+      return
+    }
+    rianimazioni++
+    // Un giro di orologio: ricaricare dentro al gestore stesso non funziona.
+    setTimeout(() => {
+      if (!contenuti.isDestroyed()) contenuti.reload()
+    }, 300)
   })
 
   app.whenReady().then(() => {
