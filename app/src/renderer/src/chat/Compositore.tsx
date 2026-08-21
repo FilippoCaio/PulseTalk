@@ -12,6 +12,22 @@ import { Chiudi, Graffetta } from '../icone'
  * dell'invio restano da mandare solo gli id — che e' anche il motivo per cui
  * premere Invio con una foto da dieci megabyte non fa aspettare nessuno.
  */
+/**
+ * Quanto puo' pesare un allegato.
+ *
+ * E' lo stesso tetto del server (`TALK_MAX_ALLEGATO`, 100 MB di serie).
+ * Ripeterlo qui non e' una duplicazione inutile: e' cio' che permette di dirlo
+ * prima di spedire, invece di far aspettare il caricamento di un file troppo
+ * grande per poi rifiutarlo. Se di la' cambia, qui si vede solo un messaggio
+ * un po' meno preciso — non si rompe niente.
+ */
+const ALLEGATO_MAX = 100 * 1024 * 1024
+
+const inMega = (byte: number): string =>
+  byte >= 1024 * 1024 * 1024
+    ? `${(byte / (1024 * 1024 * 1024)).toFixed(1)} GB`
+    : `${Math.round(byte / (1024 * 1024))} MB`
+
 export default function Compositore({
   api,
   canale,
@@ -37,6 +53,20 @@ export default function Compositore({
   const carica = async (scelti: FileList | File[]): Promise<void> => {
     setErrore(null)
     for (const scelto of Array.from(scelti)) {
+      // Il peso si guarda PRIMA di partire.
+      //
+      // Senza questo controllo un file da quattro giga veniva spedito per
+      // intero, e la risposta era un "413" secco: un numero che non dice
+      // quanto era grande il file, ne' quanto poteva esserlo. E nel frattempo
+      // si era aspettato per niente.
+      if (scelto.size > ALLEGATO_MAX) {
+        setErrore(
+          `${scelto.name} pesa ${inMega(scelto.size)} e il limite e' ${inMega(ALLEGATO_MAX)}. ` +
+            'Per file grossi conviene un collegamento invece dell\'allegato.'
+        )
+        continue
+      }
+
       setInCaricamento((n) => n + 1)
       try {
         const allegato = await api.carica(scelto)

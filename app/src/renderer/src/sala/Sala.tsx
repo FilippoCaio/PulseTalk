@@ -613,6 +613,12 @@ export default function Sala({
         cameraAccesa={sessione.cameraAccesa}
         puoTrasmettere={ingresso.permessi.puoTrasmettere}
         schermiAttivi={sessione.schermiAttivi}
+        audioCondivisi={sessione.audioCondivisi}
+        audioRemoti={sessione.audioRemoti}
+        volumeAudioCondiviso={sessione.impostaVolumeAudioCondiviso}
+        mutoAudioCondiviso={sessione.alternaMutoAudioCondiviso}
+        volumeAudioRemoto={sessione.impostaVolumeAudioRemoto}
+        mutoAudioRemoto={sessione.alternaMutoAudioRemoto}
         riascoltoAttivo={sessione.riascoltoAttivo}
         secondiRiascolto={impostazioni.secondiRiascolto || 30}
         impostazioni={impostazioni}

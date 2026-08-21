@@ -2,13 +2,17 @@ import { useEffect, useRef, useState } from 'react'
 import type { Impostazioni } from '@shared/tipi'
 import { PRESET_SCHERMO } from '@shared/qualita'
 import ControlliAudio from '../ControlliAudio'
+import type { AudioCondiviso, AudioRemoto } from '../lib/usaSessione'
 import { usaDispositivi } from '../lib/usaDispositivi'
 import {
+  Altoparlante,
+  AltoparlanteMuto,
   Camera,
   CameraSpenta,
   Esci,
   Microfono,
   MicrofonoSpento,
+  Onde,
   Pile,
   Riavvolgi,
   SchermoCondividi,
@@ -36,6 +40,12 @@ export default function OverlayChiamata({
   cameraAccesa,
   puoTrasmettere,
   schermiAttivi,
+  audioCondivisi,
+  audioRemoti,
+  volumeAudioCondiviso,
+  mutoAudioCondiviso,
+  volumeAudioRemoto,
+  mutoAudioRemoto,
   riascoltoAttivo,
   secondiRiascolto,
   impostazioni,
@@ -55,6 +65,14 @@ export default function OverlayChiamata({
   cameraAccesa: boolean
   puoTrasmettere: boolean
   schermiAttivi: { id: string; etichetta: string }[]
+  /** Le proprie condivisioni di solo audio: quanto forte esce da te. */
+  audioCondivisi: AudioCondiviso[]
+  /** Gli audio condivisi dagli altri: quanto forte arriva a te. */
+  audioRemoti: AudioRemoto[]
+  volumeAudioCondiviso: (id: string, volume: number) => void
+  mutoAudioCondiviso: (id: string) => void
+  volumeAudioRemoto: (id: string, volume: number) => void
+  mutoAudioRemoto: (id: string) => void
   riascoltoAttivo: boolean
   secondiRiascolto: number
   impostazioni: Impostazioni
@@ -71,7 +89,9 @@ export default function OverlayChiamata({
   esci: () => void
 }): React.JSX.Element {
   const [visibile, setVisibile] = useState(true)
-  const [aperto, setAperto] = useState<'microfono' | 'camera' | 'condivisioni' | null>(null)
+  const [aperto, setAperto] = useState<'microfono' | 'camera' | 'condivisioni' | 'audio' | null>(
+    null
+  )
   const scadenza = useRef<number | null>(null)
   const radice = useRef<HTMLDivElement>(null)
 
@@ -116,6 +136,12 @@ export default function OverlayChiamata({
     if (aperto === 'condivisioni' && schermiAttivi.length === 0) setAperto(null)
   }, [aperto, schermiAttivi.length])
 
+  // Quanti audio ci sono in giro, e se almeno uno sta davvero suonando: il
+  // primo numero va nel cerchietto, il secondo decide se l'icona si muove.
+  const quantiAudio = audioCondivisi.length + audioRemoti.length
+  const qualcunoSuona =
+    audioCondivisi.some((a) => a.attivo) || audioRemoti.some((a) => !a.muto && a.volume > 0)
+
   const mostra = visibile || aperto !== null
 
   return (
@@ -138,6 +164,16 @@ export default function OverlayChiamata({
         )}
         {aperto === 'camera' && (
           <MenuCamera impostazioni={impostazioni} salva={salva} accesa={cameraAccesa} />
+        )}
+        {aperto === 'audio' && (
+          <MenuAudio
+            miei={audioCondivisi}
+            loro={audioRemoti}
+            volumeMio={volumeAudioCondiviso}
+            mutoMio={mutoAudioCondiviso}
+            volumeLoro={volumeAudioRemoto}
+            mutoLoro={mutoAudioRemoto}
+          />
         )}
         {aperto === 'condivisioni' && schermiAttivi.length > 0 && (
           <MenuCondivisioni
@@ -199,6 +235,29 @@ export default function OverlayChiamata({
                 </Tondo>
               )}
             </>
+          )}
+
+          {/* Gli audio condivisi hanno una porta tutta loro, e non stanno
+              nell'elenco delle condivisioni: uno schermo si guarda, un audio si
+              ascolta, e mescolarli vuol dire cercare il volume della musica in
+              mezzo alle finestre aperte. Compare solo quando ce n'e' almeno
+              uno, tuo o di qualcun altro. */}
+          {quantiAudio > 0 && (
+            <span className="relative">
+              <Tondo
+                acceso={aperto === 'audio'}
+                titolo={`${quantiAudio} audio condivisi: volumi e muto`}
+                premi={() => setAperto(aperto === 'audio' ? null : 'audio')}
+              >
+                <Onde attivo={qualcunoSuona} className="h-[18px] w-[18px]" />
+              </Tondo>
+              {/* Il numero nel cerchio verde, come il pallino di stato
+                  sull'icona dell'utente: dice quante ce ne sono senza dover
+                  aprire niente. */}
+              <span className="numeri pointer-events-none absolute -right-0.5 -bottom-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-ok px-1 text-[10px] font-semibold text-fondo ring-2 ring-fondo-2">
+                {quantiAudio}
+              </span>
+            </span>
           )}
 
           {/* Sempre presente, anche spento.
@@ -474,5 +533,120 @@ function MenuCondivisioni({
         Cambiare qualita non interrompe niente: chi guarda non vede nessun salto.
       </p>
     </Pannello>
+  )
+}
+
+/**
+ * I volumi degli audio condivisi, i propri e quelli degli altri.
+ *
+ * Due elenchi separati perche' sono due cose diverse: sopra c'e' quanto forte
+ * esce da te — muoverlo cambia cio' che sentono gli altri — e sotto quanto
+ * forte arriva a te, che non tocca nessun altro. Metterli insieme senza dirlo
+ * significherebbe far abbassare la musica a tutta la stanza a chi voleva solo
+ * sentirla meno lui.
+ */
+function MenuAudio({
+  miei,
+  loro,
+  volumeMio,
+  mutoMio,
+  volumeLoro,
+  mutoLoro
+}: {
+  miei: AudioCondiviso[]
+  loro: AudioRemoto[]
+  volumeMio: (id: string, volume: number) => void
+  mutoMio: (id: string) => void
+  volumeLoro: (id: string, volume: number) => void
+  mutoLoro: (id: string) => void
+}): React.JSX.Element {
+  return (
+    <Pannello>
+      {miei.length > 0 && (
+        <div>
+          <Etichetta>Stai condividendo</Etichetta>
+          <div className="space-y-2">
+            {miei.map((a) => (
+              <RigaAudio
+                key={a.id}
+                nome={a.etichetta}
+                sotto="quanto forte esce da te"
+                volume={a.volume}
+                muto={a.muto}
+                cambia={(v) => volumeMio(a.id, v)}
+                alterna={() => mutoMio(a.id)}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {loro.length > 0 && (
+        <div>
+          <Etichetta>Stai ascoltando</Etichetta>
+          <div className="space-y-2">
+            {loro.map((a) => (
+              <RigaAudio
+                key={a.id}
+                nome={a.etichetta}
+                sotto={`da ${a.nome} — solo per te`}
+                volume={a.volume}
+                muto={a.muto}
+                cambia={(v) => volumeLoro(a.id, v)}
+                alterna={() => mutoLoro(a.id)}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+    </Pannello>
+  )
+}
+
+function RigaAudio({
+  nome,
+  sotto,
+  volume,
+  muto,
+  cambia,
+  alterna
+}: {
+  nome: string
+  sotto: string
+  volume: number
+  muto: boolean
+  cambia: (volume: number) => void
+  alterna: () => void
+}): React.JSX.Element {
+  return (
+    <div>
+      <div className="flex items-center gap-2">
+        <button
+          onClick={alterna}
+          title={muto ? `Riattiva ${nome}` : `Zittisci ${nome}`}
+          aria-label={muto ? `Riattiva ${nome}` : `Zittisci ${nome}`}
+          className={`shrink-0 ${muto ? 'text-male' : 'text-testo-3 hover:text-testo'}`}
+        >
+          {muto ? <AltoparlanteMuto className="h-4 w-4" /> : <Altoparlante className="h-4 w-4" />}
+        </button>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-xs text-testo">{nome}</span>
+          <span className="block truncate text-[10px] text-testo-3">{sotto}</span>
+        </span>
+        <span className="numeri shrink-0 text-[10px] text-testo-3">
+          {Math.round(volume * 100)}%
+        </span>
+      </div>
+      <input
+        type="range"
+        min={0}
+        max={1}
+        step={0.05}
+        value={volume}
+        onChange={(e) => cambia(Number(e.target.value))}
+        aria-label={`Volume di ${nome}`}
+        className="mt-1 w-full"
+      />
+    </div>
   )
 }

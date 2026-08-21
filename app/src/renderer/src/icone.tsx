@@ -465,3 +465,75 @@ export function Fumetto(props: Props): React.JSX.Element {
     </Base>
   )
 }
+
+/**
+ * Le onde degli audio condivisi: quattro barrette verticali.
+ *
+ * Si muovono quando almeno una traccia sta suonando davvero, e stanno ferme
+ * quando sono tutte mute o a volume zero. Il movimento e' l'unico modo per
+ * dire a colpo d'occhio che da qui sta uscendo del suono: un'icona ferma
+ * accanto a un numero non distingue "tre tracce che suonano" da "tre tracce
+ * silenziate".
+ *
+ * L'animazione e' dentro all'SVG e non in CSS: cosi' l'icona si porta dietro
+ * il proprio movimento, e chi la usa non deve ricordarsi di importare niente.
+ *
+ * Le altezze a riposo sono diverse fra loro di proposito — quattro barrette
+ * uguali sembrano un codice a barre, non un suono.
+ */
+export function Onde({
+  attivo = false,
+  className = 'h-5 w-5',
+  ...resto
+}: Props & { attivo?: boolean }): React.JSX.Element {
+  const barre = [
+    { x: 4, riposo: 8, alta: 16, ritardo: '0s' },
+    { x: 9.5, riposo: 14, alta: 20, ritardo: '.18s' },
+    { x: 15, riposo: 6, alta: 18, ritardo: '.36s' },
+    { x: 20.5, riposo: 11, alta: 15, ritardo: '.54s' }
+  ]
+
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      focusable="false"
+      className={`shrink-0 ${className}`}
+      {...resto}
+    >
+      {barre.map((b) => {
+        const basso = b.riposo * 0.45
+        return (
+          <rect
+            key={b.x}
+            x={b.x - 1.5}
+            width="3"
+            rx="1.5"
+            fill="currentColor"
+            y={12 - b.riposo / 2}
+            height={b.riposo}
+          >
+            {attivo && (
+              <>
+                <animate
+                  attributeName="height"
+                  values={`${b.riposo};${b.alta};${basso};${b.riposo}`}
+                  dur="1.1s"
+                  begin={b.ritardo}
+                  repeatCount="indefinite"
+                />
+                <animate
+                  attributeName="y"
+                  values={`${12 - b.riposo / 2};${12 - b.alta / 2};${12 - basso / 2};${12 - b.riposo / 2}`}
+                  dur="1.1s"
+                  begin={b.ritardo}
+                  repeatCount="indefinite"
+                />
+              </>
+            )}
+          </rect>
+        )
+      })}
+    </svg>
+  )
+}
