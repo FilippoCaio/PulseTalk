@@ -152,6 +152,18 @@ export default function Sala({
   } => ({
     draggable: true,
     onDragStart: (evento) => {
+      // Un comando premuto dentro al riquadro non deve trascinare il riquadro.
+      //
+      // Il caso che lo tradiva e' il cursore del volume: in Chromium, premere
+      // la manopola di un <input type="range"> dentro a un elemento
+      // `draggable` fa partire il trascinamento del contenitore invece di
+      // muovere il cursore. Il riquadro se ne andava dietro al mouse e il
+      // volume non cambiava di un decibel.
+      if ((evento.target as HTMLElement).closest('input, button, select, textarea, [role="menu"]')) {
+        evento.preventDefault()
+        return
+      }
+
       evento.dataTransfer.effectAllowed = 'move'
       // Firefox non fa partire nessun trascinamento senza dati dentro.
       evento.dataTransfer.setData('text/plain', id)
@@ -504,13 +516,25 @@ export default function Sala({
               {griglia.length > 0 && (
                 <div
                   ref={contenitore}
-                  className="flex min-h-0 flex-1 items-center justify-center overflow-hidden"
+                  className="flex min-h-0 flex-1 justify-center overflow-y-auto"
                 >
-                  {/* Il tetto in larghezza e' cio' che tiene le righe come le
+                  {/* `m-auto` sul figlio invece di `items-center` sul padre.
+
+                      Sono la stessa cosa finche' il contenuto ci sta, e due
+                      cose diverse quando non ci sta: il centraggio flex, con
+                      un contenuto piu' alto del contenitore, lo taglia sopra e
+                      sotto in parti uguali — e la parte sopra non si raggiunge
+                      nemmeno scorrendo, perche' finisce a coordinate negative.
+                      E' il motivo per cui su uno schermo piccolo i riquadri
+                      uscivano dall'alto. Con i margini automatici il contenuto
+                      resta centrato quando c'e' spazio e diventa scorribile
+                      quando non ce n'e'.
+
+                      Il tetto in larghezza e' cio' che tiene le righe come le
                       ha decise `tessere()`: senza, il flex ne infilerebbe una
                       in piu' dove ci sta, e l'ultima riga resterebbe storta. */}
                   <div
-                    className="flex flex-wrap content-center justify-center gap-2"
+                    className="m-auto flex flex-wrap content-center justify-center gap-2"
                     style={{ maxWidth: tessera.colonne * (tessera.larghezza + SPAZIO) - SPAZIO }}
                   >
                     {griglia.map((riquadro) => {
@@ -519,7 +543,7 @@ export default function Sala({
                         <div
                           key={riquadro.id}
                           {...trascina}
-                          className={className}
+                          className={`${className} overflow-hidden`}
                           style={{ width: tessera.larghezza, height: tessera.altezza }}
                         >
                           <Riquadro

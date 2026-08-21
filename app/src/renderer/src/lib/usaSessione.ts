@@ -507,11 +507,42 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
       // publication trovata da LiveKit. Qui si passa invece per ogni
       // trackSid, cosi' due condivisioni audio della stessa persona non si
       // pestano i piedi e possono avere cursori diversi.
+      // Il nome del video di ogni condivisione di questa persona. Serve a
+      // capire quale audio appartiene a quale riquadro: l'audio di una
+      // condivisione e' una traccia separata, e livekit non le lega fra loro.
+      // Le lega il nome, che le assegniamo noi pubblicando: "Finestra" e
+      // "Finestra (audio)".
+      const nomeAFuoco = (() => {
+        const id = aFuocoRef.current
+        if (!id) return null
+        const video = partecipante.trackPublications.get(id)
+        return video?.source === Track.Source.ScreenShare ? (video.trackName ?? null) : null
+      })()
+
       partecipante.trackPublications.forEach((pubblicazione) => {
         if (pubblicazione.source !== Track.Source.ScreenShareAudio) return
         const sua = volumiAudioRemotiRef.current.get(pubblicazione.trackSid)
         const volume = sua?.volume ?? suoi.schermo
-        const muto = sua?.muto ?? suoi.mutoSchermo
+        let muto = sua?.muto ?? suoi.mutoSchermo
+
+        // Con una condivisione in primo piano si sente solo quella.
+        //
+        // Due schermi che suonano insieme sono rumore, non stereofonia: uno
+        // copre l'altro e non si capisce piu' niente di nessuno dei due. Chi
+        // ne mette una in primo piano sta dicendo quale vuole seguire.
+        //
+        // Le condivisioni di solo audio restano fuori da questa regola: non
+        // hanno un video da mettere a fuoco, e zittirle vorrebbe dire
+        // spegnere la musica ogni volta che qualcuno ingrandisce uno schermo.
+        if (nomeAFuoco !== null) {
+          const suoVideo = [...partecipante.trackPublications.values()].some(
+            (p) =>
+              p.source === Track.Source.ScreenShare &&
+              `${p.trackName} (audio)` === pubblicazione.trackName
+          )
+          if (suoVideo && pubblicazione.trackName !== `${nomeAFuoco} (audio)`) muto = true
+        }
+
         ;(pubblicazione.track as RemoteAudioTrack | undefined)?.setVolume(
           muto ? 0 : generale * volume
         )
@@ -1296,8 +1327,16 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
     [impostazioni.audioSistema, impostazioni.presetSchermo, ridisegna]
   )
 
+  /** Il riquadro in primo piano, per l'audio: lo aggiorna `applicaQualita`. */
+  const aFuocoRef = useRef<string | null>(null)
+
   const applicaQualita = useCallback(
     (idAFuoco: string | null) => {
+      // Non serve solo alla qualita': anche l'audio delle condivisioni guarda
+      // qui, per far sentire solo quella che si sta guardando.
+      aFuocoRef.current = idAFuoco
+      applicaAudio()
+
       const stanza = stanzaRef.current
       if (!stanza) return
 
@@ -1318,7 +1357,7 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
         }
       }
     },
-    [impostazioni.adattaAllaFinestra]
+    [impostazioni.adattaAllaFinestra, applicaAudio]
   )
 
   /**
@@ -1623,7 +1662,19 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
     const anello = riascoltoRef.current
     if (!anello) return
 
-    fermaRef.current?.()
+    // Gia' in corso: questa pressione lo ferma e basta.
+    //
+    // Prima ogni pressione faceva ripartire da capo. Premuto tre volte di
+    // seguito — cosa che si fa, perche' il primo secondo di riascolto sembra
+    // silenzio — partivano tre riproduzioni sovrapposte, e si sentiva un coro.
+    if (fermaRef.current) {
+      fermaRef.current()
+      fermaRef.current = null
+      attenuazioneRef.current = 1
+      applicaAudio()
+      setRiascoltoInCorso(null)
+      return
+    }
 
     const finito = (): void => {
       fermaRef.current = null
