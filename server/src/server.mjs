@@ -28,6 +28,7 @@ import { creaEventi } from './eventi.mjs';
 import { rotteAllegati, spazzaAllegati } from './routes/allegati.mjs';
 import { rotteAmici } from './routes/amici.mjs';
 import { rotteAuth } from './routes/auth.mjs';
+import { rotteCompatibilita } from './routes/compatibilita.mjs';
 import { rotteInviti } from './routes/inviti.mjs';
 import { rotteMessaggi } from './routes/messaggi.mjs';
 import { rotteSpazi } from './routes/spazi.mjs';
@@ -70,6 +71,7 @@ export async function creaTalk(config) {
   const eventi = creaEventi();
 
   agganciaAutenticazione(app, { db, config });
+  rotteCompatibilita(app, { config });
   rotteAuth(app, { db, config });
   rotteInviti(app, { db });
   rotteAmici(app, { db, eventi });

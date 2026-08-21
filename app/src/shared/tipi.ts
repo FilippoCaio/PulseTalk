@@ -18,9 +18,11 @@ export const IPC = {
   versione: 'versione',
   puntatore: 'puntatore',
   notifica: 'notifica',
+  diagnosticaAudio: 'diagnostica-audio',
   aggiornamento: 'aggiornamento',
   aggiornamentoStato: 'aggiornamento-stato',
   aggiornamentoControlla: 'aggiornamento-controlla',
+  aggiornamentoPrepara: 'aggiornamento-prepara',
   aggiornamentoScarica: 'aggiornamento-scarica',
   aggiornamentoInstalla: 'aggiornamento-installa'
 } as const
@@ -50,6 +52,39 @@ export interface StatoAggiornamento {
   note?: string
   percento?: number
   errore?: string
+  /** Vero quando il server non consente di continuare con la versione attuale. */
+  obbligatorio?: boolean
+  /** La prima versione che il feed deve offrire per soddisfare il server. */
+  richiesta?: string
+}
+
+/** Risposta pubblica del server, consultata prima dell'autenticazione. */
+export interface CompatibilitaClient {
+  versioneClient: string
+  versioneMinima: string
+  versioneTarget: string
+  versioneMassima: string | null
+  compatibile: boolean
+  obbligatorio: boolean
+  azione: 'nessuna' | 'aggiorna' | 'clientTroppoNuovo'
+  /** Assoluto dopo la validazione dell'API client. */
+  feedUrl: string
+  motivo: string | null
+}
+
+/** Dati non sensibili del binario, usati nella verifica pubblica. */
+export interface InformazioniClient {
+  versione: string
+  piattaforma: string
+  architettura: string
+}
+
+/** Vincolo che il renderer consegna all'aggiornatore nel processo main. */
+export interface PreparazioneAggiornamento {
+  feedUrl: string
+  versioneTarget: string
+  versioneMassima: string | null
+  obbligatorio: boolean
 }
 
 /** Uno schermo o una finestra che si puo' condividere. */

@@ -391,8 +391,8 @@ export default function Sala({
         </header>
       )}
 
-      <div className="flex min-h-0 flex-1">
-        <main className="group/sala relative flex min-w-0 flex-1 flex-col gap-2 p-3">
+      <div className="relative flex min-h-0 flex-1 overflow-hidden">
+        <main className="group/sala relative flex min-h-0 min-w-0 flex-1 flex-col gap-2 overflow-hidden px-3 pt-10 pb-20">
           {sessione.audioBloccato && (
             <Avviso tono="attenzione">
               Il browser non lascia partire il suono finche' non tocchi la pagina.{' '}
@@ -430,7 +430,7 @@ export default function Sala({
           ) : (
             <>
               {grande && (
-                <div className={`flex min-h-0 flex-1 gap-2 ${VERSO[aggancio]}`}>
+                <div className={`flex min-h-0 flex-1 gap-2 overflow-hidden ${VERSO[aggancio]}`}>
                   <div className="min-h-0 min-w-0 flex-1">
                     <Riquadro
                       dati={grande}
@@ -438,7 +438,6 @@ export default function Sala({
                       mostraStatistiche={impostazioni.mostraStatistiche}
                       aFuoco
                       volumi={vociDi(grande)}
-                      schermoIntero={schermoIntero}
                       puntatori={puntatoriDi(grande)}
                       quandoPunta={
                         grande.tipo === 'schermo' && !grande.locale
@@ -505,7 +504,7 @@ export default function Sala({
               {griglia.length > 0 && (
                 <div
                   ref={contenitore}
-                  className="flex min-h-0 flex-1 items-center justify-center"
+                  className="flex min-h-0 flex-1 items-center justify-center overflow-hidden"
                 >
                   {/* Il tetto in larghezza e' cio' che tiene le righe come le
                       ha decise `tessere()`: senza, il flex ne infilerebbe una
@@ -566,7 +565,7 @@ export default function Sala({
         {/* La chat, a destra dei riquadri e non sopra: sovrapposta coprirebbe
             proprio le persone che si stanno guardando mentre si scrive. */}
         {mostraChat && canaleVocale && (
-          <aside className="flex w-80 shrink-0 flex-col border-l border-bordo bg-fondo-2">
+          <aside className="flex w-[clamp(14rem,28vw,20rem)] min-w-0 shrink-0 flex-col border-l border-bordo bg-fondo-2">
             <Chat
               api={api}
               canale={canaleVocale}

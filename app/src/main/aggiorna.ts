@@ -1,7 +1,8 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
 import electronUpdater from 'electron-updater'
 import { IPC } from '@shared/tipi'
-import type { StatoAggiornamento } from '@shared/tipi'
+import type { PreparazioneAggiornamento, StatoAggiornamento } from '@shared/tipi'
+import { confrontaVersioni, versioneValida } from '@shared/versione'
 
 // electron-updater e' CommonJS: l'export nominato non esiste, si passa dal
 // default. Scritto `import { autoUpdater }` compila e poi esplode a runtime.
@@ -10,25 +11,30 @@ const { autoUpdater } = electronUpdater
 /**
  * Il controllo degli aggiornamenti.
  *
- * Regole di questa implementazione, tutte e tre volute:
+ * Regole di questa implementazione:
  *
- *  - **non scarica da solo.** Cerca all'avvio, dice cosa ha trovato, e aspetta.
- *    Trecento megabyte partiti da soli mentre uno e' in chiamata sono un modo
- *    sicuro di far saltare la chiamata.
+ *  - **il server sceglie il feed e il vincolo.** Non si consulta il segnaposto
+ *    compilato nell'app: prima si interroga il server scelto dall'utente e poi
+ *    si configura electron-updater con la sua risposta pubblica.
+ *  - **un aggiornamento obbligatorio si scarica da solo.** In quel momento
+ *    l'interfaccia e' bloccata prima del login, quindi non c'e' una chiamata da
+ *    disturbare. Quelli facoltativi continuano ad aspettare il pulsante.
  *  - **non installa mentre si parla.** L'installazione chiude l'app: chiederla
  *    a chi sta in una stanza vocale significa buttarlo fuori a meta' frase. Il
  *    pulsante lo sa e lo dice.
- *  - **tace se non c'e' niente.** Un aggiornamento assente non e' una notizia.
  *
- * Il portabile resta fuori: si aggiorna sostituendo il file, ed e' gia' cio'
- * che uno si aspetta da un portabile. Provarci sopra darebbe solo un errore
- * che nessuno puo' risolvere.
+ * Il portabile resta fuori dall'installazione automatica. Se il server esige
+ * una versione nuova, pero', resta bloccato con una spiegazione: proseguire
+ * fingendo che sia aggiornabile vanificherebbe l'intero controllo.
  */
 export function preparaAggiornamenti(): void {
   autoUpdater.autoDownload = false
   autoUpdater.autoInstallOnAppQuit = true
 
   let stato: StatoAggiornamento = { fase: 'fermo', versione: app.getVersion() }
+  let vincolo: PreparazioneAggiornamento | null = null
+  let feedConfigurato = false
+  let operazione: Promise<StatoAggiornamento> | null = null
 
   const avvisa = (nuovo: Partial<StatoAggiornamento>): void => {
     stato = { ...stato, ...nuovo }
@@ -37,10 +43,50 @@ export function preparaAggiornamenti(): void {
     }
   }
 
-  autoUpdater.on('update-available', (info) => {
-    avvisa({ fase: 'disponibile', disponibile: info.version, note: normalizzaNote(info.releaseNotes) })
+  const disponibile = (versione: string, note?: unknown): void => {
+    if (!versioneValida(versione)) {
+      avvisa({ fase: 'errore', errore: `Il feed dichiara una versione non valida: ${versione}.` })
+      return
+    }
+    if (vincolo && confrontaVersioni(versione, vincolo.versioneTarget) < 0) {
+      avvisa({
+        fase: 'errore',
+        disponibile: versione,
+        errore:
+          `Il server richiede la ${vincolo.versioneTarget}, ma il feed offre soltanto la ${versione}. ` +
+          'Chi amministra il server deve completare la pubblicazione.'
+      })
+      return
+    }
+    if (
+      vincolo?.versioneMassima &&
+      confrontaVersioni(versione, vincolo.versioneMassima) > 0
+    ) {
+      avvisa({
+        fase: 'errore',
+        disponibile: versione,
+        errore:
+          `Il feed offre la ${versione}, ma questo server accetta al massimo la ` +
+          `${vincolo.versioneMassima}. latest.yml e i vincoli del server non sono allineati.`
+      })
+      return
+    }
+    avvisa({ fase: 'disponibile', disponibile: versione, note: normalizzaNote(note), errore: undefined })
+  }
+
+  autoUpdater.on('update-available', (info) => disponibile(info.version, info.releaseNotes))
+  autoUpdater.on('update-not-available', () => {
+    if (vincolo?.obbligatorio) {
+      avvisa({
+        fase: 'errore',
+        errore:
+          `Il server richiede la ${vincolo.versioneTarget}, ma nel feed non c'e' un aggiornamento ` +
+          'installabile. Chi amministra il server deve pubblicare i file della release.'
+      })
+      return
+    }
+    avvisa({ fase: 'aggiornato', errore: undefined })
   })
-  autoUpdater.on('update-not-available', () => avvisa({ fase: 'aggiornato' }))
   autoUpdater.on('download-progress', (p) => avvisa({ fase: 'scarico', percento: Math.round(p.percent) }))
   autoUpdater.on('update-downloaded', () => avvisa({ fase: 'pronto', percento: 100 }))
   autoUpdater.on('error', (e) => {
@@ -53,7 +99,7 @@ export function preparaAggiornamenti(): void {
     // e' esattamente cio' che l'utente legge come "sei aggiornato". Mostrargli
     // "No published versions on GitHub" e' farlo preoccupare di una cosa che
     // riguarda chi pubblica, non lui.
-    if (/no published versions/i.test(e.message)) {
+    if (/no published versions/i.test(e.message) && !vincolo?.obbligatorio) {
       avvisa({ fase: 'aggiornato', errore: undefined })
       return
     }
@@ -62,18 +108,77 @@ export function preparaAggiornamenti(): void {
 
   ipcMain.handle(IPC.aggiornamentoStato, () => stato)
 
-  ipcMain.handle(IPC.aggiornamentoControlla, async () => {
+  const controlla = async (scaricaSeObbligatorio: boolean): Promise<StatoAggiornamento> => {
     if (!aggiornabile()) {
-      avvisa({ fase: 'nonSupportato' })
+      avvisa({
+        fase: 'nonSupportato',
+        errore: vincolo?.obbligatorio
+          ? `Il server richiede la ${vincolo.versioneTarget}, ma questa copia e' portabile o di sviluppo e non puo aggiornarsi da sola.`
+          : undefined
+      })
+      return stato
+    }
+    if (!feedConfigurato || !vincolo) {
+      avvisa({
+        fase: 'errore',
+        errore: 'Prima di cercare aggiornamenti bisogna collegarsi a un server PulseTalk compatibile.'
+      })
       return stato
     }
     avvisa({ fase: 'controllo', errore: undefined })
     try {
-      await autoUpdater.checkForUpdates()
+      const esito = await autoUpdater.checkForUpdates()
+      // L'evento arriva normalmente prima della risoluzione. Questo ripiego
+      // rende il risultato deterministico anche con provider che non lo fanno.
+      if (stato.fase === 'controllo' && esito?.updateInfo?.version) {
+        disponibile(esito.updateInfo.version, esito.updateInfo.releaseNotes)
+      }
+      if (scaricaSeObbligatorio && vincolo.obbligatorio && stato.fase === 'disponibile') {
+        avvisa({ fase: 'scarico', percento: 0 })
+        await autoUpdater.downloadUpdate()
+      }
     } catch (e) {
       avvisa({ fase: 'errore', errore: (e as Error).message })
     }
     return stato
+  }
+
+  ipcMain.handle(IPC.aggiornamentoPrepara, async (_evento, dati: unknown) => {
+    try {
+      vincolo = validaPreparazione(dati)
+      autoUpdater.setFeedURL({ provider: 'generic', url: vincolo.feedUrl })
+      feedConfigurato = true
+      avvisa({
+        fase: 'fermo',
+        obbligatorio: vincolo.obbligatorio,
+        richiesta: vincolo.versioneTarget,
+        disponibile: undefined,
+        percento: undefined,
+        note: undefined,
+        errore: undefined
+      })
+    } catch (e) {
+      feedConfigurato = false
+      vincolo = null
+      avvisa({ fase: 'errore', errore: (e as Error).message })
+      return stato
+    }
+
+    // React puo' ripetere un effetto in sviluppo: una seconda richiesta non
+    // deve aprire due download concorrenti sullo stesso file.
+    if (operazione) return operazione
+    operazione = controlla(vincolo.obbligatorio).finally(() => {
+      operazione = null
+    })
+    return operazione
+  })
+
+  ipcMain.handle(IPC.aggiornamentoControlla, async () => {
+    if (operazione) return operazione
+    operazione = controlla(false).finally(() => {
+      operazione = null
+    })
+    return operazione
   })
 
   ipcMain.handle(IPC.aggiornamentoScarica, async () => {
@@ -95,13 +200,6 @@ export function preparaAggiornamenti(): void {
     setImmediate(() => autoUpdater.quitAndInstall(false, true))
   })
 
-  // All'avvio, ma non subito: i primi secondi servono alla finestra e
-  // all'ingresso in stanza, non a una richiesta di rete che puo' aspettare.
-  if (aggiornabile()) {
-    setTimeout(() => {
-      void autoUpdater.checkForUpdates().catch(() => {})
-    }, 8000)
-  }
 }
 
 /**
@@ -113,6 +211,38 @@ export function preparaAggiornamenti(): void {
  */
 function aggiornabile(): boolean {
   return app.isPackaged && !process.env.PORTABLE_EXECUTABLE_DIR
+}
+
+/** Il renderer e' isolato, ma ogni valore IPC resta comunque non fidato. */
+function validaPreparazione(dati: unknown): PreparazioneAggiornamento {
+  if (!dati || typeof dati !== 'object') throw new Error('Vincolo di aggiornamento non valido.')
+  const valore = dati as Partial<PreparazioneAggiornamento>
+  if (
+    !versioneValida(valore.versioneTarget) ||
+    (valore.versioneMassima !== null && !versioneValida(valore.versioneMassima)) ||
+    typeof valore.obbligatorio !== 'boolean' ||
+    typeof valore.feedUrl !== 'string'
+  ) {
+    throw new Error('Vincolo di aggiornamento incompleto o non valido.')
+  }
+  if (
+    valore.versioneMassima !== null &&
+    confrontaVersioni(valore.versioneMassima, valore.versioneTarget) < 0
+  ) {
+    throw new Error('La versione massima del server precede la release richiesta.')
+  }
+
+  let feed: URL
+  try {
+    feed = new URL(valore.feedUrl)
+  } catch {
+    throw new Error('Il server ha indicato un feed di aggiornamento non valido.')
+  }
+  if (!['http:', 'https:'].includes(feed.protocol) || feed.username || feed.password) {
+    throw new Error('Il feed di aggiornamento deve essere http/https e non puo contenere credenziali.')
+  }
+  feed.hash = ''
+  return { ...valore, feedUrl: feed.toString() } as PreparazioneAggiornamento
 }
 
 /** Le note arrivano come stringa, o come elenco di release, o niente. */

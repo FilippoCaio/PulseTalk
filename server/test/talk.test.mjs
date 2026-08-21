@@ -1104,6 +1104,92 @@ describe('configurazione', () => {
       /TALK_MAX_FPS_SCHERMO/,
     );
   });
+
+  it('valida e ordina le versioni client dichiarate', () => {
+    const config = leggiConfig({
+      TALK_ROOT: tmpdir(),
+      TALK_NO_AUTH: '1',
+      TALK_CLIENT_MIN: '0.3.0',
+      TALK_CLIENT_TARGET: '0.3.6',
+      TALK_CLIENT_MAX: '0.3.9',
+      TALK_AGGIORNAMENTI_URL: 'https://download.esempio.it/pulsetalk/',
+    });
+    assert.deepEqual(config.client, {
+      minima: '0.3.0',
+      target: '0.3.6',
+      massima: '0.3.9',
+      feedUrl: 'https://download.esempio.it/pulsetalk/',
+    });
+
+    assert.throws(
+      () => leggiConfig({
+        TALK_ROOT: tmpdir(),
+        TALK_NO_AUTH: '1',
+        TALK_CLIENT_MIN: '0.4.0',
+        TALK_CLIENT_TARGET: '0.3.6',
+      }),
+      /TALK_CLIENT_TARGET/,
+    );
+    assert.throws(
+      () => leggiConfig({ TALK_ROOT: tmpdir(), TALK_NO_AUTH: '1', TALK_CLIENT_MIN: 'ultima' }),
+      /semver/,
+    );
+  });
+});
+
+describe('compatibilita client', () => {
+  const chiedi = (base, versione) =>
+    fetch(
+      `${base}/api/client/compatibilita?versione=${encodeURIComponent(versione)}` +
+      '&piattaforma=win32&architettura=x64',
+    );
+
+  it('e pubblica e distingue vecchio, corrente e troppo nuovo', async (t) => {
+    const { base } = await conServer(t, {
+      TALK_CLIENT_MIN: '0.3.0',
+      TALK_CLIENT_TARGET: '0.3.6',
+      TALK_CLIENT_MAX: '0.3.9',
+    });
+
+    const vecchioCompatibile = await chiedi(base, '0.3.2');
+    assert.equal(vecchioCompatibile.status, 200, 'non deve servire un token');
+    assert.deepEqual(await vecchioCompatibile.json(), {
+      versioneClient: '0.3.2',
+      versioneMinima: '0.3.0',
+      versioneTarget: '0.3.6',
+      versioneMassima: '0.3.9',
+      compatibile: true,
+      obbligatorio: true,
+      azione: 'aggiorna',
+      feedUrl: '/aggiornamenti/',
+      motivo: 'Il server richiede PulseTalk 0.3.6 prima di continuare.',
+    });
+
+    const corrente = await chiedi(base, '0.3.6');
+    assert.equal((await corrente.json()).azione, 'nessuna');
+
+    const troppoVecchio = await chiedi(base, '0.2.9');
+    const corpoVecchio = await troppoVecchio.json();
+    assert.equal(corpoVecchio.compatibile, false);
+    assert.equal(corpoVecchio.azione, 'aggiorna');
+
+    const troppoNuovo = await chiedi(base, '0.4.0');
+    const corpoNuovo = await troppoNuovo.json();
+    assert.equal(corpoNuovo.compatibile, false);
+    assert.equal(corpoNuovo.azione, 'clientTroppoNuovo');
+    assert.match(corpoNuovo.motivo, /server accetta al massimo/);
+  });
+
+  it('resta permissiva senza configurazione e rifiuta query malformate', async (t) => {
+    const { base } = await conServer(t);
+    const futura = await chiedi(base, '99.0.0');
+    const corpo = await futura.json();
+    assert.equal(corpo.compatibile, true);
+    assert.equal(corpo.obbligatorio, false);
+
+    assert.equal((await chiedi(base, 'non-semver')).status, 400);
+    assert.equal((await chiedi(base, '1.2.3-01')).status, 400);
+  });
 });
 
 describe('webhook della SFU', () => {

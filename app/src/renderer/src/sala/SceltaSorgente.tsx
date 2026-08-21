@@ -1,35 +1,51 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ModoAudioSistema, Sorgente } from '@shared/tipi'
 import { PRESET_SCHERMO, type PresetSchermo } from '@shared/qualita'
 import { ponte } from '../ponte'
 import { usaDispositivi } from '../lib/usaDispositivi'
+import { Avviso, Bottone } from '../ui'
+import { Altoparlante, Giu, Lente, SchermoCondividi, Spunta } from '../icone'
 
 type Categoria = 'schermi' | 'applicazioni' | 'dispositivi'
+export type ModalitaSceltaSorgente = 'nuova' | 'cambia-video' | 'cambia-audio'
 
 const CATEGORIE: [Categoria, string][] = [
   ['schermi', 'Schermi'],
   ['applicazioni', 'Applicazioni'],
   ['dispositivi', 'Dispositivi']
 ]
-import { Avviso, Bottone } from '../ui'
+
+const AUDIO: [ModoAudioSistema, string, string][] = [
+  ['niente', 'Nessuno', 'Va solo il video: quello che suona dal tuo computer resta a te.'],
+  ['condiviso', 'Insieme al video', 'Lo sentono loro e continui a sentirlo anche tu.'],
+  ['soloRemoto', 'Solo a loro', 'Lo sentono loro, da te resta muto. Per non sentirlo due volte.']
+]
+
+const BITRATE_AUDIO: [number, string, string][] = [
+  [510_000, 'Massima', '510 kbit/s stereo. Musica, senza compromessi.'],
+  [256_000, 'Alta', '256 kbit/s. Quasi indistinguibile, meta\' della banda.'],
+  [128_000, 'Leggera', '128 kbit/s. Per linee lente.']
+]
 
 /**
  * Cosa condividere, e come.
  *
- * Il selettore di Windows sa fare la prima meta' e non sa fare la seconda. Qui
- * accanto a ogni schermo c'e' scritto quanti pixel ha davvero, si sceglie il
- * profilo di qualita' prima di partire invece che scoprirlo dopo, e c'e'
- * l'interruttore dell'audio di sistema — che e' la cosa che manda in bestia
- * chiunque abbia mai provato a far sentire un video su Discord.
+ * Le anteprime prendono tutta l'altezza che c'e', e i settaggi stanno su una
+ * riga sola in fondo. Prima era il contrario — mezza finestra di riquadri
+ * descrittivi e una feritoia per le anteprime — e la scelta vera, cioe' quale
+ * schermo, era quella che si vedeva peggio. I dettagli non sono spariti: sono
+ * dentro alle tendine, e compaiono passandoci sopra col cursore.
  */
 export default function SceltaSorgente({
   presetIniziale,
   audioIniziale,
+  modalita = 'nuova',
   conferma,
   chiudi
 }: {
   presetIniziale: string
   audioIniziale: ModoAudioSistema
+  modalita?: ModalitaSceltaSorgente
   conferma: (
     sorgente: Sorgente | null,
     preset: PresetSchermo,
@@ -44,30 +60,27 @@ export default function SceltaSorgente({
   const [scelta, setScelta] = useState<string | null>(null)
   const [presetId, setPresetId] = useState(presetIniziale)
   const [audio, setAudio] = useState<ModoAudioSistema>(audioIniziale)
+  const [categoria, setCategoria] = useState<Categoria>('schermi')
 
   /**
    * Solo l'audio, senza immagine.
    *
    * Per la musica il video non e' un di piu': e' un danno. Trenta megabit al
    * secondo per mostrare la finestra ferma di un lettore, mentre quello che
-   * conta sono i 510 kbit dell'audio. Spento, non compare nemmeno un riquadro
-   * da guardare dall'altra parte.
+   * conta sono i 510 kbit dell'audio.
    */
-  const [soloAudio, setSoloAudio] = useState(false)
-  const [categoria, setCategoria] = useState<Categoria>('schermi')
+  const [soloAudio, setSoloAudio] = useState(modalita === 'cambia-audio')
+  const [bitrateAudio, setBitrateAudio] = useState(510_000)
 
   /**
    * Se gli altri possono indicare punti su questa condivisione.
    *
    * Acceso di partenza, perche' e' il motivo per cui la condivisione esiste:
    * si mostra qualcosa per parlarne insieme. Si toglie quando si mostra una
-   * cosa e basta — una presentazione, un documento — e gli aloni sopra
-   * sarebbero solo un disturbo.
+   * cosa e basta, e gli aloni sopra sarebbero solo un disturbo.
    */
   const [permettiInterazione, setPermettiInterazione] = useState(true)
 
-  // Camere e schede di acquisizione, vestite da sorgente: cosi' proseguono
-  // per la stessa strada di uno schermo condiviso.
   const { per } = usaDispositivi()
   const dispositivi: Sorgente[] = per('videoinput').map((d) => ({
     id: d.deviceId,
@@ -80,18 +93,8 @@ export default function SceltaSorgente({
     altezza: 0
   }))
 
-  const quante = (id: Categoria): number =>
-    id === 'dispositivi'
-      ? dispositivi.length
-      : (sorgenti?.filter((s) => (id === 'schermi' ? s.tipo === 'schermo' : s.tipo === 'finestra'))
-          .length ?? 0)
-  const [bitrateAudio, setBitrateAudio] = useState(510_000)
-
   useEffect(() => {
-    void ponte.sorgenti().then((elenco) => {
-      setSorgenti(elenco)
-      setScelta(elenco.find((s) => s.tipo === 'schermo')?.id ?? elenco[0]?.id ?? null)
-    })
+    void ponte.sorgenti().then(setSorgenti)
   }, [])
 
   const preset = PRESET_SCHERMO.find((p) => p.id === presetId) ?? PRESET_SCHERMO[0]
@@ -100,15 +103,21 @@ export default function SceltaSorgente({
   // qualita', e la sorgente la chiede il browser un istante dopo.
   const nelBrowser = !ponte.elettrone
 
+  const diCategoria = (id: Categoria): Sorgente[] =>
+    id === 'dispositivi'
+      ? dispositivi
+      : (sorgenti?.filter((s) => (id === 'schermi' ? s.tipo === 'schermo' : s.tipo === 'finestra')) ??
+        [])
+
   const parti = (): void => {
     const sorgente = nelBrowser
       ? null
-      : (sorgenti?.find((s) => s.id === scelta) ??
-        dispositivi.find((d) => d.id === scelta) ??
-        null)
+      : (sorgenti?.find((s) => s.id === scelta) ?? dispositivi.find((d) => d.id === scelta) ?? null)
     if (!nelBrowser && !sorgente) return
     conferma(sorgente, preset, audio, soloAudio, bitrateAudio, permettiInterazione)
   }
+
+  const elenco = diCategoria(categoria)
 
   return (
     <div
@@ -116,222 +125,146 @@ export default function SceltaSorgente({
       onClick={chiudi}
     >
       <div
-        className="flex max-h-full w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-bordo bg-fondo-2"
+        className="flex h-full max-h-[46rem] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-bordo bg-fondo-2"
         onClick={(e) => e.stopPropagation()}
       >
-        <header className="border-b border-bordo px-5 py-4">
-          <h2 className="font-semibold">Condividi</h2>
+        {/* Titolo e schede sulla stessa riga: due righe separate costavano
+            quaranta pixel di altezza che servono alle anteprime. */}
+        <header className="flex shrink-0 items-center gap-5 border-b border-bordo px-5">
+          <h2 className="py-4 font-semibold">
+            {modalita === 'nuova'
+              ? 'Condividi'
+              : modalita === 'cambia-audio'
+                ? 'Cambia sorgente audio'
+                : 'Cambia finestra o schermo'}
+          </h2>
+
+          {!nelBrowser && (
+            <nav className="flex gap-1">
+              {CATEGORIE.map(([id, nome]) => (
+                <button
+                  key={id}
+                  onClick={() => setCategoria(id)}
+                  className={`-mb-px border-b-2 px-3 py-4 text-sm transition-colors ${
+                    categoria === id
+                      ? 'border-vivo text-testo'
+                      : 'border-transparent text-testo-3 hover:text-testo-2'
+                  }`}
+                >
+                  {nome}
+                  <span className="numeri ml-1.5 text-[11px] text-testo-3">
+                    {diCategoria(id).length}
+                  </span>
+                </button>
+              ))}
+            </nav>
+          )}
         </header>
 
+        {/* Le anteprime: tutta l'altezza che resta. */}
         <div className="min-h-0 flex-1 overflow-y-auto p-5">
           {nelBrowser ? (
             <Avviso tono="neutro">
               Nel browser la scelta di cosa mostrare la fa Chrome, un istante dopo aver premuto
-              Condividi. L'audio di sistema c'e' solo se lo spunti nella sua finestra, e su Windows
-              solo condividendo uno schermo intero.
+              Condividi. L&apos;audio di sistema c&apos;e&apos; solo se lo spunti nella sua finestra,
+              e su Windows solo condividendo uno schermo intero.
+            </Avviso>
+          ) : sorgenti === null ? (
+            <p className="respiro text-testo-3">guardo cosa c&apos;e&apos; aperto…</p>
+          ) : elenco.length === 0 ? (
+            <Avviso tono="neutro">
+              {categoria === 'dispositivi'
+                ? 'Nessuna camera o scheda di acquisizione collegata. Qui compaiono le schede di cattura e le webcam, per mostrare una console o una fotocamera esterna come fosse uno schermo.'
+                : categoria === 'schermi'
+                  ? 'Windows non ha restituito nessuno schermo.'
+                  : 'Nessuna finestra aperta da condividere.'}
             </Avviso>
           ) : (
-            <>
-              {sorgenti === null && <p className="respiro text-testo-3">guardo cosa c'e' aperto…</p>}
-              {sorgenti?.length === 0 && (
-                <Avviso>Windows non ha restituito nessuna finestra da condividere.</Avviso>
-              )}
-
-              {/* Tre schede invece di due elenchi in fila.
-                  
-                  Con venti finestre aperte l'elenco unico costringeva a
-                  scorrere per trovare il proprio schermo, che e' la scelta
-                  piu' frequente di tutte. */}
-              <div className="mb-4 flex gap-1 border-b border-bordo">
-                {CATEGORIE.map(([id, nome]) => (
-                  <button
-                    key={id}
-                    onClick={() => setCategoria(id)}
-                    className={`-mb-px border-b-2 px-3 py-2 text-sm transition-colors ${
-                      categoria === id
-                        ? 'border-vivo text-testo'
-                        : 'border-transparent text-testo-3 hover:text-testo-2'
-                    }`}
-                  >
-                    {nome}
-                    <span className="numeri ml-1.5 text-[11px] text-testo-3">
-                      {quante(id)}
-                    </span>
-                  </button>
-                ))}
-              </div>
-
-              {categoria === 'dispositivi' ? (
-                dispositivi.length === 0 ? (
-                  <Avviso tono="neutro">
-                    Nessuna camera o scheda di acquisizione collegata. Qui compaiono le schede di
-                    cattura e le webcam, per mostrare una console o una fotocamera esterna come se
-                    fosse uno schermo.
-                  </Avviso>
-                ) : (
-                  <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
-                    {dispositivi.map((d) => (
-                      <button
-                        key={d.id}
-                        onClick={() => setScelta(d.id)}
-                        className={`rounded-xl border p-3 text-left transition-colors ${
-                          scelta === d.id
-                            ? 'border-vivo bg-vivo/10'
-                            : 'border-bordo bg-fondo hover:border-fondo-3'
-                        }`}
-                      >
-                        <span className="block truncate text-sm">{d.nome}</span>
-                        <span className="mt-0.5 block text-[11px] text-testo-3">
-                          dispositivo di acquisizione
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                )
-              ) : (
-                <ElencoSorgenti
-                  titolo=""
-                  sorgenti={
-                    sorgenti?.filter((s) =>
-                      categoria === 'schermi' ? s.tipo === 'schermo' : s.tipo === 'finestra'
-                    ) ?? []
-                  }
-                  scelta={scelta}
-                  scegli={setScelta}
-                />
-              )}
-            </>
+            <div className="grid grid-cols-2 gap-4 xl:grid-cols-3">
+              {elenco.map((s) => (
+                <Riquadro key={s.id} sorgente={s} scelto={s.id === scelta} scegli={setScelta} />
+              ))}
+            </div>
           )}
         </div>
 
-        <div className="space-y-4 border-t border-bordo p-5">
+        {/* I settaggi: una riga sola, tendine e interruttori. Il dettaglio sta
+            dentro, e nel titolo che compare passandoci sopra. */}
+        <div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-bordo px-5 py-3">
           {!soloAudio && (
-            <button
-              onClick={() => setPermettiInterazione((v) => !v)}
-              className="flex w-full items-start gap-2.5 rounded-lg border border-bordo bg-fondo px-3 py-2 text-left transition-colors hover:border-fondo-3"
-            >
-              <span
-                className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[10px] ${
-                  permettiInterazione
-                    ? 'border-vivo bg-vivo text-fondo'
-                    : 'border-bordo text-transparent'
-                }`}
-              >
-                ✓
-              </span>
-              <span>
-                <span className="block text-sm">Lascia che indichino sulla tua condivisione</span>
-                <span className="block text-[11px] text-testo-3">
-                  Con la spunta, chi guarda puo' segnare un punto e te lo vedi comparire sul
-                  monitor. Senza, resta una cosa da guardare e basta.
-                </span>
-              </span>
-            </button>
-          )}
-
-          <div>
-            <p className="mb-2 text-xs font-medium tracking-wide text-testo-2 uppercase">Qualita'</p>
-            <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
-              {PRESET_SCHERMO.map((p) => (
-                <button
-                  key={p.id}
-                  onClick={() => setPresetId(p.id)}
-                  className={`rounded-lg border p-3 text-left transition-colors ${
-                    p.id === presetId
-                      ? 'border-vivo bg-vivo/10'
-                      : 'border-bordo bg-fondo hover:border-fondo-3'
-                  }`}
-                >
-                  <span className="block text-sm font-medium">{p.nome}</span>
-                  <span className="mt-1 block text-[11px] leading-snug text-testo-3">
-                    {p.spiegazione}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {ponte.audioDiSistema && (
-            <div>
-              <p className="mb-2 text-xs font-medium tracking-wide text-testo-2 uppercase">
-                Solo audio
-              </p>
-              <button
-                onClick={() => setSoloAudio(!soloAudio)}
-                className={`w-full rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
-                  soloAudio ? 'border-vivo bg-vivo/10' : 'border-bordo bg-fondo hover:border-fondo-3'
-                }`}
-              >
-                Condividi solo l'audio, senza immagine
-                <span className="block text-[11px] text-testo-3">
-                  Per la musica. Niente riquadro da guardare dall'altra parte, e tutta la banda va
-                  al suono invece che a una finestra ferma.
-                </span>
-              </button>
-
-              {soloAudio && (
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {(
-                    [
-                      [510_000, 'Massima', '510 kbit/s stereo. Musica.'],
-                      [256_000, 'Alta', '256 kbit/s. Quasi indistinguibile.'],
-                      [128_000, 'Leggera', '128 kbit/s. Per linee lente.']
-                    ] as [number, string, string][]
-                  ).map(([valore, nome, sotto]) => (
-                    <button
-                      key={valore}
-                      onClick={() => setBitrateAudio(valore)}
-                      className={`rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
-                        bitrateAudio === valore
-                          ? 'border-vivo bg-vivo/10'
-                          : 'border-bordo bg-fondo hover:border-fondo-3'
-                      }`}
-                    >
-                      {nome}
-                      <span className="block text-[11px] text-testo-3">{sotto}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+            <Tendina
+              icona={<Lente />}
+              etichetta="Qualita'"
+              valore={preset.nome}
+              titolo={preset.spiegazione}
+              voci={PRESET_SCHERMO.map((p) => ({
+                id: p.id,
+                nome: p.nome,
+                sotto: p.spiegazione,
+                scelto: p.id === presetId
+              }))}
+              scegli={setPresetId}
+            />
           )}
 
           {ponte.audioDiSistema && !soloAudio && (
-            <div>
-              <p className="mb-2 text-xs font-medium tracking-wide text-testo-2 uppercase">
-                Audio di sistema
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {(
-                  [
-                    ['niente', 'Nessuno', 'Solo il video.'],
-                    ['condiviso', 'Insieme al video', 'Lo senti anche tu.'],
-                    ['soloRemoto', 'Solo a loro', 'Da te resta muto.']
-                  ] as [ModoAudioSistema, string, string][]
-                ).map(([valore, nome, sotto]) => (
-                  <button
-                    key={valore}
-                    onClick={() => setAudio(valore)}
-                    className={`rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
-                      audio === valore
-                        ? 'border-vivo bg-vivo/10'
-                        : 'border-bordo bg-fondo hover:border-fondo-3'
-                    }`}
-                  >
-                    {nome}
-                    <span className="block text-[11px] text-testo-3">{sotto}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
+            <Tendina
+              icona={<Altoparlante />}
+              etichetta="Audio di sistema"
+              valore={AUDIO.find(([id]) => id === audio)?.[1] ?? ''}
+              titolo={AUDIO.find(([id]) => id === audio)?.[2] ?? ''}
+              voci={AUDIO.map(([id, nome, sotto]) => ({
+                id,
+                nome,
+                sotto,
+                scelto: id === audio
+              }))}
+              scegli={(id) => setAudio(id as ModoAudioSistema)}
+            />
           )}
 
-          <div className="flex justify-end gap-2">
+          {soloAudio && (
+            <Tendina
+              icona={<Altoparlante />}
+              etichetta="Qualita' audio"
+              valore={BITRATE_AUDIO.find(([v]) => v === bitrateAudio)?.[1] ?? ''}
+              titolo={BITRATE_AUDIO.find(([v]) => v === bitrateAudio)?.[2] ?? ''}
+              voci={BITRATE_AUDIO.map(([v, nome, sotto]) => ({
+                id: String(v),
+                nome,
+                sotto,
+                scelto: v === bitrateAudio
+              }))}
+              scegli={(id) => setBitrateAudio(Number(id))}
+            />
+          )}
+
+          {ponte.audioDiSistema && modalita === 'nuova' && (
+            <Interruttore
+              acceso={soloAudio}
+              premi={() => setSoloAudio((v) => !v)}
+              icona={<Altoparlante />}
+              etichetta="Solo audio"
+              titolo="Condividi solo l'audio, senza immagine. Per la musica: niente riquadro da guardare dall'altra parte, e tutta la banda va al suono invece che a una finestra ferma."
+            />
+          )}
+
+          {!soloAudio && modalita === 'nuova' && (
+            <Interruttore
+              acceso={permettiInterazione}
+              premi={() => setPermettiInterazione((v) => !v)}
+              icona={<SchermoCondividi />}
+              etichetta="Possono indicare"
+              titolo="Chi guarda puo' segnare un punto sulla tua condivisione, e te lo vedi comparire sul monitor vero. Togliendola, resta una cosa da guardare e basta."
+            />
+          )}
+
+          <div className="ml-auto flex items-center gap-2">
             <Bottone tono="fantasma" onClick={chiudi}>
               Annulla
             </Bottone>
-            <Bottone tono="vivo" disabled={!nelBrowser && !scelta} onClick={parti}>
-              Condividi
+            <Bottone onClick={parti} disabled={!nelBrowser && !scelta}>
+              {modalita === 'nuova' ? 'Condividi' : 'Cambia'}
             </Bottone>
           </div>
         </div>
@@ -340,46 +273,153 @@ export default function SceltaSorgente({
   )
 }
 
-function ElencoSorgenti({
-  titolo,
-  sorgenti,
-  scelta,
+// -- I pezzi ------------------------------------------------------------------
+
+function Riquadro({
+  sorgente,
+  scelto,
   scegli
 }: {
-  titolo: string
-  sorgenti: Sorgente[]
-  scelta: string | null
+  sorgente: Sorgente
+  scelto: boolean
   scegli: (id: string) => void
-}): React.JSX.Element | null {
-  if (sorgenti.length === 0) return null
+}): React.JSX.Element {
+  const misura =
+    sorgente.larghezza && sorgente.altezza ? `${sorgente.larghezza}×${sorgente.altezza}` : null
 
   return (
-    <section className="mb-5 last:mb-0">
-      <p className="mb-2 text-xs font-medium tracking-wide text-testo-2 uppercase">{titolo}</p>
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
-        {sorgenti.map((s) => (
-          <button
-            key={s.id}
-            onClick={() => scegli(s.id)}
-            className={`overflow-hidden rounded-lg border text-left transition-colors ${
-              s.id === scelta ? 'border-vivo' : 'border-bordo hover:border-fondo-3'
-            }`}
-          >
-            <img src={s.anteprima} alt="" className="aspect-video w-full bg-black object-contain" />
-            <div className="flex items-center gap-2 px-2.5 py-2">
-              {s.icona && <img src={s.icona} alt="" className="h-4 w-4 shrink-0" />}
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-xs">{s.nome}</span>
-                {s.larghezza && s.altezza && (
-                  <span className="numeri block text-[10px] text-testo-3">
-                    {s.larghezza}×{s.altezza}
-                  </span>
-                )}
+    <button
+      onClick={() => scegli(sorgente.id)}
+      title={misura ? `${sorgente.nome} — ${misura} pixel veri` : sorgente.nome}
+      className={`overflow-hidden rounded-xl border text-left transition-colors ${
+        scelto ? 'border-vivo ring-1 ring-vivo' : 'border-bordo hover:border-fondo-3'
+      }`}
+    >
+      {sorgente.anteprima ? (
+        <img
+          src={sorgente.anteprima}
+          alt=""
+          className="aspect-video w-full bg-black object-contain"
+        />
+      ) : (
+        // I dispositivi non hanno un'anteprima da desktopCapturer: aprirla
+        // vorrebbe dire accendere la camera solo per mostrarne il riquadro.
+        <span className="flex aspect-video w-full items-center justify-center bg-fondo text-testo-3">
+          <SchermoCondividi className="h-7 w-7" />
+        </span>
+      )}
+      <span className="flex items-center gap-2 px-3 py-2">
+        {sorgente.icona && <img src={sorgente.icona} alt="" className="h-4 w-4 shrink-0" />}
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-xs">{sorgente.nome}</span>
+          {misura && <span className="numeri block text-[10px] text-testo-3">{misura}</span>}
+        </span>
+        {scelto && <Spunta className="h-4 w-4 shrink-0 text-vivo" />}
+      </span>
+    </button>
+  )
+}
+
+/**
+ * Una tendina che si apre verso l'alto.
+ *
+ * Verso l'alto perche' vive in fondo alla finestra: aperta verso il basso
+ * finirebbe fuori dal pannello.
+ */
+function Tendina({
+  icona,
+  etichetta,
+  valore,
+  titolo,
+  voci,
+  scegli
+}: {
+  icona: React.ReactNode
+  etichetta: string
+  valore: string
+  titolo: string
+  voci: { id: string; nome: string; sotto: string; scelto: boolean }[]
+  scegli: (id: string) => void
+}): React.JSX.Element {
+  const [aperta, setAperta] = useState(false)
+  const scatola = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!aperta) return
+    const fuori = (e: MouseEvent): void => {
+      if (!scatola.current?.contains(e.target as Node)) setAperta(false)
+    }
+    window.addEventListener('mousedown', fuori)
+    return () => window.removeEventListener('mousedown', fuori)
+  }, [aperta])
+
+  return (
+    <div ref={scatola} className="relative">
+      <button
+        onClick={() => setAperta((v) => !v)}
+        title={`${etichetta}: ${titolo}`}
+        className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors ${
+          aperta ? 'border-vivo bg-vivo/10' : 'border-bordo bg-fondo hover:border-fondo-3'
+        }`}
+      >
+        <span className="shrink-0 text-testo-3 [&>svg]:h-4 [&>svg]:w-4">{icona}</span>
+        <span className="text-testo-3">{etichetta}</span>
+        <span className="text-testo">{valore}</span>
+        <Giu className={`h-3.5 w-3.5 shrink-0 text-testo-3 ${aperta ? 'rotate-180' : ''}`} />
+      </button>
+
+      {aperta && (
+        <div className="absolute bottom-full left-0 z-10 mb-1 w-80 rounded-xl border border-bordo bg-fondo-2 p-1 shadow-xl shadow-black/50">
+          {voci.map((v) => (
+            <button
+              key={v.id}
+              onClick={() => {
+                scegli(v.id)
+                setAperta(false)
+              }}
+              className={`flex w-full items-start gap-2 rounded-lg px-2.5 py-2 text-left transition-colors ${
+                v.scelto ? 'bg-fondo-3' : 'hover:bg-fondo-3/60'
+              }`}
+            >
+              <span className="mt-0.5 w-4 shrink-0">
+                {v.scelto && <Spunta className="h-4 w-4 text-vivo" />}
               </span>
-            </div>
-          </button>
-        ))}
-      </div>
-    </section>
+              <span className="min-w-0">
+                <span className="block text-sm text-testo">{v.nome}</span>
+                <span className="block text-[11px] leading-snug text-testo-3">{v.sotto}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function Interruttore({
+  acceso,
+  premi,
+  icona,
+  etichetta,
+  titolo
+}: {
+  acceso: boolean
+  premi: () => void
+  icona: React.ReactNode
+  etichetta: string
+  titolo: string
+}): React.JSX.Element {
+  return (
+    <button
+      onClick={premi}
+      title={titolo}
+      aria-pressed={acceso}
+      className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors ${
+        acceso ? 'border-vivo bg-vivo/10 text-testo' : 'border-bordo bg-fondo text-testo-3 hover:border-fondo-3'
+      }`}
+    >
+      <span className="shrink-0 [&>svg]:h-4 [&>svg]:w-4">{icona}</span>
+      {etichetta}
+    </button>
   )
 }

@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import type { StatoUtente, Utente } from '@shared/tipi'
 import { coloreDi, inizialiDi } from './lib/avatar'
-import { Ingranaggio, Persona } from './icone'
+import { Ingranaggio, Persona, Utenti } from './icone'
 
 /**
  * Il colore del pallino di stato, e come si chiama a parole.
@@ -63,12 +63,14 @@ export function PallinoStato({
 export default function PopupProfilo({
   utente,
   cambiaStato,
+  apriAmici,
   apriImpostazioni,
   apriProfilo,
   chiudi
 }: {
   utente: Utente
   cambiaStato: (stato: StatoUtente) => void
+  apriAmici: () => void
   apriImpostazioni: () => void
   apriProfilo: () => void
   chiudi: () => void
@@ -147,6 +149,7 @@ export default function PopupProfilo({
       </div>
 
       <div className="mt-2 border-t border-bordo pt-2">
+        <Voce icona={<Utenti />} testo="Amici" fai={apriAmici} chiudi={chiudi} />
         <Voce icona={<Persona />} testo="Il tuo profilo" fai={apriProfilo} chiudi={chiudi} />
         <Voce icona={<Ingranaggio />} testo="Impostazioni" fai={apriImpostazioni} chiudi={chiudi} />
       </div>

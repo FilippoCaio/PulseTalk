@@ -176,13 +176,104 @@ export interface SchermoPubblicato {
    * puo' piu' scrivere `pubblicato.video.trackSid` e sperare che ci sia.
    */
   id: string
+  /** Distingue i riquadri video dalle tracce che vivono nel menu audio. */
+  tipo: 'video' | 'solo-audio'
   /** Manca nelle condivisioni di solo audio. */
   video: LocalTrackPublication | null
   audio: LocalTrackPublication | null
   /** Il nome da mostrare: la finestra, o cio' che si sta suonando. */
   etichetta: string
+  /** Volume trasmesso. Ha effetto sulle condivisioni di solo audio. */
+  volume: number
+  /** Vero quando una condivisione di solo audio sta inviando silenzio. */
+  muto: boolean
+  /** Regola la singola traccia senza ripubblicarla. */
+  impostaVolume: (volume: number) => void
+  /** Zittisce o riaccende la singola traccia senza spegnerla. */
+  impostaMuto: (muto: boolean) => void
+  /**
+   * Scambia cio' che viene catturato conservando la publication LiveKit.
+   *
+   * Il trackSid video (o audio, per una condivisione solo-audio) non cambia:
+   * chi guarda resta agganciato allo stesso riquadro/elemento audio.
+   */
+  cambiaSorgente: (
+    stream: MediaStream,
+    preset: PresetSchermo,
+    limiti: Limiti,
+    etichetta?: string
+  ) => Promise<void>
   /** Ferma la cattura e toglie le tracce dalla stanza. */
   chiudi: () => Promise<void>
+}
+
+interface CatenaAudioCondiviso {
+  ingresso: MediaStreamTrack
+  uscita: MediaStreamTrack
+  contesto: AudioContext
+  guadagno: GainNode
+  chiudi: () => Promise<void>
+}
+
+/** Metadato leggero nel nome LiveKit: distingue l'audio standalone da quello di un video. */
+export const PREFISSO_SOLO_AUDIO = 'pulsetalk:solo-audio:'
+
+export function etichettaSoloAudio(nomeTraccia: string): string | null {
+  if (nomeTraccia.startsWith(PREFISSO_SOLO_AUDIO)) {
+    return nomeTraccia.slice(PREFISSO_SOLO_AUDIO.length)
+  }
+  // Compatibilita' con le versioni che gia' pubblicavano audio standalone ma
+  // non avevano ancora il prefisso. L'audio di un video nasce invece sempre
+  // con il suffisso " (audio)".
+  return nomeTraccia.endsWith(' (audio)') ? null : nomeTraccia
+}
+
+function limitaVolume(volume: number): number {
+  return Math.max(0, Math.min(1, Number.isFinite(volume) ? volume : 1))
+}
+
+/**
+ * Un GainNode fra la cattura e LiveKit permette di regolare una sola
+ * condivisione, mentre `participant.setVolume` riguarda cio' che si riceve.
+ * La rampa breve evita il click elettrico prodotto da un salto secco a zero.
+ */
+async function creaCatenaAudioCondiviso(ingresso: MediaStreamTrack): Promise<CatenaAudioCondiviso> {
+  const impostazioni = ingresso.getSettings()
+  const contesto = new AudioContext({
+    latencyHint: 'interactive',
+    ...(impostazioni.sampleRate ? { sampleRate: impostazioni.sampleRate } : {})
+  })
+  const sorgente = contesto.createMediaStreamSource(new MediaStream([ingresso]))
+  const guadagno = contesto.createGain()
+  const destinazione = contesto.createMediaStreamDestination()
+  sorgente.connect(guadagno)
+  guadagno.connect(destinazione)
+  await contesto.resume().catch(() => {})
+
+  const uscita = destinazione.stream.getAudioTracks()[0]
+  if (!uscita) {
+    sorgente.disconnect()
+    guadagno.disconnect()
+    await contesto.close().catch(() => {})
+    throw new Error("Non sono riuscito a preparare l'audio della condivisione.")
+  }
+
+  let chiusa = false
+  return {
+    ingresso,
+    uscita,
+    contesto,
+    guadagno,
+    chiudi: async () => {
+      if (chiusa) return
+      chiusa = true
+      sorgente.disconnect()
+      guadagno.disconnect()
+      uscita.stop()
+      ingresso.stop()
+      await contesto.close().catch(() => {})
+    }
+  }
 }
 
 /**
@@ -220,10 +311,11 @@ export async function pubblicaSoloAudio(
     )
   }
 
-  const traccia = new LocalAudioTrack(tracceAudio[0], undefined, false)
+  let catena = await creaCatenaAudioCondiviso(tracceAudio[0])
+  const traccia = new LocalAudioTrack(catena.uscita, undefined, false, catena.contesto)
   const audio = await stanza.localParticipant.publishTrack(traccia, {
     source: Track.Source.ScreenShareAudio,
-    name: etichetta,
+    name: `${PREFISSO_SOLO_AUDIO}${etichetta}`,
     audioPreset: { maxBitrate: Math.min(bitrate, limiti.bitrateVoce) },
     forceStereo: true,
     // DTX taglia i silenzi: su una voce fa risparmiare, su una traccia
@@ -232,21 +324,96 @@ export async function pubblicaSoloAudio(
     red: false
   })
 
-  tracceAudio[0].addEventListener(
-    'ended',
-    () => {
-      void chiudi()
-      quandoFinisce?.(audio.trackSid)
-    },
-    { once: true }
-  )
+  let chiuso = false
+  let tracciaAscoltata: MediaStreamTrack | null = null
+  const terminata = (): void => {
+    if (chiuso || tracciaAscoltata !== catena.ingresso) return
+    void chiudi()
+    quandoFinisce?.(audio.trackSid)
+  }
+  const ascoltaFine = (traccia: MediaStreamTrack): void => {
+    tracciaAscoltata?.removeEventListener('ended', terminata)
+    tracciaAscoltata = traccia
+    traccia.addEventListener('ended', terminata, { once: true })
+  }
+
+  let volume = 1
+  let muto = false
+  const applicaVolume = (): void => {
+    const prossimo = muto ? 0 : volume
+    catena.guadagno.gain.setTargetAtTime(prossimo, catena.contesto.currentTime, 0.035)
+  }
 
   const chiudi = async (): Promise<void> => {
-    await stanza.localParticipant.unpublishTrack(traccia, true)
+    if (chiuso) return
+    chiuso = true
+    tracciaAscoltata?.removeEventListener('ended', terminata)
+    tracciaAscoltata = null
+    await stanza.localParticipant.unpublishTrack(traccia, true).catch(() => {})
+    await catena.chiudi()
     for (const t of stream.getTracks()) t.stop()
   }
 
-  return { id: audio.trackSid, video: null, audio, etichetta, chiudi }
+  const pubblicato: SchermoPubblicato = {
+    id: audio.trackSid,
+    tipo: 'solo-audio',
+    video: null,
+    audio,
+    etichetta,
+    volume,
+    muto,
+    impostaVolume: (valore) => {
+      volume = limitaVolume(valore)
+      pubblicato.volume = volume
+      applicaVolume()
+    },
+    impostaMuto: (valore) => {
+      muto = valore
+      pubblicato.muto = muto
+      applicaVolume()
+    },
+    cambiaSorgente: async (nuovoStream, _preset, _limiti, nuovaEtichetta) => {
+      if (chiuso) {
+        for (const t of nuovoStream.getTracks()) t.stop()
+        throw new Error('Questa condivisione e\' gia\' terminata.')
+      }
+
+      // Chromium consegna comunque il video: per una traccia audio non deve
+      // mai arrivare ne' a LiveKit ne' al contatore delle condivisioni video.
+      for (const t of nuovoStream.getVideoTracks()) t.stop()
+      const nuovoIngresso = nuovoStream.getAudioTracks()[0]
+      if (!nuovoIngresso) {
+        for (const t of nuovoStream.getTracks()) t.stop()
+        throw new Error("La nuova sorgente non da' audio.")
+      }
+
+      const nuovaCatena = await creaCatenaAudioCondiviso(nuovoIngresso)
+      tracciaAscoltata?.removeEventListener('ended', terminata)
+      try {
+        await traccia.replaceTrack(nuovaCatena.uscita, { userProvidedTrack: false })
+      } catch (errore) {
+        await nuovaCatena.chiudi()
+        ascoltaFine(catena.ingresso)
+        throw errore
+      }
+
+      const vecchiaCatena = catena
+      catena = nuovaCatena
+      applicaVolume()
+      ascoltaFine(catena.ingresso)
+      await vecchiaCatena.chiudi()
+      for (const t of nuovoStream.getTracks()) {
+        if (t !== catena.ingresso) t.stop()
+      }
+      if (nuovaEtichetta) {
+        pubblicato.etichetta = nuovaEtichetta
+      }
+    },
+    chiudi
+  }
+
+  ascoltaFine(catena.ingresso)
+  return pubblicato
 }
 
 /**
@@ -348,37 +515,186 @@ export async function pubblicaSchermo(
   // L'audio di sistema, se c'e'. Sempre alla massima qualita' e sempre stereo:
   // non e' una voce, e' la colonna sonora di quello che si sta mostrando.
   let audio: LocalTrackPublication | null = null
-  const mediaAudio = stream.getAudioTracks()[0]
-  if (mediaAudio) {
-    const tracciaAudio = new LocalAudioTrack(mediaAudio, undefined, false)
-    audio = await stanza.localParticipant.publishTrack(tracciaAudio, {
-      source: Track.Source.ScreenShareAudio,
-      name: `${etichetta} (audio)`,
-      audioPreset: { maxBitrate: Math.min(510_000, limiti.bitrateVoce) },
-      forceStereo: true,
-      dtx: false,
-      red: false
-    })
+  let tracciaAudio: LocalAudioTrack | null = null
+  let mediaAudioCorrente: MediaStreamTrack | null = stream.getAudioTracks()[0] ?? null
+  if (mediaAudioCorrente) {
+    tracciaAudio = new LocalAudioTrack(mediaAudioCorrente, undefined, false)
+    try {
+      audio = await stanza.localParticipant.publishTrack(tracciaAudio, {
+        source: Track.Source.ScreenShareAudio,
+        name: `${etichetta} (audio)`,
+        audioPreset: { maxBitrate: Math.min(510_000, limiti.bitrateVoce) },
+        forceStereo: true,
+        dtx: false,
+        red: false
+      })
+    } catch (errore) {
+      await stanza.localParticipant.unpublishTrack(traccia, true).catch(() => {})
+      for (const t of stream.getTracks()) t.stop()
+      throw errore
+    }
   }
+
+  let streamCorrente = stream
+  let mediaVideoCorrente = mediaVideo
+  let tracciaAscoltata: MediaStreamTrack | null = null
+  let chiuso = false
 
   // Chi ferma la condivisione dalla barra di Windows invece che dalla nostra:
   // la traccia finisce, e la stanza deve accorgersene da sola.
-  const chiudi = async (): Promise<void> => {
-    if (audio) await stanza.localParticipant.unpublishTrack(audio.track!, true)
-    await stanza.localParticipant.unpublishTrack(traccia, true)
-    for (const t of stream.getTracks()) t.stop()
+  const terminata = (): void => {
+    if (chiuso || tracciaAscoltata !== mediaVideoCorrente) return
+    void chiudi()
+    quandoFinisce?.(video.trackSid)
+  }
+  const ascoltaFine = (tracciaDaAscoltare: MediaStreamTrack): void => {
+    tracciaAscoltata?.removeEventListener('ended', terminata)
+    tracciaAscoltata = tracciaDaAscoltare
+    tracciaAscoltata.addEventListener('ended', terminata, { once: true })
   }
 
-  mediaVideo.addEventListener(
-    'ended',
-    () => {
-      void chiudi()
-      quandoFinisce?.(video.trackSid)
-    },
-    { once: true }
-  )
+  const chiudi = async (): Promise<void> => {
+    if (chiuso) return
+    chiuso = true
+    tracciaAscoltata?.removeEventListener('ended', terminata)
+    tracciaAscoltata = null
+    if (tracciaAudio) {
+      await stanza.localParticipant.unpublishTrack(tracciaAudio, true).catch(() => {})
+    }
+    await stanza.localParticipant.unpublishTrack(traccia, true).catch(() => {})
+    mediaVideoCorrente.stop()
+    mediaAudioCorrente?.stop()
+    for (const t of streamCorrente.getTracks()) t.stop()
+  }
 
-  return { id: video.trackSid, video, audio, etichetta, chiudi }
+  const pubblicato: SchermoPubblicato = {
+    id: video.trackSid,
+    tipo: 'video',
+    video,
+    audio,
+    etichetta,
+    volume: 1,
+    muto: false,
+    // Il volume per-condivisione serve alle tracce solo-audio. L'audio che
+    // accompagna un video continua a seguire il volume dello schermo remoto.
+    impostaVolume: () => {},
+    impostaMuto: (valore) => {
+      pubblicato.muto = valore
+      const corrente = tracciaAudio
+      if (corrente) void (valore ? corrente.mute() : corrente.unmute())
+    },
+    cambiaSorgente: async (nuovoStream, nuovoPresetGrezzo, nuoviLimiti, nuovaEtichetta) => {
+      if (chiuso) {
+        for (const t of nuovoStream.getTracks()) t.stop()
+        throw new Error('Questa condivisione e\' gia\' terminata.')
+      }
+
+      const nuovoVideo = nuovoStream.getVideoTracks()[0]
+      if (!nuovoVideo) {
+        for (const t of nuovoStream.getTracks()) t.stop()
+        throw new Error('La nuova cattura non ha restituito nessun video.')
+      }
+
+      const nuovoPreset = entroILimiti(nuovoPresetGrezzo, nuoviLimiti)
+      nuovoVideo.contentHint = nuovoPreset.indizio
+      const vecchioStream = streamCorrente
+      const vecchioVideo = mediaVideoCorrente
+      const vecchioAudio = mediaAudioCorrente
+
+      // Togliere il nostro listener prima di replaceTrack e' essenziale:
+      // LiveKit ferma la vecchia MediaStreamTrack dopo lo scambio, e quel
+      // normale cleanup altrimenti sembrerebbe una richiesta di chiusura.
+      tracciaAscoltata?.removeEventListener('ended', terminata)
+      tracciaAscoltata = null
+      try {
+        await traccia.replaceTrack(nuovoVideo, { userProvidedTrack: false })
+      } catch (errore) {
+        for (const t of nuovoStream.getTracks()) t.stop()
+        if (vecchioVideo.readyState === 'live') ascoltaFine(vecchioVideo)
+        throw errore
+      }
+
+      mediaVideoCorrente = nuovoVideo
+      streamCorrente = nuovoStream
+      ascoltaFine(nuovoVideo)
+      await forzaParametri(traccia, {
+        bitrate: nuovoPreset.bitrate,
+        fps: nuovoPreset.fps,
+        degradazione: nuovoPreset.degradazione
+      })
+      setTimeout(() => {
+        if (!chiuso && mediaVideoCorrente === nuovoVideo) {
+          void forzaParametri(traccia, {
+            bitrate: nuovoPreset.bitrate,
+            fps: nuovoPreset.fps,
+            degradazione: nuovoPreset.degradazione
+          })
+        }
+      }, 800)
+
+      // L'audio puo' esserci nella vecchia sorgente, nella nuova, in entrambe
+      // o in nessuna. Se c'e' gia' una publication se ne scambia la traccia;
+      // cosi' anche il suo trackSid resta fermo. Se nasce o sparisce si tocca
+      // solo la publication audio: il video non viene mai interrotto.
+      const nuovoAudio = nuovoStream.getAudioTracks()[0] ?? null
+      if (nuovoAudio && tracciaAudio) {
+        try {
+          await tracciaAudio.replaceTrack(nuovoAudio, { userProvidedTrack: false })
+          mediaAudioCorrente = nuovoAudio
+        } catch {
+          nuovoAudio.stop()
+          mediaAudioCorrente = vecchioAudio
+        }
+      } else if (nuovoAudio) {
+        const nuovaTracciaAudio = new LocalAudioTrack(nuovoAudio, undefined, false)
+        try {
+          const nuovaPubblicazione = await stanza.localParticipant.publishTrack(
+            nuovaTracciaAudio,
+            {
+              source: Track.Source.ScreenShareAudio,
+              name: `${nuovaEtichetta || pubblicato.etichetta} (audio)`,
+              audioPreset: { maxBitrate: Math.min(510_000, nuoviLimiti.bitrateVoce) },
+              forceStereo: true,
+              dtx: false,
+              red: false
+            }
+          )
+          tracciaAudio = nuovaTracciaAudio
+          audio = nuovaPubblicazione
+          pubblicato.audio = nuovaPubblicazione
+          mediaAudioCorrente = nuovoAudio
+        } catch {
+          nuovoAudio.stop()
+          mediaAudioCorrente = null
+        }
+      } else if (tracciaAudio) {
+        await stanza.localParticipant.unpublishTrack(tracciaAudio, true).catch(() => {})
+        tracciaAudio = null
+        audio = null
+        pubblicato.audio = null
+        mediaAudioCorrente = null
+      } else {
+        mediaAudioCorrente = null
+      }
+
+      // Si fermano tutte le catture vecchie tranne l'eventuale audio rimasto
+      // in uso perche' il suo replaceTrack e' fallito. Anche le tracce extra
+      // della nuova MediaStream vengono tolte: ne pubblichiamo al massimo una
+      // per tipo.
+      for (const t of vecchioStream.getTracks()) {
+        if (t !== mediaAudioCorrente) t.stop()
+      }
+      for (const t of nuovoStream.getTracks()) {
+        if (t !== mediaVideoCorrente && t !== mediaAudioCorrente) t.stop()
+      }
+      if (vecchioAudio && vecchioAudio !== mediaAudioCorrente) vecchioAudio.stop()
+      if (nuovaEtichetta) pubblicato.etichetta = nuovaEtichetta
+    },
+    chiudi
+  }
+
+  ascoltaFine(mediaVideoCorrente)
+  return pubblicato
 }
 
 // -- Camera -------------------------------------------------------------------
@@ -604,7 +920,18 @@ export async function accendiMicrofono(
 
   catena = { contesto, guadagno: nodo, analizzatore, grezzo, battito }
 
-  const traccia = new LocalAudioTrack(uscita.stream.getAudioTracks()[0], undefined, false)
+  const tracciaUscita = uscita.stream.getAudioTracks()[0]
+  const ingressoReale = grezzo.getAudioTracks()[0].getSettings()
+  const uscitaReale = tracciaUscita.getSettings()
+  ponte.diagnosticaAudio(
+    `catena microfono modo=${modo} ingresso=${ingressoReale.sampleRate ?? '?'}Hz/` +
+      `${ingressoReale.channelCount ?? '?'}ch contesto=${contesto.sampleRate}Hz ` +
+      `uscita=${uscitaReale.sampleRate ?? '?'}Hz/${uscitaReale.channelCount ?? '?'}ch ` +
+      `eco=${profilo.cancellazioneEco} rumore=${profilo.soppressioneRumore} ` +
+      `agc=${profilo.guadagnoAutomatico}`
+  )
+
+  const traccia = new LocalAudioTrack(tracciaUscita, undefined, false)
 
   // Entrare in una stanza non deve far sentire niente.
   //

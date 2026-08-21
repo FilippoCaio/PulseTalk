@@ -8,6 +8,8 @@
 
 import { resolve } from 'node:path';
 
+import { confrontaVersioni, versioneValida } from './versione.mjs';
+
 const RUOLI = ['ospite', 'membro', 'admin'];
 
 // L'ambiente arriva sempre come parametro, mai letto da process.env qui dentro:
@@ -28,6 +30,30 @@ function booleano(env, nome, fallback) {
   return ['1', 'true', 'si', 'yes', 'on'].includes(grezzo.toLowerCase());
 }
 
+function versione(env, nome, fallback) {
+  const grezzo = env[nome];
+  const valore = grezzo === undefined || grezzo === '' ? fallback : grezzo;
+  if (!versioneValida(valore)) {
+    throw new Error(`${nome} deve essere una versione semver completa (per esempio 0.3.6), non "${valore}"`);
+  }
+  return valore;
+}
+
+function urlAggiornamenti(env) {
+  const grezzo = env.TALK_AGGIORNAMENTI_URL;
+  if (grezzo === undefined || grezzo === '') return '/aggiornamenti/';
+  let url;
+  try {
+    url = new URL(grezzo);
+  } catch {
+    throw new Error(`TALK_AGGIORNAMENTI_URL non e' un URL valido: "${grezzo}"`);
+  }
+  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) {
+    throw new Error('TALK_AGGIORNAMENTI_URL deve essere un URL http/https senza credenziali');
+  }
+  return url.toString();
+}
+
 export function leggiConfig(env = process.env) {
   const root = env.TALK_ROOT;
   if (!root) throw new Error('TALK_ROOT non impostata: e\' la cartella sul NAS dove vive talk.db');
@@ -45,6 +71,23 @@ export function leggiConfig(env = process.env) {
     );
   }
 
+  // Nessun blocco a sorpresa per gli impianti gia' esistenti: finche' queste
+  // variabili non sono configurate, qualunque semver e' compatibile e non c'e'
+  // una release obbligatoria. Appena l'amministratore pubblica una target (e,
+  // se vuole impedire i client futuri, una massima), il server diventa
+  // l'autorita' prima ancora del login.
+  const clientMinima = versione(env, 'TALK_CLIENT_MIN', '0.0.0');
+  const clientTarget = versione(env, 'TALK_CLIENT_TARGET', clientMinima);
+  const clientMassima = env.TALK_CLIENT_MAX
+    ? versione(env, 'TALK_CLIENT_MAX', clientTarget)
+    : null;
+  if (confrontaVersioni(clientTarget, clientMinima) < 0) {
+    throw new Error('TALK_CLIENT_TARGET non puo essere precedente a TALK_CLIENT_MIN');
+  }
+  if (clientMassima !== null && confrontaVersioni(clientMassima, clientTarget) < 0) {
+    throw new Error('TALK_CLIENT_MAX non puo essere precedente a TALK_CLIENT_TARGET');
+  }
+
   return {
     root: resolve(root),
     dbPath: env.TALK_DB ? resolve(env.TALK_DB) : resolve(root, 'talk.db'),
@@ -60,6 +103,15 @@ export function leggiConfig(env = process.env) {
     aggiornamentiDir: env.TALK_AGGIORNAMENTI
       ? resolve(env.TALK_AGGIORNAMENTI)
       : resolve(root, 'aggiornamenti'),
+
+    client: {
+      minima: clientMinima,
+      target: clientTarget,
+      massima: clientMassima,
+      // Relativo significa "sullo stesso server che hai appena scelto". Un
+      // URL assoluto permette invece un CDN, senza cambiare il protocollo.
+      feedUrl: urlAggiornamenti(env),
+    },
 
     host: env.TALK_HOST ?? '0.0.0.0',
     port: intero(env, 'TALK_PORT', 8080, { min: 0, max: 65535 }),

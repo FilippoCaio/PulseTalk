@@ -18,8 +18,6 @@ import {
   MicrofonoSpento,
   Rimpicciolisci,
   Lente,
-  SchermoIntero,
-  SchermoNormale,
   Stella
 } from '../icone'
 import { BottoneVolume, type VoceVolume } from './Volume'
@@ -55,7 +53,6 @@ export default function Riquadro({
   mostraStatistiche,
   aFuoco,
   volumi,
-  schermoIntero,
   puntatori,
   quandoPunta,
   quandoTiene,
@@ -70,8 +67,6 @@ export default function Riquadro({
   aFuoco: boolean
   /** I cursori da mettere nel fumetto dell'altoparlante. Vuoti: niente pulsante. */
   volumi?: VoceVolume[]
-  /** Solo sul riquadro grande: il vero schermo intero. */
-  schermoIntero?: { attivo: boolean; alterna: () => void }
   /** I "guarda qui" da disegnare qui sopra, gia' filtrati per questo riquadro. */
   puntatori?: Puntatore[]
   /** Indica un punto con un tocco, in frazioni di video da 0 a 1. */
@@ -400,19 +395,6 @@ export default function Riquadro({
             verso="sotto"
             variante="riquadro"
           />
-        )}
-
-        {schermoIntero && (
-          <Comando
-            titolo={schermoIntero.attivo ? 'Esci da tutto schermo' : 'A tutto schermo'}
-            premi={schermoIntero.alterna}
-          >
-            {schermoIntero.attivo ? (
-              <SchermoNormale className="h-4 w-4" />
-            ) : (
-              <SchermoIntero className="h-4 w-4" />
-            )}
-          </Comando>
         )}
 
         <Comando

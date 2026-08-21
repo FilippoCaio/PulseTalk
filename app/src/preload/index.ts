@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import {
   IPC,
   type Impostazioni,
+  type PreparazioneAggiornamento,
   type Puntata,
   type SceltaCattura,
   type Scorciatoia,
@@ -54,6 +55,8 @@ const api = {
   /** Lo stato del controllo aggiornamenti, e i tre comandi che lo muovono. */
   aggiornamento: {
     stato: (): Promise<StatoAggiornamento> => ipcRenderer.invoke(IPC.aggiornamentoStato),
+    prepara: (vincolo: PreparazioneAggiornamento): Promise<StatoAggiornamento> =>
+      ipcRenderer.invoke(IPC.aggiornamentoPrepara, vincolo),
     controlla: (): Promise<StatoAggiornamento> => ipcRenderer.invoke(IPC.aggiornamentoControlla),
     scarica: (): Promise<StatoAggiornamento> => ipcRenderer.invoke(IPC.aggiornamentoScarica),
     installa: (): Promise<void> => ipcRenderer.invoke(IPC.aggiornamentoInstalla),
@@ -72,12 +75,20 @@ const api = {
     elettrone: string
     chrome: string
     piattaforma: string
+    architettura: string
   }> => ipcRenderer.invoke(IPC.versione),
 
   apriEsterno: (url: string): void => ipcRenderer.send(IPC.apriEsterno, url),
 
   /** Disegna un alone sul monitor condiviso, sopra a tutto il resto. */
   puntatore: (punta: Puntata): void => ipcRenderer.send(IPC.puntatore, punta),
+
+  /**
+   * Una riga tecnica e anonima sulle tracce WebRTC. Il processo principale la
+   * conserva su disco: il renderer non ha accesso diretto ai file, e perdere
+   * questi numeri alla chiusura renderebbe impossibili i guasti intermittenti.
+   */
+  diagnosticaAudio: (testo: string): void => ipcRenderer.send(IPC.diagnosticaAudio, testo),
 
   notifica: (avviso: { titolo: string; corpo: string }): void =>
     ipcRenderer.send(IPC.notifica, avviso)

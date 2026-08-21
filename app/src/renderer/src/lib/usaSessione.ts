@@ -7,9 +7,12 @@ import {
   RoomEvent,
   Track,
   VideoQuality,
+  type LocalTrack,
   type LocalParticipant,
   type Participant,
+  type RemoteTrack,
   type RemoteParticipant,
+  type RemoteAudioTrack,
   type TrackPublication,
   type VideoTrack
 } from 'livekit-client'
@@ -22,6 +25,7 @@ import {
   cambiaQualitaSchermo,
   catturaSchermo,
   chiudiCatenaMicrofono,
+  etichettaSoloAudio,
   impostaGuadagnoMicrofono,
   livelloMicrofono,
   microfonoPassa,
@@ -35,6 +39,7 @@ import { coloreDi } from './avatar'
 import { ponte } from '../ponte'
 import { creaRilevatoreVoci, type RilevatoreVoci } from './vociAttive'
 import { creaRiascolto, type Riascolto } from './riascolto'
+import { osservaDiagnosticaAudio } from './diagnosticaAudio'
 
 /**
  * La chiamata, vista da React.
@@ -81,6 +86,31 @@ export interface Persona {
   camera: boolean
   schermi: number
   qualita: ConnectionQuality
+}
+
+/** Una propria traccia solo-audio, separata dai riquadri video. */
+export interface AudioCondiviso {
+  id: string
+  etichetta: string
+  volume: number
+  muto: boolean
+  /** Basta per decidere se animare l'icona a onde. */
+  attivo: boolean
+}
+
+/**
+ * Audio di schermo ricevuto da un altro partecipante.
+ *
+ * Il volume e' per trackSid e non per persona: due tracce contemporanee della
+ * stessa persona possono quindi avere regolazioni diverse.
+ */
+export interface AudioRemoto {
+  id: string
+  identita: string
+  nome: string
+  etichetta: string
+  volume: number
+  muto: boolean
 }
 
 /**
@@ -273,7 +303,12 @@ export interface Sessione {
   sordina: boolean
   /** Il volume di tutta la stanza, che moltiplica quelli delle singole persone. */
   volumeGenerale: number
+  /** Solo le condivisioni con video, mostrate nel menu degli schermi. */
   schermiAttivi: { id: string; etichetta: string }[]
+  /** Le proprie condivisioni solo-audio, mostrate nel popup a onde. */
+  audioCondivisi: AudioCondiviso[]
+  /** Le tracce audio di schermo ricevute, regolabili una per una. */
+  audioRemoti: AudioRemoto[]
   /** Chi ha il microfono spento, dal vivo. Vale solo per il canale in cui si e'. */
   microfoniSpenti: Set<string>
   /** Andata e ritorno verso la SFU in millisecondi. Null: non ancora misurabile. */
@@ -284,6 +319,13 @@ export interface Sessione {
   cambiaQualitaCondivisione: (idTraccia: string, presetId: string) => Promise<void>
   /** Con quale preset sta andando una propria condivisione. */
   presetDiCondivisione: (idTraccia: string) => string | null
+  /** Scambia finestra/schermo conservando la publication e il trackSid. */
+  cambiaSorgenteCondivisione(
+    idTraccia: string,
+    sorgente: Sorgente | null,
+    preset?: PresetSchermo,
+    audioSistema?: ModoAudioSistema
+  ): Promise<void>
   /** Il browser non lascia partire il suono finche' non si clicca. */
   audioBloccato: boolean
   sbloccaAudio(): Promise<void>
@@ -324,6 +366,10 @@ export interface Sessione {
     permettiInterazione?: boolean
   ): Promise<void>
   smettiDiCondividere(id?: string): Promise<void>
+  impostaVolumeAudioCondiviso(id: string, volume: number): void
+  alternaMutoAudioCondiviso(id: string): void
+  impostaVolumeAudioRemoto(id: string, volume: number): void
+  alternaMutoAudioRemoto(id: string): void
   manda(testo: string): void
 
   impostaVolumeGenerale(volume: number): void
@@ -343,6 +389,27 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
   // Qui gli elementi nascono quando arriva la traccia e muoiono quando se ne
   // va, e nel mezzo React non li tocca.
   const audioRef = useRef<HTMLDivElement | null>(null)
+  /**
+   * Una sola riproduzione per pubblicazione audio.
+   *
+   * `TrackSubscribed` puo' tornare dopo una risottoscrizione/reconnect. Senza
+   * una chiave, `track.attach()` crea un secondo elemento e la stessa voce
+   * suona due volte con pochi millisecondi di scarto: all'orecchio e' proprio
+   * un timbro metallico/elettrico.
+   */
+  const riproduzioniAudioRef = useRef<
+    Map<
+      string,
+      {
+        traccia: RemoteTrack
+        elemento: HTMLMediaElement
+        identita: string
+        sorgente: Track.Source
+      }
+    >
+  >(new Map())
+  /** I cicli `getStats()`, locali e remoti, indicizzati dalla pubblicazione. */
+  const diagnosticheAudioRef = useRef<Map<string, () => void>>(new Map())
   // Quando siamo entrati. Serve a distinguere un'uscita voluta da una caduta
   // subito dopo l'ingresso, che ha una causa sola e vale la pena nominare.
   const entratoRef = useRef(0)
@@ -393,6 +460,8 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
    */
   const attenuazioneRef = useRef(1)
   const [volumi, setVolumi] = useState<Map<string, Volumi>>(new Map())
+  /** Regolazioni che vincono sul volume "audio schermo" della persona. */
+  const volumiAudioRemotiRef = useRef(new Map<string, { volume: number; muto: boolean }>())
 
   // Gli stessi tre valori anche in dei ref.
   //
@@ -434,12 +503,57 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
     stanza.remoteParticipants.forEach((partecipante) => {
       const suoi = volumiRef.current.get(partecipante.identity) ?? VOLUMI_INIZIALI
       partecipante.setVolume(suoi.mutoVoce ? 0 : generale * suoi.voce, Track.Source.Microphone)
-      partecipante.setVolume(
-        suoi.mutoSchermo ? 0 : generale * suoi.schermo,
-        Track.Source.ScreenShareAudio
-      )
+      // `Participant.setVolume(ScreenShareAudio)` tocca soltanto la prima
+      // publication trovata da LiveKit. Qui si passa invece per ogni
+      // trackSid, cosi' due condivisioni audio della stessa persona non si
+      // pestano i piedi e possono avere cursori diversi.
+      partecipante.trackPublications.forEach((pubblicazione) => {
+        if (pubblicazione.source !== Track.Source.ScreenShareAudio) return
+        const sua = volumiAudioRemotiRef.current.get(pubblicazione.trackSid)
+        const volume = sua?.volume ?? suoi.schermo
+        const muto = sua?.muto ?? suoi.mutoSchermo
+        ;(pubblicazione.track as RemoteAudioTrack | undefined)?.setVolume(
+          muto ? 0 : generale * volume
+        )
+      })
     })
   }, [])
+
+  const fermaDiagnosticaAudio = useCallback((chiave: string) => {
+    diagnosticheAudioRef.current.get(chiave)?.()
+    diagnosticheAudioRef.current.delete(chiave)
+  }, [])
+
+  const avviaDiagnosticaAudio = useCallback(
+    (chiave: string, traccia: LocalTrack | RemoteTrack, fonte: string) => {
+      fermaDiagnosticaAudio(chiave)
+      diagnosticheAudioRef.current.set(
+        chiave,
+        osservaDiagnosticaAudio(traccia, fonte, ponte.diagnosticaAudio)
+      )
+    },
+    [fermaDiagnosticaAudio]
+  )
+
+  const rimuoviRiproduzioneAudio = useCallback((sid: string) => {
+    const riproduzione = riproduzioniAudioRef.current.get(sid)
+    if (!riproduzione) return
+    riproduzioniAudioRef.current.delete(sid)
+    try {
+      riproduzione.traccia.detach(riproduzione.elemento)
+    } catch {
+      // La traccia puo' essersi gia' chiusa durante un reconnect.
+    }
+    riproduzione.elemento.pause()
+    riproduzione.elemento.srcObject = null
+    riproduzione.elemento.remove()
+  }, [])
+
+  const fermaTuttoAudio = useCallback(() => {
+    for (const sid of [...riproduzioniAudioRef.current.keys()]) rimuoviRiproduzioneAudio(sid)
+    for (const ferma of diagnosticheAudioRef.current.values()) ferma()
+    diagnosticheAudioRef.current.clear()
+  }, [rimuoviRiproduzioneAudio])
 
   // Il contenitore nascosto dove vivono gli <audio>. Uno solo per tutta la
   // durata della pagina: crearlo e distruggerlo a ogni chiamata sarebbe un
@@ -450,10 +564,11 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
     document.body.appendChild(contenitore)
     audioRef.current = contenitore
     return () => {
+      fermaTuttoAudio()
       contenitore.remove()
       audioRef.current = null
     }
-  }, [])
+  }, [fermaTuttoAudio])
 
   // -- Il ciclo di vita della stanza -----------------------------------------
 
@@ -580,6 +695,19 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
         setVociSfu(new Set(parlanti.map((p) => p.identity)))
       })
 
+      stanza.on(RoomEvent.LocalTrackPublished, (pubblicazione) => {
+        const traccia = pubblicazione.track
+        if (!traccia || traccia.kind !== Track.Kind.Audio) return
+        const fonte =
+          pubblicazione.source === Track.Source.Microphone
+            ? 'microfono-locale'
+            : 'condivisione-locale'
+        avviaDiagnosticaAudio(`locale:${pubblicazione.trackSid}`, traccia, fonte)
+      })
+      stanza.on(RoomEvent.LocalTrackUnpublished, (pubblicazione) => {
+        fermaDiagnosticaAudio(`locale:${pubblicazione.trackSid}`)
+      })
+
       // L'audio degli altri, attaccato a mano.
       //
       // I video li mettiamo dentro ai riquadri che si vedono; l'audio no, e
@@ -587,9 +715,50 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
       // suona. E' il primo modo in cui una chiamata sembra collegata e muta.
       stanza.on(RoomEvent.TrackSubscribed, (traccia, pubblicazione, partecipante) => {
         if (traccia.kind !== Track.Kind.Audio) return
-        const elemento = traccia.attach()
+
+        // Una voce sola per persona. Due pubblicazioni di microfono non sono
+        // una funzione: sono una vecchia traccia rimasta viva durante una
+        // ripubblicazione. Le condivisioni audio invece possono essere molte
+        // e restano distinte tramite il loro SID.
+        if (pubblicazione.source === Track.Source.Microphone) {
+          // L'anello e il rilevatore sono indicizzati per identita': prima si
+          // stacca l'eventuale vecchia MediaStreamTrack, poi il blocco sotto
+          // aggancia quella appena sottoscritta.
+          riascoltoRef.current?.togli(partecipante.identity)
+          rilevatore.current?.togli(partecipante.identity)
+          for (const [sid, esistente] of riproduzioniAudioRef.current) {
+            if (
+              sid !== pubblicazione.trackSid &&
+              esistente.identita === partecipante.identity &&
+              esistente.sorgente === Track.Source.Microphone
+            ) {
+              rimuoviRiproduzioneAudio(sid)
+              fermaDiagnosticaAudio(`remoto:${sid}`)
+              ponte.diagnosticaAudio('riproduzione microfono duplicata rimossa dopo risottoscrizione')
+            }
+          }
+        }
+
+        // Lo stesso evento, con lo stesso SID, e' idempotente.
+        rimuoviRiproduzioneAudio(pubblicazione.trackSid)
+        fermaDiagnosticaAudio(`remoto:${pubblicazione.trackSid}`)
+
+        const elemento = document.createElement('audio')
         elemento.autoplay = true
+        traccia.attach(elemento)
         audioRef.current?.appendChild(elemento)
+        riproduzioniAudioRef.current.set(pubblicazione.trackSid, {
+          traccia,
+          elemento,
+          identita: partecipante.identity,
+          sorgente: pubblicazione.source
+        })
+
+        const fonte =
+          pubblicazione.source === Track.Source.Microphone
+            ? 'microfono-remoto'
+            : 'condivisione-remota'
+        avviaDiagnosticaAudio(`remoto:${pubblicazione.trackSid}`, traccia, fonte)
 
         // Nell'anello vanno solo le voci. L'audio di uno schermo condiviso no:
         // se qualcuno sta mostrando un video, coprirebbe esattamente la frase
@@ -605,10 +774,21 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
       })
       stanza.on(RoomEvent.TrackUnsubscribed, (traccia, pubblicazione, partecipante) => {
         if (traccia.kind !== Track.Kind.Audio) return
-        for (const elemento of traccia.detach()) elemento.remove()
+        rimuoviRiproduzioneAudio(pubblicazione.trackSid)
+        fermaDiagnosticaAudio(`remoto:${pubblicazione.trackSid}`)
+        if (pubblicazione.source === Track.Source.ScreenShareAudio) {
+          volumiAudioRemotiRef.current.delete(pubblicazione.trackSid)
+        }
         if (pubblicazione.source === Track.Source.Microphone) {
-          riascoltoRef.current?.togli(partecipante.identity)
-          rilevatore.current?.togli(partecipante.identity)
+          const restaUnaVoce = [...riproduzioniAudioRef.current.values()].some(
+            (riproduzione) =>
+              riproduzione.identita === partecipante.identity &&
+              riproduzione.sorgente === Track.Source.Microphone
+          )
+          if (!restaUnaVoce) {
+            riascoltoRef.current?.togli(partecipante.identity)
+            rilevatore.current?.togli(partecipante.identity)
+          }
         }
       })
 
@@ -657,6 +837,8 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
           setMotivoUscita(null)
         }
         schermiRef.current.clear()
+        volumiAudioRemotiRef.current.clear()
+        fermaTuttoAudio()
         // Anche qui, e non solo in `esci`: da una stanza si esce anche perche'
         // un moderatore ti ha cacciato o perche' e' caduta la linea, e in quei
         // due casi nessuno passa da li'. Senza, il microfono resterebbe aperto
@@ -724,7 +906,16 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
         }
       )
     },
-    [accogliPuntatore, lasciaPuntatore, applicaAudio, ridisegna]
+    [
+      accogliPuntatore,
+      lasciaPuntatore,
+      applicaAudio,
+      avviaDiagnosticaAudio,
+      fermaDiagnosticaAudio,
+      fermaTuttoAudio,
+      rimuoviRiproduzioneAudio,
+      ridisegna
+    ]
   )
 
   const entra = useCallback(
@@ -732,6 +923,7 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
       setErrore(null)
       setMotivoUscita(null)
       setMessaggi([])
+      volumiAudioRemotiRef.current.clear()
       limitiRef.current = ingresso.limiti
 
       const stanza = new Room({
@@ -812,6 +1004,7 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
       await schermo.chiudi().catch(() => {})
     }
     schermiRef.current.clear()
+    volumiAudioRemotiRef.current.clear()
     await stanzaRef.current?.disconnect()
     await chiudiCatenaMicrofono()
     spegniRiascolto()
@@ -1051,6 +1244,58 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
     []
   )
 
+  /**
+   * Cambia finestra o monitor senza togliere la publication dalla stanza.
+   *
+   * La nuova cattura viene consegnata a `LocalTrack.replaceTrack`: per chi
+   * guarda il trackSid e l'elemento video/audio restano gli stessi. Soltanto
+   * l'eventuale audio associato puo' nascere o sparire indipendentemente.
+   */
+  const cambiaSorgenteCondivisione = useCallback(
+    async (
+      idTraccia: string,
+      sorgente: Sorgente | null,
+      presetRichiesto?: PresetSchermo,
+      audioSistema?: ModoAudioSistema
+    ) => {
+      const pubblicato = schermiRef.current.get(idTraccia)
+      const limiti = limitiRef.current
+      if (!pubblicato || !limiti) return
+
+      const presetId = presetSchermiRef.current.get(idTraccia) ?? impostazioni.presetSchermo
+      const preset =
+        presetRichiesto ?? PRESET_SCHERMO.find((p) => p.id === presetId) ?? PRESET_SCHERMO[0]
+      if (!preset) return
+
+      setErrore(null)
+      try {
+        const stream = await catturaSchermo(
+          sorgente,
+          preset,
+          pubblicato.tipo === 'solo-audio'
+            ? 'condiviso'
+            : (audioSistema ?? impostazioni.audioSistema)
+        )
+        await pubblicato.cambiaSorgente(stream, preset, limiti, sorgente?.nome)
+        presetSchermiRef.current.set(idTraccia, preset.id)
+        if (pubblicato.tipo === 'video') {
+          schermiSuMonitorRef.current.set(
+            idTraccia,
+            sorgente?.tipo === 'schermo' ? sorgente.schermoId : null
+          )
+        } else {
+          schermiSuMonitorRef.current.delete(idTraccia)
+        }
+        ridisegna()
+      } catch (e) {
+        const errore = e as Error
+        if (errore.name === 'NotAllowedError') return
+        setErrore(`Non sono riuscito a cambiare sorgente: ${errore.message}`)
+      }
+    },
+    [impostazioni.audioSistema, impostazioni.presetSchermo, ridisegna]
+  )
+
   const applicaQualita = useCallback(
     (idAFuoco: string | null) => {
       const stanza = stanzaRef.current
@@ -1175,6 +1420,63 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
       )
     },
     [scrivi]
+  )
+
+  const impostaVolumeAudioCondiviso = useCallback(
+    (id: string, valore: number) => {
+      const pubblicato = schermiRef.current.get(id)
+      if (!pubblicato || pubblicato.tipo !== 'solo-audio') return
+      const volume = Math.max(0, Math.min(1, Number.isFinite(valore) ? valore : 1))
+      pubblicato.impostaVolume(volume)
+      // Come per i cursori delle persone: muoverne uno significa voler
+      // sentire/inviare la traccia, quindi la si riaccende se era muta.
+      if (volume > 0 && pubblicato.muto) pubblicato.impostaMuto(false)
+      ridisegna()
+    },
+    [ridisegna]
+  )
+
+  const alternaMutoAudioCondiviso = useCallback(
+    (id: string) => {
+      const pubblicato = schermiRef.current.get(id)
+      if (!pubblicato || pubblicato.tipo !== 'solo-audio') return
+      pubblicato.impostaMuto(!pubblicato.muto)
+      ridisegna()
+    },
+    [ridisegna]
+  )
+
+  const statoAudioRemoto = useCallback((id: string) => {
+    const esplicito = volumiAudioRemotiRef.current.get(id)
+    if (esplicito) return esplicito
+    const stanza = stanzaRef.current
+    if (!stanza) return { volume: 1, muto: false }
+    for (const partecipante of stanza.remoteParticipants.values()) {
+      if (!partecipante.trackPublications.has(id)) continue
+      const suoi = volumiRef.current.get(partecipante.identity) ?? VOLUMI_INIZIALI
+      return { volume: suoi.schermo, muto: suoi.mutoSchermo }
+    }
+    return { volume: 1, muto: false }
+  }, [])
+
+  const impostaVolumeAudioRemoto = useCallback(
+    (id: string, valore: number) => {
+      const volume = Math.max(0, Math.min(1, Number.isFinite(valore) ? valore : 1))
+      volumiAudioRemotiRef.current.set(id, { volume, muto: false })
+      applicaAudio()
+      ridisegna()
+    },
+    [applicaAudio, ridisegna]
+  )
+
+  const alternaMutoAudioRemoto = useCallback(
+    (id: string) => {
+      const attuale = statoAudioRemoto(id)
+      volumiAudioRemotiRef.current.set(id, { ...attuale, muto: !attuale.muto })
+      applicaAudio()
+      ridisegna()
+    },
+    [applicaAudio, ridisegna, statoAudioRemoto]
   )
 
   const condividi = useCallback(
@@ -1460,10 +1762,16 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
 
   // -- La vista ---------------------------------------------------------------
 
-  const { riquadri, persone, schermiAttivi } = useMemo(() => {
+  const { riquadri, persone, schermiAttivi, audioCondivisi, audioRemoti } = useMemo(() => {
     const stanza = stanzaRef.current
     if (!stanza || stato === ConnectionState.Disconnected) {
-      return { riquadri: [] as Riquadro[], persone: [] as Persona[], schermiAttivi: [] }
+      return {
+        riquadri: [] as Riquadro[],
+        persone: [] as Persona[],
+        schermiAttivi: [],
+        audioCondivisi: [] as AudioCondiviso[],
+        audioRemoti: [] as AudioRemoto[]
+      }
     }
 
     const riquadri: Riquadro[] = []
@@ -1489,12 +1797,45 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
       return a.nome.localeCompare(b.nome, 'it')
     })
 
-    const schermiAttivi = [...schermiRef.current.entries()].map(([id, s]) => ({
-      id,
-      etichetta: s.etichetta
-    }))
+    const schermiAttivi = [...schermiRef.current.entries()]
+      .filter(([, s]) => s.tipo === 'video')
+      .map(([id, s]) => ({ id, etichetta: s.etichetta }))
 
-    return { riquadri, persone, schermiAttivi }
+    const audioCondivisi = [...schermiRef.current.entries()]
+      .filter(([, s]) => s.tipo === 'solo-audio')
+      .map(([id, s]) => ({
+        id,
+        etichetta: s.etichetta,
+        volume: s.volume,
+        muto: s.muto,
+        attivo: !s.muto && s.volume > 0
+      }))
+
+    const audioRemoti: AudioRemoto[] = []
+    stanza.remoteParticipants.forEach((partecipante) => {
+      const suoi = volumiRef.current.get(partecipante.identity) ?? VOLUMI_INIZIALI
+      partecipante.trackPublications.forEach((pubblicazione) => {
+        if (pubblicazione.source !== Track.Source.ScreenShareAudio) return
+        const etichetta = etichettaSoloAudio(pubblicazione.trackName || '')
+        // L'audio che accompagna un riquadro video resta regolato dal menu di
+        // quel riquadro; nel popup a onde entrano soltanto gli standalone.
+        if (etichetta === null) return
+        const esplicito = volumiAudioRemotiRef.current.get(pubblicazione.trackSid)
+        audioRemoti.push({
+          id: pubblicazione.trackSid,
+          identita: partecipante.identity,
+          nome: partecipante.name || partecipante.identity,
+          etichetta: etichetta || `Audio di ${partecipante.name || partecipante.identity}`,
+          volume: esplicito?.volume ?? suoi.schermo,
+          muto: esplicito?.muto ?? suoi.mutoSchermo
+        })
+      })
+    })
+    audioRemoti.sort((a, b) =>
+      `${a.nome}:${a.etichetta}`.localeCompare(`${b.nome}:${b.etichetta}`, 'it')
+    )
+
+    return { riquadri, persone, schermiAttivi, audioCondivisi, audioRemoti }
     // `giro` non si usa nel corpo: e' li' per far ricalcolare quando la stanza
     // cambia sotto, cosa che React da solo non puo' vedere.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1530,6 +1871,16 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
     sordina,
     volumeGenerale,
     schermiAttivi,
+    // Erano gia' scritte, gia' dichiarate nell'interfaccia e gia' calcolate:
+    // mancava solo che uscissero di qui. Senza queste righe restavano codice
+    // morto, e il controllo dei tipi lo diceva.
+    audioCondivisi,
+    audioRemoti,
+    cambiaSorgenteCondivisione,
+    impostaVolumeAudioCondiviso,
+    alternaMutoAudioCondiviso,
+    impostaVolumeAudioRemoto,
+    alternaMutoAudioRemoto,
     microfoniSpenti,
     latenza,
     applicaQualita,

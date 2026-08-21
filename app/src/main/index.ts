@@ -49,6 +49,23 @@ function registraGuasto(testo: string): void {
   console.error(riga.trim())
 }
 
+/**
+ * Le distorsioni audio intermittenti spariscono prima che si possa aprire un
+ * pannello di diagnostica. Queste righe restano in `%APPDATA%/PulseTalk/audio.log`
+ * e contengono solo misure WebRTC: niente nomi, dispositivi o contenuto audio.
+ */
+function registraDiagnosticaAudio(testo: string): void {
+  const pulito = String(testo).replace(/[\r\n\t]+/g, ' ').slice(0, 1200)
+  if (!pulito) return
+  const riga = `[${new Date().toISOString()}] ${pulito}\n`
+  try {
+    appendFileSync(join(app.getPath('userData'), 'audio.log'), riga)
+  } catch {
+    // La diagnosi non deve mai interrompere una chiamata.
+  }
+  console.warn(riga.trim())
+}
+
 // Su una macchina con due schede video, la finestra che codifica un 4K60 vuole
 // quella vera. Senza, Windows la lascia sulla integrata "per risparmiare".
 app.commandLine.appendSwitch('force_high_performance_gpu')
@@ -229,7 +246,8 @@ function agganciaCanali(): void {
     app: app.getVersion(),
     elettrone: process.versions.electron,
     chrome: process.versions.chrome,
-    piattaforma: process.platform
+    piattaforma: process.platform,
+    architettura: process.arch
   }))
 
   ipcMain.on(IPC.apriEsterno, (_evento, url: string) => {
@@ -240,6 +258,10 @@ function agganciaCanali(): void {
   // alla finestra: chi condivide sta guardando il suo schermo, non noi.
   ipcMain.on(IPC.puntatore, (_evento, punta: Puntata) => {
     mostraPuntatore(punta)
+  })
+
+  ipcMain.on(IPC.diagnosticaAudio, (_evento, testo: string) => {
+    registraDiagnosticaAudio(testo)
   })
 
   ipcMain.on(IPC.notifica, (_evento, avviso: { titolo: string; corpo: string }) => {

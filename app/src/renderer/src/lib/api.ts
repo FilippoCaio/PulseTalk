@@ -3,7 +3,9 @@ import type {
   Amicizie,
   Canale,
   Categoria,
+  CompatibilitaClient,
   Evento,
+  InformazioniClient,
   Ingresso,
   Messaggio,
   Profilo,
@@ -14,6 +16,7 @@ import type {
   StatoUtente
 } from '@shared/tipi'
 import type { Limiti } from '@shared/qualita'
+import { confrontaVersioni, versioneValida } from '@shared/versione'
 
 /** Una persona dentro a uno spazio, con il ruolo che ha li'. */
 export interface Membro {
@@ -116,6 +119,26 @@ export class Api {
     }
 
     return risposta.status === 204 ? (undefined as T) : ((await risposta.json()) as T)
+  }
+
+  /**
+   * Contratto pubblico da verificare prima di qualunque autenticazione.
+   *
+   * Il tipo TypeScript non basta: la risposta attraversa la rete e un server
+   * vecchio, guasto o configurato male puo' inviare qualunque JSON. Si valida
+   * qui, prima di consegnare un URL al processo che installa eseguibili.
+   */
+  async compatibilitaClient(info: InformazioniClient): Promise<CompatibilitaClient> {
+    if (!versioneValida(info.versione)) {
+      throw new ErroreApi(`La versione installata non e' una semver valida: ${info.versione}.`, 0)
+    }
+    const query = new URLSearchParams({
+      versione: info.versione,
+      piattaforma: info.piattaforma,
+      architettura: info.architettura
+    })
+    const grezzo = await this.chiama<unknown>(`/api/client/compatibilita?${query}`)
+    return validaCompatibilita(grezzo, this.base, info.versione)
   }
 
   // -- Accesso ---------------------------------------------------------------
@@ -498,5 +521,79 @@ export class Api {
       vivo = false
       controllo.abort()
     }
+  }
+}
+
+function validaCompatibilita(
+  grezzo: unknown,
+  base: string,
+  versioneRichiesta: string
+): CompatibilitaClient {
+  if (!grezzo || typeof grezzo !== 'object' || Array.isArray(grezzo)) {
+    throw new ErroreApi('Il server ha restituito una compatibilita client illeggibile.', 502)
+  }
+  const c = grezzo as Record<string, unknown>
+  const versioni = [c.versioneClient, c.versioneMinima, c.versioneTarget]
+  if (!versioni.every(versioneValida)) {
+    throw new ErroreApi('Il server ha restituito versioni client non valide.', 502)
+  }
+  if (c.versioneMassima !== null && !versioneValida(c.versioneMassima)) {
+    throw new ErroreApi('Il server ha restituito una versione massima non valida.', 502)
+  }
+  if (
+    typeof c.compatibile !== 'boolean' ||
+    typeof c.obbligatorio !== 'boolean' ||
+    !['nessuna', 'aggiorna', 'clientTroppoNuovo'].includes(String(c.azione)) ||
+    typeof c.feedUrl !== 'string' ||
+    (c.motivo !== null && typeof c.motivo !== 'string')
+  ) {
+    throw new ErroreApi('Il contratto di compatibilita del server e incompleto.', 502)
+  }
+
+  const versioneClient = c.versioneClient as string
+  const versioneMinima = c.versioneMinima as string
+  const versioneTarget = c.versioneTarget as string
+  const versioneMassima = c.versioneMassima as string | null
+  const azione = c.azione as CompatibilitaClient['azione']
+  if (
+    versioneClient !== versioneRichiesta ||
+    confrontaVersioni(versioneTarget, versioneMinima) < 0 ||
+    (versioneMassima !== null && confrontaVersioni(versioneMassima, versioneTarget) < 0)
+  ) {
+    throw new ErroreApi('Il server ha restituito vincoli di versione incoerenti.', 502)
+  }
+
+  const troppoNuovo =
+    versioneMassima !== null && confrontaVersioni(versioneClient, versioneMassima) > 0
+  const sottoTarget = confrontaVersioni(versioneClient, versioneTarget) < 0
+  const coerente =
+    (azione === 'nessuna' && c.compatibile && !c.obbligatorio && !troppoNuovo && !sottoTarget) ||
+    (azione === 'aggiorna' && c.obbligatorio && sottoTarget && !troppoNuovo) ||
+    (azione === 'clientTroppoNuovo' && !c.compatibile && c.obbligatorio && troppoNuovo)
+  if (!coerente) {
+    throw new ErroreApi('Il server ha restituito una decisione di aggiornamento incoerente.', 502)
+  }
+
+  let feed: URL
+  try {
+    feed = new URL(c.feedUrl, `${base.replace(/\/+$/, '')}/`)
+  } catch {
+    throw new ErroreApi('Il server ha restituito un feed di aggiornamento non valido.', 502)
+  }
+  if (!['http:', 'https:'].includes(feed.protocol) || feed.username || feed.password) {
+    throw new ErroreApi('Il feed di aggiornamento deve essere http/https e senza credenziali.', 502)
+  }
+  feed.hash = ''
+
+  return {
+    versioneClient,
+    versioneMinima,
+    versioneTarget,
+    versioneMassima,
+    compatibile: c.compatibile as boolean,
+    obbligatorio: c.obbligatorio as boolean,
+    azione,
+    feedUrl: feed.toString(),
+    motivo: c.motivo as string | null
   }
 }

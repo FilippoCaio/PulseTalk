@@ -37,7 +37,7 @@ export function usaChat(
   // -- La prima pagina, a ogni cambio di canale ------------------------------
 
   useEffect(() => {
-    if (!api || !canale || canale.tipo !== 'testo') {
+    if (!api || !canale) {
       setMessaggi([])
       setAltri(false)
       return
@@ -96,7 +96,7 @@ export function usaChat(
   // -- Segnare come letto ----------------------------------------------------
 
   useEffect(() => {
-    if (!api || !canale || canale.tipo !== 'testo' || messaggi.length === 0) return
+    if (!api || !canale || messaggi.length === 0) return
 
     const ultimo = messaggi[messaggi.length - 1].id
     if (ultimo <= lettoFino.current) return

@@ -408,6 +408,8 @@ export default function App(): React.JSX.Element {
             torna={() => setCanaleApertoId(inVoce)}
             esci={() => void esciDallaVoce()}
             apriProfilo={() => setMostraProfilo(true)}
+            impostazioni={impostazioni}
+            salva={(modifiche) => void salva(modifiche)}
             apriImpostazioni={() => {
               setSezioneImpostazioni(null)
               setMostraImpostazioni(true)
@@ -422,6 +424,7 @@ export default function App(): React.JSX.Element {
           cambiaStato={(stato) => {
             void api.profilo({ stato }).then((r) => setUtente(r.utente))
           }}
+          apriAmici={() => setMostraAmici(true)}
           apriImpostazioni={() => {
             setSezioneImpostazioni(null)
             setMostraImpostazioni(true)

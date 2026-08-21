@@ -108,6 +108,26 @@ export function SchermoStop(props: Props): React.JSX.Element {
   )
 }
 
+/** Cinque barre audio. Quando `attiva` e' vero respirano come un misuratore. */
+export function OndeAudio({
+  attiva = false,
+  className,
+  ...props
+}: Props & { attiva?: boolean }): React.JSX.Element {
+  return (
+    <Base
+      {...props}
+      className={`${className ?? 'h-5 w-5'} onde-audio${attiva ? ' onde-audio-attiva' : ''}`}
+    >
+      <path d="M4 9v6" />
+      <path d="M8 6v12" />
+      <path d="M12 3.5v17" />
+      <path d="M16 6v12" />
+      <path d="M20 9v6" />
+    </Base>
+  )
+}
+
 export function Altoparlante(props: Props): React.JSX.Element {
   return (
     <Base {...props}>

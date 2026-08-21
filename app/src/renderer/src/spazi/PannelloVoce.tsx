@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { ConnectionState } from 'livekit-client'
-import type { StatoUtente, Utente } from '@shared/tipi'
+import type { Impostazioni, StatoUtente, Utente } from '@shared/tipi'
+import ControlliAudio from '../ControlliAudio'
 import { coloreDi, inizialiDi } from '../lib/avatar'
 import { PallinoStato } from '../PopupProfilo'
 import {
@@ -49,6 +50,8 @@ export default function PannelloVoce({
   torna,
   esci,
   apriProfilo,
+  impostazioni,
+  salva,
   apriImpostazioni
 }: {
   utente: Utente
@@ -71,6 +74,8 @@ export default function PannelloVoce({
   torna: () => void
   esci: () => void
   apriProfilo: () => void
+  impostazioni: Impostazioni
+  salva: (modifiche: Partial<Impostazioni>) => void
   apriImpostazioni: () => void
 }): React.JSX.Element {
   const [menuMicrofono, setMenuMicrofono] = useState(false)
@@ -174,6 +179,8 @@ export default function PannelloVoce({
           </Comando>
           {menuMicrofono && (
             <MenuRapido
+              impostazioni={impostazioni}
+              salva={salva}
               chiudi={() => setMenuMicrofono(false)}
               apriImpostazioni={() => {
                 setMenuMicrofono(false)
@@ -316,28 +323,29 @@ function Comando({
 /**
  * Il menu della freccetta accanto al microfono.
  *
- * Volutamente magro: qui non c'e' spazio per cursori e anteprime, e duplicarli
- * significherebbe tenerne d'accordo due copie. Rimanda dove quelle cose ci
- * stanno per davvero.
+ * Contiene gli stessi controlli della barra sospesa della chiamata: sono lo
+ * stesso componente, quindi dispositivi e volumi non possono divergere.
  */
 function MenuRapido({
+  impostazioni,
+  salva,
   chiudi,
   apriImpostazioni
 }: {
+  impostazioni: Impostazioni
+  salva: (modifiche: Partial<Impostazioni>) => void
   chiudi: () => void
   apriImpostazioni: () => void
 }): React.JSX.Element {
   return (
     <>
       <div className="fixed inset-0 z-40" onClick={chiudi} />
-      <div className="absolute bottom-full left-0 z-50 mb-1 w-52 rounded-lg border border-bordo bg-fondo-2 p-1 shadow-xl shadow-black/40">
-        <button
-          onClick={apriImpostazioni}
-          className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-testo-2 hover:bg-fondo-3 hover:text-testo"
-        >
-          <Ingranaggio className="h-3.5 w-3.5" />
-          Microfono, uscita e volumi
-        </button>
+      <div className="absolute bottom-full right-0 z-50 mb-1 w-72 space-y-3 rounded-xl border border-bordo bg-fondo-2 p-3 shadow-xl shadow-black/40">
+        <ControlliAudio
+          impostazioni={impostazioni}
+          salva={salva}
+          apriImpostazioni={apriImpostazioni}
+        />
       </div>
     </>
   )

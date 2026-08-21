@@ -1,13 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Impostazioni } from '@shared/tipi'
 import { PRESET_SCHERMO } from '@shared/qualita'
-import { livelloMicrofono } from '../lib/pubblica'
+import ControlliAudio from '../ControlliAudio'
 import { usaDispositivi } from '../lib/usaDispositivi'
 import {
   Camera,
   CameraSpenta,
   Esci,
-  Ingranaggio,
   Microfono,
   MicrofonoSpento,
   Pile,
@@ -74,28 +73,54 @@ export default function OverlayChiamata({
   const [visibile, setVisibile] = useState(true)
   const [aperto, setAperto] = useState<'microfono' | 'camera' | 'condivisioni' | null>(null)
   const scadenza = useRef<number | null>(null)
+  const radice = useRef<HTMLDivElement>(null)
 
-  // Il timer di sparizione, azzerato a ogni movimento del cursore: chi muove
-  // il mouse sta cercando qualcosa, e quel qualcosa sta quasi sempre qui.
+  // Si ascolta solo la superficie della chiamata. Muovere il mouse nella chat
+  // o nelle colonne laterali non deve far ricomparire comandi che non
+  // appartengono a quelle zone.
   useEffect(() => {
+    const superficie = radice.current?.parentElement
+    if (!superficie) return
+
+    const annulla = (): void => {
+      if (scadenza.current !== null) window.clearTimeout(scadenza.current)
+      scadenza.current = null
+    }
     const riavvia = (): void => {
+      annulla()
       setVisibile(true)
-      if (scadenza.current) window.clearTimeout(scadenza.current)
       scadenza.current = window.setTimeout(() => setVisibile(false), 2600)
+    }
+    const esce = (): void => {
+      annulla()
+      setAperto(null)
+      scadenza.current = window.setTimeout(() => setVisibile(false), 120)
     }
 
     riavvia()
-    window.addEventListener('mousemove', riavvia)
+    superficie.addEventListener('pointerenter', riavvia)
+    superficie.addEventListener('pointermove', riavvia)
+    superficie.addEventListener('pointerleave', esce)
     return () => {
-      window.removeEventListener('mousemove', riavvia)
-      if (scadenza.current) window.clearTimeout(scadenza.current)
+      superficie.removeEventListener('pointerenter', riavvia)
+      superficie.removeEventListener('pointermove', riavvia)
+      superficie.removeEventListener('pointerleave', esce)
+      annulla()
     }
   }, [])
+
+  // Se si ferma l'ultima condivisione mentre il pannello e' aperto, chiudiamo
+  // anche il pannello. Altrimenti restava il riquadro con la sola frase sulla
+  // qualita', che sembrava una finestra comparsa dopo lo stop.
+  useEffect(() => {
+    if (aperto === 'condivisioni' && schermiAttivi.length === 0) setAperto(null)
+  }, [aperto, schermiAttivi.length])
 
   const mostra = visibile || aperto !== null
 
   return (
     <div
+      ref={radice}
       className={`pointer-events-none absolute inset-x-0 bottom-0 z-30 flex justify-center p-4 transition-opacity duration-200 ${
         mostra ? 'opacity-100' : 'opacity-0'
       }`}
@@ -114,7 +139,7 @@ export default function OverlayChiamata({
         {aperto === 'camera' && (
           <MenuCamera impostazioni={impostazioni} salva={salva} accesa={cameraAccesa} />
         )}
-        {aperto === 'condivisioni' && (
+        {aperto === 'condivisioni' && schermiAttivi.length > 0 && (
           <MenuCondivisioni
             schermi={schermiAttivi}
             presetDi={presetDi}
@@ -309,122 +334,14 @@ function MenuMicrofono({
   salva: (m: Partial<Impostazioni>) => void
   apriImpostazioni: () => void
 }): React.JSX.Element {
-  const { per } = usaDispositivi()
-  const [livello, setLivello] = useState(0)
-
-  // La barra segue il microfono finche' il menu e' aperto. A fotogramma e non
-  // a timer: e' l'unica cadenza in cui sembra rispondere alla voce invece di
-  // inseguirla.
-  useEffect(() => {
-    let vivo = true
-    const giro = (): void => {
-      if (!vivo) return
-      setLivello(livelloMicrofono())
-      requestAnimationFrame(giro)
-    }
-    requestAnimationFrame(giro)
-    return () => {
-      vivo = false
-    }
-  }, [])
-
-  // Scala compressa: la voce parlata sta fra 0.02 e 0.2 di valore efficace, e
-  // su una scala lineare resterebbe tutta schiacciata contro il bordo.
-  const percento = Math.min(100, (Math.sqrt(livello) / 0.6) * 100)
-
   return (
     <Pannello>
-      <div>
-        <Etichetta>Microfono</Etichetta>
-        <select
-          className={CLASSI_SELECT}
-          value={impostazioni.microfonoId ?? ''}
-          onChange={(e) => salva({ microfonoId: e.target.value || null })}
-        >
-          <option value="">Predefinito di Windows</option>
-          {per('audioinput').map((d) => (
-            <option key={d.deviceId} value={d.deviceId}>
-              {d.label || 'Microfono senza nome'}
-            </option>
-          ))}
-        </select>
-
-        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-fondo-3">
-          <div
-            className="h-full rounded-full bg-ok transition-[width] duration-75"
-            style={{ width: `${percento}%` }}
-          />
-        </div>
-      </div>
-
-      <div>
-        <Etichetta>Altoparlante</Etichetta>
-        <select
-          className={CLASSI_SELECT}
-          value={impostazioni.altoparlanteId ?? ''}
-          onChange={(e) => salva({ altoparlanteId: e.target.value || null })}
-        >
-          <option value="">Predefinito di Windows</option>
-          {per('audiooutput').map((d) => (
-            <option key={d.deviceId} value={d.deviceId}>
-              {d.label || 'Uscita senza nome'}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <Cursore
-        nome="Entrata"
-        valore={impostazioni.volumeMicrofono ?? 1}
-        massimo={2}
-        cambia={(v) => salva({ volumeMicrofono: v })}
+      <ControlliAudio
+        impostazioni={impostazioni}
+        salva={salva}
+        apriImpostazioni={apriImpostazioni}
       />
-      <Cursore
-        nome="Uscita"
-        valore={impostazioni.volumeUscita ?? 1}
-        massimo={1}
-        cambia={(v) => salva({ volumeUscita: v })}
-      />
-
-      <button
-        onClick={apriImpostazioni}
-        className="flex w-full items-center gap-2 rounded-lg px-1 py-1.5 text-xs text-testo-2 hover:bg-fondo-3 hover:text-testo"
-      >
-        <Ingranaggio className="h-3.5 w-3.5" />
-        Tutte le impostazioni audio
-      </button>
     </Pannello>
-  )
-}
-
-function Cursore({
-  nome,
-  valore,
-  massimo,
-  cambia
-}: {
-  nome: string
-  valore: number
-  massimo: number
-  cambia: (v: number) => void
-}): React.JSX.Element {
-  return (
-    <div>
-      <div className="mb-1 flex items-baseline justify-between">
-        <Etichetta>{nome}</Etichetta>
-        <span className="numeri text-[11px] text-testo-3">{Math.round(valore * 100)}%</span>
-      </div>
-      <input
-        type="range"
-        min={0}
-        max={massimo}
-        step={0.05}
-        value={valore}
-        onChange={(e) => cambia(Number(e.target.value))}
-        className="w-full"
-        aria-label={nome}
-      />
-    </div>
   )
 }
 

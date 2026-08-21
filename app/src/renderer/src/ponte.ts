@@ -1,6 +1,8 @@
 import {
   IMPOSTAZIONI_INIZIALI,
+  type InformazioniClient,
   type Impostazioni,
+  type PreparazioneAggiornamento,
   type Puntata,
   type SceltaCattura,
   type Scorciatoia,
@@ -32,11 +34,15 @@ export interface Ponte {
    */
   aggiornamenti: {
     stato(): Promise<StatoAggiornamento>
+    prepara(vincolo: PreparazioneAggiornamento): Promise<StatoAggiornamento>
     controlla(): Promise<StatoAggiornamento>
     scarica(): Promise<StatoAggiornamento>
     installa(): Promise<void>
     ascolta(quando: (stato: StatoAggiornamento) => void): () => void
   } | null
+
+  /** Versione del binario installato. Nulla nel browser, che segue il server. */
+  informazioniClient(): Promise<InformazioniClient | null>
 
   /**
    * Il nostro selettore di sorgenti, con le anteprime. Nel browser torna vuoto
@@ -70,6 +76,9 @@ export interface Ponte {
 
   /** Una notifica di Windows. Nel browser non fa niente. */
   notifica(avviso: { titolo: string; corpo: string }): void
+
+  /** Registra una misura WebRTC anonima; nell'app resta in `audio.log`. */
+  diagnosticaAudio(testo: string): void
 }
 
 // -- Dentro Electron ----------------------------------------------------------
@@ -79,6 +88,14 @@ function ponteElettrone(api: NonNullable<Window['pulsetalk']>): Ponte {
     elettrone: true,
     audioDiSistema: true,
     aggiornamenti: api.aggiornamento,
+    informazioniClient: async () => {
+      const info = await api.versione()
+      return {
+        versione: info.app,
+        piattaforma: info.piattaforma,
+        architettura: info.architettura
+      }
+    },
     sorgenti: () => api.sorgenti(),
     preparaCattura: (scelta) => api.preparaCattura(scelta),
     leggiImpostazioni: () => api.leggiImpostazioni(),
@@ -87,6 +104,7 @@ function ponteElettrone(api: NonNullable<Window['pulsetalk']>): Ponte {
     onScorciatoia: (callback) => api.onScorciatoia(callback),
     apriEsterno: (url) => api.apriEsterno(url),
     puntatoreSulloSchermo: (punta) => api.puntatore(punta),
+    diagnosticaAudio: (testo) => api.diagnosticaAudio(testo),
     notifica: (avviso) => api.notifica(avviso)
   }
 }
@@ -123,6 +141,7 @@ function ponteBrowser(): Ponte {
   return {
     elettrone: false,
     aggiornamenti: null,
+    informazioniClient: async () => null,
 
     // Chrome sa condividere l'audio di una scheda, e su Windows anche quello
     // di sistema, ma solo se e' l'utente a spuntarlo nella sua finestra. Da
@@ -179,6 +198,7 @@ function ponteBrowser(): Ponte {
     // Nel browser il puntatore resta dentro al riquadro e la notifica non
     // esiste: sono le due cose che una pagina non puo' fare fuori da se'.
     puntatoreSulloSchermo: () => {},
+    diagnosticaAudio: (testo) => console.warn(`[audio] ${testo}`),
     notifica: () => {}
   }
 }
