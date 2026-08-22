@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { Canale, Evento, Messaggio } from '@shared/tipi'
+import type { Canale, Evento, Messaggio, Ricevute } from '@shared/tipi'
 import type { Api } from './api'
 
 /**
@@ -19,6 +19,8 @@ export function usaChat(
   altri: boolean
   caricando: boolean
   errore: string | null
+  /** Le due spunte, solo nelle conversazioni dirette. */
+  ricevute: Ricevute | null
   risaliDiUnaPagina: () => void
   manda: (dati: { testo?: string; rispondeA?: number | null; allegati?: number[] }) => Promise<void>
   modifica: (id: number, testo: string) => Promise<void>
@@ -29,15 +31,47 @@ export function usaChat(
   const [altri, setAltri] = useState(false)
   const [caricando, setCaricando] = useState(false)
   const [errore, setErrore] = useState<string | null>(null)
+  /**
+   * Fin dove e' arrivato, e fin dove ha letto, chi sta dall'altra parte.
+   *
+   * `null` quando la domanda non ha senso: in un canale di spazio "gli e'
+   * arrivato" non vuol dire niente — arrivato a chi, dei quaranta? — e infatti
+   * il server lo manda solo per le conversazioni dirette.
+   */
+  const [ricevute, setRicevute] = useState<Ricevute | null>(null)
 
   // L'ultimo messaggio che abbiamo segnato come letto. Serve a non ripetere la
   // stessa chiamata a ogni ridisegno.
   const lettoFino = useRef(0)
 
+  /**
+   * Il canale si riconosce dal suo id, non dall'oggetto che lo descrive.
+   *
+   * Chi chiama questo hook costruisce quell'oggetto a ogni render — per le
+   * conversazioni dirette e' un canale finto messo insieme sul momento, per i
+   * canali veri e' una voce dentro a un elenco che si rilegge a ogni evento del
+   * server. In entrambi i casi l'identita' cambia in continuazione mentre il
+   * canale resta lo stesso, e legare gli effetti a quell'identita' voleva dire
+   * rifare tutto da capo per niente: la pagina di messaggi richiesta di nuovo,
+   * l'elenco sostituito da uno equivalente, le spunte azzerate e ridisegnate.
+   * E' lo sfarfallio che si vedeva nei diretti, dove gli eventi arrivano di
+   * continuo — ogni "e' entrato", ogni "sta scrivendo".
+   *
+   * Peggio del tremolio c'era un giro che si alimentava da solo: rileggendo i
+   * messaggi `lettoFino` tornava a zero, quindi si rimandava "letto fin qui",
+   * il server rispondeva annunciando le ricevute, l'evento faceva ridisegnare,
+   * e si ricominciava.
+   *
+   * Quello che cambia dentro all'oggetto e non e' l'id — il nome, i non letti,
+   * l'argomento — riguarda chi lo disegna, e arriva li' comunque: non e' roba
+   * per cui ricaricare la conversazione.
+   */
+  const idCanale = canale?.id ?? null
+
   // -- La prima pagina, a ogni cambio di canale ------------------------------
 
   useEffect(() => {
-    if (!api || !canale) {
+    if (!api || !idCanale) {
       setMessaggi([])
       setAltri(false)
       return
@@ -47,13 +81,15 @@ export function usaChat(
     setCaricando(true)
     setErrore(null)
     lettoFino.current = 0
+    setRicevute(null)
 
     void api
-      .messaggi(canale.id, { quanti: 50 })
-      .then(({ messaggi, altri }) => {
+      .messaggi(idCanale, { quanti: 50 })
+      .then(({ messaggi, altri, ricevute }) => {
         if (!valido) return
         setMessaggi(messaggi)
         setAltri(altri)
+        setRicevute(ricevute ?? null)
       })
       .catch((e) => valido && setErrore((e as Error).message))
       .finally(() => valido && setCaricando(false))
@@ -63,15 +99,15 @@ export function usaChat(
       // i messaggi di quello vecchio dentro a quello nuovo.
       valido = false
     }
-  }, [api, canale])
+  }, [api, idCanale])
 
   // -- Quello che arriva dal flusso ------------------------------------------
 
   useEffect(() => {
-    if (!canale) return
+    if (!idCanale) return
 
     return iscrivi((evento) => {
-      if (!('canale' in evento) || evento.canale !== canale.id) return
+      if (!('canale' in evento) || evento.canale !== idCanale) return
 
       if (evento.tipo === 'messaggio') {
         setMessaggi((prima) =>
@@ -85,54 +121,56 @@ export function usaChat(
         setMessaggi((prima) =>
           prima.map((m) => (m.id === evento.id ? { ...m, eliminato: true, testo: '', allegati: [], reazioni: [] } : m))
         )
+      } else if (evento.tipo === 'ricevute') {
+        setRicevute(evento.ricevute)
       } else if (evento.tipo === 'reazioni') {
         setMessaggi((prima) =>
           prima.map((m) => (m.id === evento.messaggio ? { ...m, reazioni: evento.reazioni } : m))
         )
       }
     })
-  }, [canale, iscrivi])
+  }, [idCanale, iscrivi])
 
   // -- Segnare come letto ----------------------------------------------------
 
   useEffect(() => {
-    if (!api || !canale || messaggi.length === 0) return
+    if (!api || !idCanale || messaggi.length === 0) return
 
     const ultimo = messaggi[messaggi.length - 1].id
     if (ultimo <= lettoFino.current) return
     lettoFino.current = ultimo
 
-    void api.segnaLetto(canale.id, ultimo).catch(() => {
+    void api.segnaLetto(idCanale, ultimo).catch(() => {
       // Un pallino di non letti che resta acceso e' fastidioso, non grave:
       // non vale un errore in faccia a chi sta leggendo.
     })
-  }, [api, canale, messaggi])
+  }, [api, idCanale, messaggi])
 
   // -- Le azioni -------------------------------------------------------------
 
   const risaliDiUnaPagina = useCallback(() => {
-    if (!api || !canale || caricando || !altri || messaggi.length === 0) return
+    if (!api || !idCanale || caricando || !altri || messaggi.length === 0) return
     setCaricando(true)
     void api
-      .messaggi(canale.id, { prima: messaggi[0].id, quanti: 50 })
+      .messaggi(idCanale, { prima: messaggi[0].id, quanti: 50 })
       .then((piu) => {
         setMessaggi((prima) => [...piu.messaggi, ...prima])
         setAltri(piu.altri)
       })
       .catch((e) => setErrore((e as Error).message))
       .finally(() => setCaricando(false))
-  }, [api, canale, caricando, altri, messaggi])
+  }, [api, idCanale, caricando, altri, messaggi])
 
   const manda = useCallback(
     async (dati: { testo?: string; rispondeA?: number | null; allegati?: number[] }) => {
-      if (!api || !canale) return
-      const { messaggio } = await api.scrivi(canale.id, dati)
+      if (!api || !idCanale) return
+      const { messaggio } = await api.scrivi(idCanale, dati)
       // Si aggiunge subito, senza aspettare il proprio evento dal flusso: chi
       // scrive deve vedere il messaggio comparire nell'istante in cui preme
       // Invio, non dopo un giro di rete.
       setMessaggi((prima) => (prima.some((m) => m.id === messaggio.id) ? prima : [...prima, messaggio]))
     },
-    [api, canale]
+    [api, idCanale]
   )
 
   const modifica = useCallback(
@@ -164,5 +202,16 @@ export function usaChat(
     [api]
   )
 
-  return { messaggi, altri, caricando, errore, risaliDiUnaPagina, manda, modifica, elimina, reagisci }
+  return {
+    messaggi,
+    altri,
+    caricando,
+    errore,
+    ricevute,
+    risaliDiUnaPagina,
+    manda,
+    modifica,
+    elimina,
+    reagisci
+  }
 }

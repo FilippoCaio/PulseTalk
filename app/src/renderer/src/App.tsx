@@ -1,25 +1,52 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ConnectionState } from 'livekit-client'
-import type { Amicizie, Canale, Impostazioni, Ingresso, Utente } from '@shared/tipi'
+import type {
+  Amicizie,
+  Canale,
+  Impostazioni,
+  Ingresso,
+  Spazio,
+  Utente
+} from '@shared/tipi'
+import { PERMESSI_DI_GESTIONE, puo, puoQualcosa } from '@shared/permessi'
 import { ponte } from './ponte'
 import { Api } from './lib/api'
 import { usaChat } from './lib/usaChat'
 import { usaMondo } from './lib/usaMondo'
 import { usaSessione } from './lib/usaSessione'
+import { usaDiretti } from './lib/usaDiretti'
+import { usaSessioniMedia } from './lib/usaSessioniMedia'
 import { suona } from './lib/suoni'
 import Accesso, { Completa } from './atrio/Accesso'
+import Avvio from './atrio/Avvio'
 import Inviti from './atrio/Inviti'
 import BarraSpazi from './spazi/BarraSpazi'
 import ColonnaCanali from './spazi/ColonnaCanali'
 import PannelloVoce from './spazi/PannelloVoce'
 import Amici from './spazi/Amici'
 import IscrittiCanale from './spazi/IscrittiCanale'
+import MenuSpazio from './spazi/MenuSpazio'
+import PannelloSpazio from './spazi/impostazioni/PannelloSpazio'
+import EventiSpazio from './spazi/impostazioni/EventiSpazio'
+import ColonnaDiretti from './dm/ColonnaDiretti'
+import Diretto from './dm/Diretto'
+import ChiamataInArrivo, { ChiamataFinita } from './dm/ChiamataInArrivo'
 import Chat from './chat/Chat'
 import Ricerca from './chat/Ricerca'
 import Sala from './sala/Sala'
 import PannelloImpostazioni from './Impostazioni'
 import PopupProfilo from './PopupProfilo'
-import { Avviso, Conferma } from './ui'
+import { StrisciaProblemi } from './Problemi'
+import { usaProblema } from './lib/diagnostica'
+import { usaInattivita } from './lib/usaInattivita'
+import {
+  fraseMancanti,
+  usaDispositiviMancanti,
+  usaRiallineaDispositivi
+} from './lib/usaDispositivi'
+import { Chiudi } from './icone'
+import { Avviso, BottoneIcona, Conferma } from './ui'
+import { ErroreApi } from './lib/api'
 
 /**
  * Tre colonne, e una regola che le tiene insieme.
@@ -35,10 +62,40 @@ export default function App(): React.JSX.Element {
   const [utente, setUtente] = useState<Utente | null>(null)
   const [verificaFatta, setVerificaFatta] = useState(false)
   const [deveCompletare, setDeveCompletare] = useState(false)
+  /**
+   * Cosa e' andato storto controllando la sessione.
+   *
+   * Due esiti diversi e volutamente separati. `motivoAccesso` e' una sessione
+   * che non vale piu': il token va dimenticato e si torna al modulo di
+   * accesso, dicendo perche'. `erroreAvvio` e' il server irraggiungibile: il
+   * token e' probabilmente ancora buono e buttarlo via costringerebbe a
+   * riscrivere la password ogni volta che cade la linea, quindi si resta sulla
+   * schermata di avvio con un "riprova" sotto.
+   */
+  const [motivoAccesso, setMotivoAccesso] = useState<string | null>(null)
+  const [erroreAvvio, setErroreAvvio] = useState<string | null>(null)
 
   const [spazioApertoId, setSpazioApertoId] = useState<number | null>(null)
   const [canaleApertoId, setCanaleApertoId] = useState<number | null>(null)
   const [ingresso, setIngresso] = useState<Ingresso | null>(null)
+
+  /**
+   * Cosa occupa le due colonne: i server, oppure i messaggi diretti.
+   *
+   * Uno stato solo e non due schermate separate: la chiamata vocale, le
+   * impostazioni e il pannello del profilo devono continuare a funzionare
+   * uguali da entrambe le parti, e duplicarle sarebbe stato il modo piu' rapido
+   * di farne divergere una.
+   */
+  const [vista, setVista] = useState<'spazi' | 'diretti'>('spazi')
+  const [conversazioneApertaId, setConversazioneApertaId] = useState<number | null>(null)
+
+  const [menuSpazioAperto, setMenuSpazioAperto] = useState(false)
+  const [impostazioniSpazio, setImpostazioniSpazio] = useState<string | null>(null)
+  const [mostraEventi, setMostraEventi] = useState<'guarda' | 'crea' | null>(null)
+  const [confermaAbbandono, setConfermaAbbandono] = useState<Spazio | null>(null)
+  /** Vero mentre si sta chiedendo la linea a qualcuno: il pulsante non si ripreme. */
+  const [chiamando, setChiamando] = useState(false)
 
   const [mostraImpostazioni, setMostraImpostazioni] = useState(false)
   const [mostraProfilo, setMostraProfilo] = useState(false)
@@ -50,12 +107,24 @@ export default function App(): React.JSX.Element {
   const [iscrittiDi, setIscrittiDi] = useState<Canale | null>(null)
   const [amicizie, setAmicizie] = useState<Amicizie | null>(null)
   /** Chi era in un vocale al giro precedente, per identita'. */
-  const presentiPrima = useRef<Map<string, string> | null>(null)
+  const presentiPrima = useRef<Map<string, { canale: string; spazio: number }> | null>(null)
+  /**
+   * L'ultima cosa andata storta, detta in una riga.
+   *
+   * Si spegne da sola dopo qualche secondo, e non e' un vezzo: prima restava
+   * li' per sempre. Chi provava ad abbandonare uno spazio di cui e'
+   * proprietario — cosa che il server rifiuta, e giustamente — si ritrovava
+   * quella striscia gialla in cima alla finestra fino alla chiusura
+   * dell'applicazione, senza una X, senza scadenza, e senza che cambiare
+   * spazio la togliesse. Un avviso che non si puo' chiudere smette di essere
+   * un avviso e diventa arredamento.
+   */
   const [avviso, setAvviso] = useState<string | null>(null)
   /** Il vocale che si vorrebbe aprire lasciando quello in cui si e' adesso. */
   const [cambioVocale, setCambioVocale] = useState<Canale | null>(null)
 
   const sessione = usaSessione(impostazioni ?? ({} as Impostazioni))
+
 
   useEffect(() => {
     void ponte.leggiImpostazioni().then(setImpostazioni)
@@ -73,19 +142,125 @@ export default function App(): React.JSX.Element {
     return nuove
   }, [])
 
-  // Chi ha gia' un token non deve rivedere la schermata dell'accesso: si prova
-  // il token, e se e' stato revocato si torna li' con un motivo scritto.
+  /**
+   * Il microfono di ieri, controllato oggi.
+   *
+   * Chi ha scelto un dispositivo a mano se lo ritrova scelto anche riaprendo
+   * l'app — ma se nel frattempo quelle cuffie sono state staccate, Chromium
+   * ripiega sul predefinito senza dire niente, e si parla in un microfono che
+   * non e' quello che si crede. Qui si guarda e si dice, una volta sola: la
+   * scelta resta salvata, e ricollegandolo torna al suo posto da solo.
+   *
+   * La chiave e' quali mancano, non quanti: chiudendo l'avviso si zittiscono
+   * quei dispositivi li'. Se domani ne sparisce un altro, si riapre.
+   */
+  // Prima di guardare cosa manca, si rimettono a posto gli id che sono
+  // cambiati senza che sia cambiato niente: altrimenti il primo avviso della
+  // giornata sarebbe sempre per dei dispositivi che stanno al loro posto.
+  usaRiallineaDispositivi(impostazioni, salva)
+  // Inattivo non e' piu' una voce di menu: lo decide il microfono. `parlanti`
+  // contiene chi supera in questo istante la soglia dell'automute, e la propria
+  // identita' nella stanza e' sempre `u<id>`.
+  usaInattivita(api, utente ? sessione.parlanti.has(`u${utente.id}`) : false)
+
+  // Otto secondi bastano a leggerlo, e sono pochi abbastanza da non farlo
+  // diventare parte della finestra.
+  useEffect(() => {
+    if (!avviso) return
+    const scadenza = window.setTimeout(() => setAvviso(null), 8000)
+    return () => window.clearTimeout(scadenza)
+  }, [avviso])
+
+  // Cambiando spazio se ne va comunque: quasi sempre parlava di quello che si
+  // e' appena lasciato, e portarselo dietro altrove e' solo confusione. Vale
+  // anche per lo spazio cancellato, che cambia lo spazio aperto.
+  useEffect(() => setAvviso(null), [spazioApertoId])
+
+  const mancanti = usaDispositiviMancanti(impostazioni)
+  usaProblema(
+    mancanti.length
+      ? {
+          // La chiave dice *quali*, non quanti: chiudendo l'avviso si
+          // zittiscono quei dispositivi li'. Se domani ne sparisce un altro, la
+          // chiave cambia e l'avviso torna.
+          chiave: `dispositivi:${mancanti.map((m) => m.campo).join(',')}`,
+          gravita: 'attenzione',
+          titolo:
+            mancanti.length === 1
+              ? 'Un dispositivo scelto non risponde'
+              : 'Dei dispositivi scelti non rispondono',
+          dettaglio: fraseMancanti(mancanti),
+          azione: {
+            nome: 'Impostazioni audio',
+            fai: () => {
+              setSezioneImpostazioni('audio')
+              setMostraImpostazioni(true)
+            }
+          }
+        }
+      : null
+  )
+
+  /**
+   * La verifica della sessione, che decide dove si va a finire.
+   *
+   * Finche' non ha risposto non si disegna ne' l'accesso ne' l'applicazione:
+   * si resta sulla schermata di avvio. E' l'unica maniera di non far comparire
+   * per un istante il modulo dell'accesso a chi e' gia' dentro.
+   *
+   * Fallire non e' una cosa sola. Un 401 e' una sessione che non c'e' piu': il
+   * token si dimentica e si torna all'accesso con scritto perche'. Tutto il
+   * resto — server spento, tunnel giu', wi-fi cambiato — non dice niente sul
+   * token, e buttarlo via sarebbe la reazione sbagliata al guasto sbagliato.
+   */
   useEffect(() => {
     if (!api || verificaFatta) return
+    let vivo = true
+
     void api
       .io()
       .then(({ utente, deveCompletare }) => {
+        if (!vivo) return
         setUtente(utente)
         setDeveCompletare(deveCompletare)
+        setErroreAvvio(null)
+        setMotivoAccesso(null)
+        setVerificaFatta(true)
       })
-      .catch(() => setUtente(null))
-      .finally(() => setVerificaFatta(true))
-  }, [api, verificaFatta])
+      .catch((e) => {
+        if (!vivo) return
+        const problema = e as ErroreApi
+        if (problema instanceof ErroreApi && (problema.stato === 401 || problema.stato === 403)) {
+          setUtente(null)
+          setMotivoAccesso(
+            "La sessione non vale piu': puo' essere scaduta, oppure e' stata revocata da un altro dispositivo."
+          )
+          void salva({ token: null })
+          setVerificaFatta(true)
+          return
+        }
+        setErroreAvvio(problema.message)
+      })
+
+    return () => {
+      vivo = false
+    }
+  }, [api, verificaFatta, salva])
+
+  /** Riprovare dopo un guasto di rete: si rimette in moto la verifica. */
+  const riprovaAvvio = useCallback(() => {
+    setErroreAvvio(null)
+    setVerificaFatta(false)
+  }, [])
+
+  /** Sbloccarsi entrando con un altro account: si dimentica il token e si va li'. */
+  const vaiAllAccesso = useCallback(() => {
+    setErroreAvvio(null)
+    setUtente(null)
+    setMotivoAccesso(null)
+    setVerificaFatta(true)
+    void salva({ token: null })
+  }, [salva])
 
   const mondo = usaMondo(utente ? api : null)
 
@@ -141,6 +316,53 @@ export default function App(): React.JSX.Element {
 
   const chat = usaChat(api, canaleAperto?.tipo === 'testo' ? canaleAperto : null, mondo.iscrivi)
 
+  // -- I messaggi diretti ----------------------------------------------------
+
+  const diretti = usaDiretti(utente ? api : null, utente?.id ?? null, mondo.iscrivi)
+  const conversazioneAperta =
+    diretti.conversazioni.find((c) => c.id === conversazioneApertaId) ??
+    (vista === 'diretti' ? (diretti.conversazioni[0] ?? null) : null)
+
+  // La chat di una conversazione diretta passa dallo stesso hook dei canali:
+  // sotto e' un canale, e riscriverla sarebbe stata una seconda copia da tenere
+  // allineata per sempre.
+  //
+  // Ricostruito solo quando cambia qualcosa che conta. L'elenco delle
+  // conversazioni si rilegge a ogni evento — uno che entra, uno che scrive —
+  // e senza questo il canale finto sarebbe un oggetto nuovo a ogni giro:
+  // uguale in tutto tranne che nell'identita', che e' pero' l'unica cosa che
+  // React guarda.
+  const canaleDiretto: Canale | null = useMemo(
+    () =>
+      conversazioneAperta
+        ? {
+            id: conversazioneAperta.canale,
+            chiave: `dm-${conversazioneAperta.id}`,
+            nome: conversazioneAperta.con.nome,
+            icona: null,
+            tipo: 'testo',
+            argomento: '',
+            categoria: null,
+            posizione: 0,
+            soloAscolto: false,
+            privato: true,
+            creato: 0,
+            creatoDa: null,
+            scade: null,
+            restanoMs: null,
+            nonLetti: conversazioneAperta.nonLetti,
+            presenti: []
+          }
+        : null,
+    [
+      conversazioneAperta?.canale,
+      conversazioneAperta?.id,
+      conversazioneAperta?.con.nome,
+      conversazioneAperta?.nonLetti
+    ]
+  )
+  const chatDiretta = usaChat(api, vista === 'diretti' ? canaleDiretto : null, mondo.iscrivi)
+
 
   // -- La voce ---------------------------------------------------------------
 
@@ -157,7 +379,12 @@ export default function App(): React.JSX.Element {
         const nuovo = await api.entra(canale.id)
         setIngresso(nuovo)
         setCanaleApertoId(canale.id)
-        await sessione.entra(nuovo, impostazioni)
+        await sessione.entra(
+          nuovo,
+          ingresso && impostazioni.disattivaMediaCambioCanale
+            ? { ...impostazioni, microfonoAllIngresso: false }
+            : impostazioni
+        )
       } catch (e) {
         setIngresso(null)
         await sessione.esci().catch(() => {})
@@ -195,10 +422,84 @@ export default function App(): React.JSX.Element {
   )
 
   const esciDallaVoce = useCallback(async () => {
+    const diretta = ingresso?.diretta ?? null
     await sessione.esci()
     setIngresso(null)
+    // Uscire da una chiamata diretta vuol dire riagganciare: senza questa
+    // riga la stanza resterebbe aperta sulla SFU e l'altro continuerebbe a
+    // vedere una chiamata in corso con dentro nessuno.
+    if (diretta && api) await api.chiudiChiamata(diretta.conversazione).catch(() => {})
     mondo.ricarica()
-  }, [sessione, mondo.ricarica])
+  }, [sessione, mondo.ricarica, ingresso, api])
+
+  /** Entra in una chiamata (di canale o diretta) con un ingresso gia' ottenuto. */
+  const entraConIngresso = useCallback(
+    async (nuovo: Ingresso) => {
+      if (!impostazioni) return
+      setAvviso(null)
+      if (ingresso) await sessione.esci().catch(() => {})
+      try {
+        setIngresso(nuovo)
+        await sessione.entra(nuovo, impostazioni)
+      } catch (e) {
+        setIngresso(null)
+        await sessione.esci().catch(() => {})
+        setAvviso(spiega(e as Error))
+      }
+    },
+    [impostazioni, ingresso, sessione]
+  )
+
+  const telefona = useCallback(
+    async (conversazione: number) => {
+      if (!api) return
+      setChiamando(true)
+      try {
+        const { chiamata, ingresso: nuovo } = await api.avviaChiamata(conversazione)
+        diretti.segnaChiamata(chiamata)
+        await entraConIngresso(nuovo)
+      } catch (e) {
+        setAvviso((e as Error).message)
+      } finally {
+        setChiamando(false)
+      }
+    },
+    [api, diretti, entraConIngresso]
+  )
+
+  const rispondi = useCallback(
+    async (conversazione: number) => {
+      if (!api) return
+      try {
+        const { chiamata, ingresso: nuovo } = await api.accettaChiamata(conversazione)
+        diretti.segnaChiamata(chiamata)
+        // Rispondere apre anche la conversazione: chi ha appena risposto vuole
+        // vedere con chi sta parlando, non restare dov'era.
+        setVista('diretti')
+        setConversazioneApertaId(conversazione)
+        await entraConIngresso(nuovo)
+      } catch (e) {
+        setAvviso((e as Error).message)
+      }
+    },
+    [api, diretti, entraConIngresso]
+  )
+
+  const riaggancia = useCallback(
+    async (conversazione: number, motivo: 'chiusa' | 'rifiutata' = 'chiusa') => {
+      if (!api) return
+      // Prima si esce dalla stanza, poi si dice al server: nell'ordine inverso
+      // la stanza verrebbe chiusa mentre siamo ancora dentro, e livekit-client
+      // lo racconterebbe come una disconnessione anomala.
+      if (ingresso?.diretta?.conversazione === conversazione) {
+        await sessione.esci().catch(() => {})
+        setIngresso(null)
+      }
+      await api.chiudiChiamata(conversazione, motivo).catch(() => {})
+      diretti.segnaChiamata(null)
+    },
+    [api, ingresso, sessione, diretti]
+  )
 
   /**
    * Entrare e uscire da un vocale rilegge l'elenco.
@@ -234,11 +535,13 @@ export default function App(): React.JSX.Element {
    * cinque notifiche per gente che sta li' da un'ora.
    */
   useEffect(() => {
-    const adesso = new Map<string, string>()
+    const adesso = new Map<string, { canale: string; spazio: number }>()
     for (const spazio of spazi) {
       for (const canale of spazio.canali) {
         if (canale.tipo !== 'voce') continue
-        for (const persona of canale.presenti) adesso.set(persona.identita, canale.nome)
+        for (const persona of canale.presenti) {
+          adesso.set(persona.identita, { canale: canale.nome, spazio: spazio.id })
+        }
       }
     }
 
@@ -251,8 +554,14 @@ export default function App(): React.JSX.Element {
       const identita = `u${chi}`
       if (!adesso.has(identita) || prima.has(identita)) continue
 
+      const dove = adesso.get(identita)!
+      const silenziato = (impostazioni.spaziSilenziati ?? []).some(
+        (s) => s.spazio === dove.spazio && (s.fino === null || s.fino > Date.now())
+      )
+      if (silenziato) continue
+
       const nome = profili.get(chi)?.nome ?? 'Qualcuno'
-      ponte.notifica({ titolo: `${nome} e' entrato`, corpo: `In ${adesso.get(identita)}` })
+      ponte.notifica({ titolo: `${nome} e' entrato`, corpo: `In ${dove.canale}` })
       suona('altroEntrato')
     }
   }, [spazi, impostazioni, profili, utente?.id])
@@ -268,6 +577,60 @@ export default function App(): React.JSX.Element {
    */
   const canaleVocale = spazioAperto?.canali.find((c) => c.id === inVoce) ?? null
   const chatVocale = usaChat(api, canaleVocale, mondo.iscrivi)
+
+  /**
+   * Le sessioni condivise del canale in cui si sta parlando.
+   *
+   * Vivono qui e non dentro alla sala per la stessa ragione della sessione
+   * vocale: chi apre un video insieme e poi va a leggere una chat deve
+   * ritrovarlo dov'era. Il canale e' quello vero per un vocale, e quello della
+   * conversazione per una chiamata diretta — sotto sono la stessa cosa.
+   */
+  const canaleMedia = ingresso?.diretta
+    ? (diretti.conversazioni.find((c) => c.id === ingresso.diretta!.conversazione)?.canale ?? null)
+    : inVoce
+  const media = usaSessioniMedia(api, canaleMedia, mondo.iscrivi)
+
+  /** La chiamata diretta di adesso, se e' quella su cui si sta parlando. */
+  const chiamataAperta =
+    diretti.chiamata && conversazioneAperta && diretti.chiamata.conversazione === conversazioneAperta.id
+      ? diretti.chiamata
+      : null
+
+  /** Chi sta chiamando adesso, e non e' una chiamata partita da qui. */
+  const squilla =
+    diretti.chiamata?.stato === 'squilla' && diretti.chiamata.a === utente?.id
+      ? diretti.chiamata
+      : null
+
+  /**
+   * Il menu del server: quali voci, e cosa fanno.
+   *
+   * Costruito qui e passato giu' come nodo, perche' le sue voci toccano cose
+   * che la colonna dei canali non ha: le impostazioni locali per i silenzi, il
+   * pannello degli eventi, quello di gestione.
+   */
+  const silenzia = useCallback(
+    (spazioId: number, minuti: number | null) => {
+      const altri = (impostazioni?.spaziSilenziati ?? []).filter((s) => s.spazio !== spazioId)
+      void salva({
+        spaziSilenziati: [
+          ...altri,
+          { spazio: spazioId, fino: minuti === null ? null : Date.now() + minuti * 60_000 }
+        ]
+      })
+    },
+    [impostazioni?.spaziSilenziati, salva]
+  )
+
+  const riattiva = useCallback(
+    (spazioId: number) => {
+      void salva({
+        spaziSilenziati: (impostazioni?.spaziSilenziati ?? []).filter((s) => s.spazio !== spazioId)
+      })
+    },
+    [impostazioni?.spaziSilenziati, salva]
+  )
 
   /**
    * Ctrl+Shift+R: riascolta, da qualunque schermata.
@@ -319,22 +682,59 @@ export default function App(): React.JSX.Element {
 
   // -- Le schermate che vengono prima ----------------------------------------
 
+  // L'ordine di questi quattro casi e' il flusso di avvio, e conta:
+  //
+  //   impostazioni non lette  -> avvio
+  //   nessun token            -> accesso, senza aspettare niente
+  //   token da verificare     -> avvio, e da qui si esce in una direzione sola
+  //   dentro, dati in arrivo  -> avvio, finche' non c'e' l'essenziale
   if (!impostazioni) {
-    return (
-      <div className="flex h-full items-center justify-center text-testo-3">
-        <span className="respiro">un istante…</span>
-      </div>
-    )
+    return <Avvio passo="un istante…" />
   }
 
-  if (!utente || !api) {
+  if (!api) {
     return (
       <Accesso
         impostazioni={impostazioni}
+        motivo={motivoAccesso}
         salva={salva}
         quandoEntra={(u) => {
           setUtente(u)
           setDeveCompletare(false)
+          setMotivoAccesso(null)
+          setErroreAvvio(null)
+          setVerificaFatta(true)
+        }}
+      />
+    )
+  }
+
+  if (erroreAvvio) {
+    return (
+      <Avvio
+        passo="Controllo la sessione…"
+        errore={erroreAvvio}
+        riprova={riprovaAvvio}
+        vaiAllAccesso={vaiAllAccesso}
+      />
+    )
+  }
+
+  if (!verificaFatta) {
+    return <Avvio passo="Controllo la sessione…" />
+  }
+
+  if (!utente) {
+    return (
+      <Accesso
+        impostazioni={impostazioni}
+        motivo={motivoAccesso}
+        salva={salva}
+        quandoEntra={(u) => {
+          setUtente(u)
+          setDeveCompletare(false)
+          setMotivoAccesso(null)
+          setErroreAvvio(null)
           setVerificaFatta(true)
         }}
       />
@@ -354,6 +754,13 @@ export default function App(): React.JSX.Element {
     )
   }
 
+  // I dati essenziali: gli spazi. Finche' non sono arrivati si resta sulla
+  // schermata di avvio invece di far lampeggiare le tre colonne vuote. Un
+  // errore, invece, passa: sotto c'e' gia' chi lo mostra con il "riprova".
+  if (mondo.spazi === null && !mondo.errore) {
+    return <Avvio passo="Carico i tuoi spazi…" />
+  }
+
   // -- Le tre colonne ---------------------------------------------------------
 
   return (
@@ -361,11 +768,13 @@ export default function App(): React.JSX.Element {
       {!chiamataPiena && (
       <BarraSpazi
         spazi={spazi}
-        aperto={spazioAperto?.id ?? null}
+        aperto={vista === 'spazi' ? (spazioAperto?.id ?? null) : null}
         utente={utente}
         scegli={(id) => {
+          setVista('spazi')
           setSpazioApertoId(id)
           setCanaleApertoId(null)
+          setMenuSpazioAperto(false)
         }}
         crea={async (nome) => {
           await api.creaSpazio({ nome })
@@ -374,6 +783,14 @@ export default function App(): React.JSX.Element {
         apriAmici={() => setMostraAmici(true)}
         richieste={amicizie?.ricevute.length ?? 0}
         apriProfilo={() => setMostraProfilo(true)}
+        apriDiretti={() => {
+          setVista('diretti')
+          setMenuSpazioAperto(false)
+        }}
+        direttiAperti={vista === 'diretti'}
+        direttiNonLetti={diretti.nonLetti}
+        inVoce={inVoce}
+        profili={profili}
       />
       )}
 
@@ -437,7 +854,103 @@ export default function App(): React.JSX.Element {
         />
       )}
 
-      {spazioAperto ? (
+      {vista === 'diretti' ? (
+        <>
+          {/* I messaggi diretti prendono le stesse due colonne dei server:
+              stessa larghezza, stesso bordo, stesso posto per il pannello
+              della voce. Cambiare geometria fra le due viste vorrebbe dire far
+              saltare l'interfaccia a ogni passaggio. */}
+          <div
+            className={`flex w-60 shrink-0 flex-col border-r border-bordo bg-fondo-2 ${
+              chiamataPiena ? 'hidden' : ''
+            }`}
+          >
+            <ColonnaDiretti
+              api={api}
+              conversazioni={diretti.conversazioni}
+              apertaId={conversazioneAperta?.id ?? null}
+              scegli={(c) => setConversazioneApertaId(c.id)}
+              apriAmici={() => setMostraAmici(true)}
+              quandoApre={(chi) => {
+                void diretti.apriCon(chi).then((c) => c && setConversazioneApertaId(c.id))
+              }}
+            />
+          </div>
+
+          <main className="flex min-w-0 flex-1 flex-col">
+            {avviso && (
+              <div className="p-3">
+                <Avviso tono="attenzione">
+                  <div className="flex items-start gap-3">
+                    <p className="min-w-0 flex-1">{avviso}</p>
+                    <BottoneIcona
+                      tono="fantasma"
+                      title="Chiudi l'avviso"
+                      className="h-7 w-7 shrink-0"
+                      onClick={() => setAvviso(null)}
+                    >
+                      <Chiudi className="h-3.5 w-3.5" />
+                    </BottoneIcona>
+                  </div>
+                </Avviso>
+              </div>
+            )}
+            {diretti.errore && (
+              <div className="p-3">
+                <Avviso>{diretti.errore}</Avviso>
+              </div>
+            )}
+
+            {ingresso?.diretta &&
+            conversazioneAperta &&
+            ingresso.diretta.conversazione === conversazioneAperta.id ? (
+              // In chiamata con questa persona: al posto della chat c'e' la
+              // sala, con la conversazione nel pannello laterale. E' lo stesso
+              // componente dei canali vocali — una chiamata a due non e' un
+              // altro tipo di chiamata, e' una chiamata con due persone.
+              <Sala
+                api={api}
+                ingresso={ingresso}
+                sessione={sessione}
+                impostazioni={impostazioni}
+                profili={profili}
+                moderatore={false}
+                salvaImpostazioni={salva}
+                chatVocale={chatDiretta}
+                canaleVocale={canaleDiretto}
+                utente={utente}
+                media={media}
+                schermoIntero={{
+                  attivo: chiamataPiena,
+                  alterna: () => setChiamataPiena((v) => !v)
+                }}
+                esci={esciDallaVoce}
+                apriImpostazioni={() => setMostraImpostazioni(true)}
+              />
+            ) : conversazioneAperta ? (
+              <Diretto
+                api={api}
+                conversazione={conversazioneAperta}
+                chat={chatDiretta}
+                io={utente}
+                profili={profili}
+                chiamata={chiamataAperta}
+                chiamando={chiamando}
+                telefona={() => void telefona(conversazioneAperta.id)}
+                riaggancia={() => void riaggancia(conversazioneAperta.id)}
+                mostraAnteprimeLink={impostazioni.mostraAnteprimeLink ?? true}
+              />
+            ) : (
+              <div className="flex flex-1 flex-col items-center justify-center gap-1 text-center">
+                <p className="text-testo-2">Nessuna conversazione aperta.</p>
+                <p className="text-sm text-testo-3">
+                  Con il + nella colonna a sinistra si scrive a chiunque abbia un account qui.
+                </p>
+              </div>
+            )}
+          </main>
+        </>
+      ) : spazioAperto ? (
         <>
           {/* Bordo e sfondo stanno qui e non sulla colonna: la riga verticale
               deve correre dall'alto al basso senza spezzarsi dove finisce
@@ -472,14 +985,48 @@ export default function App(): React.JSX.Element {
               }}
               profili={profili}
               microfoniSpenti={sessione.microfoniSpenti}
+              menuAperto={menuSpazioAperto}
+              alternaMenu={() => setMenuSpazioAperto((v) => !v)}
+              menu={
+                impostazioni && (
+                  <MenuSpazio
+                    spazio={spazioAperto}
+                    impostazioni={impostazioni}
+                    silenzia={(minuti) => silenzia(spazioAperto.id, minuti)}
+                    riattiva={() => riattiva(spazioAperto.id)}
+                    apriImpostazioniSpazio={(sezione) => setImpostazioniSpazio(sezione ?? '')}
+                    apriInviti={() => setImpostazioniSpazio('inviti')}
+                    apriEventi={() => setMostraEventi('guarda')}
+                    creaEvento={() => setMostraEventi('crea')}
+                    segnaLetto={() => {
+                      void api.segnaSpazioLetto(spazioAperto.id).then(mondo.ricarica)
+                    }}
+                    abbandona={() => setConfermaAbbandono(spazioAperto)}
+                    chiudi={() => setMenuSpazioAperto(false)}
+                  />
+                )
+              }
             />
 
           </div>
 
           <main className="flex min-w-0 flex-1 flex-col">
+            <StrisciaProblemi />
             {avviso && (
               <div className="p-3">
-                <Avviso tono="attenzione">{avviso}</Avviso>
+                <Avviso tono="attenzione">
+                  <div className="flex items-start gap-3">
+                    <p className="min-w-0 flex-1">{avviso}</p>
+                    <BottoneIcona
+                      tono="fantasma"
+                      title="Chiudi l'avviso"
+                      className="h-7 w-7 shrink-0"
+                      onClick={() => setAvviso(null)}
+                    >
+                      <Chiudi className="h-3.5 w-3.5" />
+                    </BottoneIcona>
+                  </div>
+                </Avviso>
               </div>
             )}
             {mondo.errore && (
@@ -495,11 +1042,12 @@ export default function App(): React.JSX.Element {
                 sessione={sessione}
                 impostazioni={impostazioni}
                 profili={profili}
-                moderatore={spazioAperto.ruoloMio === 'admin'}
+                moderatore={puo(canaleVocale?.permessiMiei, 'manageVoiceMembers')}
                 salvaImpostazioni={salva}
                 chatVocale={chatVocale}
                 canaleVocale={canaleVocale}
                 utente={utente}
+                media={media}
                 schermoIntero={{
                   attivo: chiamataPiena,
                   alterna: () => setChiamataPiena((v) => !v)
@@ -514,7 +1062,7 @@ export default function App(): React.JSX.Element {
                 chat={chat}
                 io={utente}
                 profili={profili}
-                amministra={spazioAperto.ruoloMio === 'admin'}
+                mostraAnteprimeLink={impostazioni.mostraAnteprimeLink ?? true}
               />
             ) : (
               <div className="flex flex-1 flex-col items-center justify-center gap-1 text-center">
@@ -612,7 +1160,7 @@ export default function App(): React.JSX.Element {
           api={api}
           canale={iscrittiDi}
           spazio={spazioAperto.id}
-          amministra={spazioAperto.ruoloMio === 'admin'}
+          amministra={puoQualcosa(spazioAperto.permessiMiei, PERMESSI_DI_GESTIONE)}
           io={utente.id}
           chiudi={() => {
             setIscrittiDi(null)
@@ -623,6 +1171,117 @@ export default function App(): React.JSX.Element {
 
       {mostraInviti && (
         <Inviti api={api} server={impostazioni.server} chiudi={() => setMostraInviti(false)} />
+      )}
+
+      {/* -- Il server: impostazioni, eventi, uscita --------------------- */}
+
+      {impostazioniSpazio !== null && spazioAperto && (
+        <PannelloSpazio
+          api={api}
+          spazio={spazioAperto}
+          io={utente}
+          profili={profili}
+          sezioneIniziale={impostazioniSpazio || undefined}
+          ricarica={mondo.ricarica}
+          chiudi={() => setImpostazioniSpazio(null)}
+          eliminaSpazio={() => {
+            setImpostazioniSpazio(null)
+            void api
+              .eliminaSpazio(spazioAperto.id)
+              .then(() => {
+                setSpazioApertoId(null)
+                mondo.ricarica()
+              })
+              .catch((e) => setAvviso((e as Error).message))
+          }}
+        />
+      )}
+
+      {mostraEventi && spazioAperto && (
+        <div
+          className="absolute inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/70 p-6 backdrop-blur-sm"
+          onClick={() => setMostraEventi(null)}
+        >
+          <div
+            className="w-full max-w-2xl space-y-6 rounded-2xl border border-bordo bg-fondo-2 p-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <h2 className="font-semibold">Eventi di {spazioAperto.nome}</h2>
+              <BottoneIcona tono="fantasma" title="Chiudi" onClick={() => setMostraEventi(null)}>
+                <Chiudi />
+              </BottoneIcona>
+            </div>
+            <EventiSpazio
+              api={api}
+              spazio={spazioAperto}
+              io={utente}
+              profili={profili}
+              apriSubitoIlModulo={mostraEventi === 'crea'}
+            />
+          </div>
+        </div>
+      )}
+
+      {confermaAbbandono && (
+        <Conferma
+          titolo={`Abbandoni ${confermaAbbandono.nome}?`}
+          testo={
+            <>
+              Sparisce dalla barra a sinistra e non vedrai piu' i suoi canali. Per rientrare servira'
+              un invito — a meno che il server non sia aperto a chiunque abbia un account qui.
+            </>
+          }
+          azione="Abbandona"
+          tono="male"
+          conferma={() => {
+            const quale = confermaAbbandono
+            setConfermaAbbandono(null)
+            setMenuSpazioAperto(false)
+            void api
+              .abbandonaSpazio(quale.id)
+              .then(() => {
+                if (inVoce && quale.canali.some((c) => c.id === inVoce)) void esciDallaVoce()
+                setSpazioApertoId(null)
+                setCanaleApertoId(null)
+                mondo.ricarica()
+              })
+              .catch((e) => setAvviso((e as Error).message))
+          }}
+          chiudi={() => setConfermaAbbandono(null)}
+        />
+      )}
+
+      {/* -- Il telefono ------------------------------------------------- */}
+
+      {squilla && (
+        <ChiamataInArrivo
+          chiamata={squilla}
+          chi={
+            diretti.conversazioni.find((c) => c.id === squilla.conversazione)?.con ??
+            (profili.has(squilla.da)
+              ? {
+                  id: squilla.da,
+                  nome: profili.get(squilla.da)!.nome,
+                  utente: null,
+                  avatar: profili.get(squilla.da)!.avatar
+                }
+              : null)
+          }
+          rispondi={() => void rispondi(squilla.conversazione)}
+          rifiuta={() => void riaggancia(squilla.conversazione, 'rifiutata')}
+        />
+      )}
+
+      {!squilla && diretti.finita && (
+        <ChiamataFinita
+          motivo={diretti.finita.motivo}
+          nome={
+            diretti.conversazioni.find((c) => c.id === diretti.finita!.chiamata.conversazione)?.con
+              .nome ?? 'La persona'
+          }
+          chiudi={diretti.scartaFinita}
+        />
       )}
 
       {mostraImpostazioni && (
