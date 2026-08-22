@@ -45,6 +45,33 @@ services:
       SFU_API_URL: http://host.docker.internal:7880
       TALK_GETTONE_TTL: ${TALK_GETTONE_TTL:-21600}
       TALK_LOG_LEVEL: ${TALK_LOG_LEVEL:-info}
+      # Quale versione dell'applicazione questo server si aspetta.
+      #
+      # Non e' un dettaglio amministrativo: il client chiede
+      # /api/client/compatibilita PRIMA del login, e sotto la target si blocca
+      # e scarica l'aggiornamento da solo. E' la leva con cui una correzione
+      # arriva a tutti nello stesso pomeriggio invece che quando ognuno si
+      # ricorda di guardare.
+      #
+      #   TALK_CLIENT_TARGET  la versione che si pretende. Chi sta sotto viene
+      #                       fermato finche' non si aggiorna.
+      #   TALK_CLIENT_MIN     sotto questa il client e' proprio incompatibile,
+      #                       non solo vecchio. Si alza solo quando il
+      #                       protocollo cambia davvero.
+      #   TALK_CLIENT_MAX     il tetto, per impedire a un client piu' nuovo del
+      #                       server di parlargli. Vuoto: nessun tetto.
+      #
+      # Tutte e tre vuote lasciano le cose come stavano: qualunque versione
+      # entra, e non c'e' nessun aggiornamento obbligatorio. Vuote e non con un
+      # numero scritto qui: il valore di ripiego lo decide il server, e
+      # ricopiarlo vorrebbe dire tenere allineati due posti invece di uno.
+      #
+      # Da alzare INSIEME alla pubblicazione dell'installer, mai prima: una
+      # target che il feed non sa servire blocca tutti su un errore invece che
+      # su un aggiornamento (il client lo dice, ma resta fuori lo stesso).
+      TALK_CLIENT_MIN: ${TALK_CLIENT_MIN:-}
+      TALK_CLIENT_TARGET: ${TALK_CLIENT_TARGET:-}
+      TALK_CLIENT_MAX: ${TALK_CLIENT_MAX:-}
       # I tetti. Alzarli qui e riavviare basta: le app li rileggono da
       # /api/config a ogni ingresso, e nessuno deve reinstallare niente.
       TALK_MAX_BITRATE_SCHERMO: ${TALK_MAX_BITRATE_SCHERMO:-50000000}
@@ -53,6 +80,32 @@ services:
       TALK_MAX_BITRATE_CAMERA: ${TALK_MAX_BITRATE_CAMERA:-12000000}
       TALK_MAX_BITRATE_VOCE: ${TALK_MAX_BITRATE_VOCE:-510000}
       TALK_MAX_STREAM_PER_PERSONA: ${TALK_MAX_STREAM_PER_PERSONA:-4}
+      TALK_MAX_ALLEGATO: ${TALK_MAX_ALLEGATO:-4294967296}
+      TALK_PEZZO_ALLEGATO: ${TALK_PEZZO_ALLEGATO:-8388608}
+      # Provider musicale opzionale. Senza questi tre valori la coda
+      # condivisa resta disponibile, mentre il collegamento Spotify spiega
+      # che il server non e' configurato.
+      SPOTIFY_CLIENT_ID: ${SPOTIFY_CLIENT_ID:-}
+      SPOTIFY_CLIENT_SECRET: ${SPOTIFY_CLIENT_SECRET:-}
+      SPOTIFY_REDIRECT_URI: ${SPOTIFY_REDIRECT_URI:-}
+      # Servizi chat facoltativi. Le chiavi restano nel `.env` del NAS e
+      # vengono consegnate soltanto al server: non entrano mai nel client.
+      TALK_TENOR_API_KEY: ${TALK_TENOR_API_KEY:-}
+      TALK_TENOR_CLIENT_KEY: ${TALK_TENOR_CLIENT_KEY:-pulse_talk}
+      TALK_GIPHY_API_KEY: ${TALK_GIPHY_API_KEY:-}
+      TALK_AI_BASE_URL: ${TALK_AI_BASE_URL:-https://api.openai.com/v1}
+      TALK_AI_FORMATO: ${TALK_AI_FORMATO:-auto}
+      TALK_AI_API_KEY: ${TALK_AI_API_KEY:-}
+      TALK_AI_CHAT_MODEL: ${TALK_AI_CHAT_MODEL:-}
+      TALK_AI_IMAGE_MODEL: ${TALK_AI_IMAGE_MODEL:-}
+      TALK_AI_STT_MODEL: ${TALK_AI_STT_MODEL:-}
+      TALK_AI_WEB_SEARCH: ${TALK_AI_WEB_SEARCH:-false}
+      TALK_AI_TIMEOUT_MS: ${TALK_AI_TIMEOUT_MS:-60000}
+      TALK_AI_CONTESTO_MESSAGGI: ${TALK_AI_CONTESTO_MESSAGGI:-20}
+      TALK_UNSPLASH_ACCESS_KEY: ${TALK_UNSPLASH_ACCESS_KEY:-}
+      TALK_IMMAGINI_PROVIDER: ${TALK_IMMAGINI_PROVIDER:-auto}
+      TALK_IMMAGINI_URL: ${TALK_IMMAGINI_URL:-}
+      TALK_IMMAGINI_PASSI: ${TALK_IMMAGINI_PASSI:-25}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
