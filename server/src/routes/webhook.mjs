@@ -20,7 +20,7 @@ const EVENTI_DI_PRESENZA = new Set([
   'track_unpublished',
 ]);
 
-export function rotteWebhook(app, { verificatore, presenze, eventi, db }) {
+export function rotteWebhook(app, { verificatore, presenze, eventi, db, chiamate = null }) {
   // Dentro a un plugin, e non e' un vezzo di stile: i parser di Fastify sono
   // incapsulati per contesto, e qui sotto ne serve uno che lascia il corpo
   // grezzo. Registrarlo sull'istanza principale lo applicherebbe a *tutte* le
@@ -58,6 +58,21 @@ export function rotteWebhook(app, { verificatore, presenze, eventi, db }) {
       // giusto cosi'.
       const nome = evento.room?.name ?? '';
       const [chiaveSpazio] = nome.split('--');
+
+      // Le chiamate dirette hanno una stanza tutta loro (`dm--<id>`) e non
+      // appartengono a nessuno spazio: chi va avvisato lo sa il registro delle
+      // chiamate, che tiene anche il conto di quando la stanza resta vuota.
+      if (chiaveSpazio === 'dm' && chiamate) {
+        if (evento.event === 'participant_joined') chiamate.viva(nome);
+        // `room_finished` non arriva sempre: la SFU tiene la stanza in vita
+        // per il timeout di grazia. L'uscita dell'ultimo, invece, arriva.
+        if (evento.event === 'participant_left' || evento.event === 'room_finished') {
+          const rimasti = Number(evento.room?.numParticipants ?? 0);
+          if (rimasti <= 0) chiamate.vuota(nome);
+        }
+        return { ok: true };
+      }
+
       const spazio = chiaveSpazio ? db.spazioPerChiave(chiaveSpazio) : null;
 
       if (spazio) {
