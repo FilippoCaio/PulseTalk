@@ -32,6 +32,9 @@ export function rotteAmici(app, { db, eventi }) {
           ? db.utentePerNomeUtente(nomeUtente.trim().toLowerCase())
           : null;
       if (!chi) return risposta.code(404).send({ errore: 'non trovo questa persona' });
+      if ((chi.tipo ?? 'umano') === 'bot') {
+        return risposta.code(400).send({ errore: 'i bot non usano il sistema di amicizie' });
+      }
 
       const esito = db.chiediAmicizia(richiesta.utente.id, chi.id);
       if (esito.errore) return risposta.code(400).send({ errore: esito.errore });

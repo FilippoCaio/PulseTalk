@@ -25,7 +25,50 @@ const EMOJI = new RegExp(
 );
 
 export function rotteMessaggi(app, { db, eventi }) {
-  const membriDelloSpazio = (spazioId) => db.membriDi(spazioId).map((m) => m.id);
+  /**
+   * A chi va detto che in questo canale e' successo qualcosa.
+   *
+   * Per un canale normale sono i membri dello spazio. Per una conversazione
+   * diretta sono le due persone e nessun altro: lo spazio che le contiene e'
+   * quello di sistema, e i suoi "membri" sono tutti quelli che si sono
+   * scambiati un messaggio da quando esiste l'installazione.
+   */
+  const destinatari = (esito) => db.destinatariCanale(esito.canale.id);
+
+  /**
+   * Come si chiama, per il client, il posto in cui e' arrivato il messaggio.
+   *
+   * Il campo `spazio` di un evento serve a decidere quale colonna aggiornare.
+   * Per un messaggio diretto quella colonna non esiste: al suo posto va l'id
+   * della conversazione, che e' cio' che l'elenco dei DM sa disegnare.
+   */
+  const dove = (esito) => {
+    if (!esito.diretto) return { spazio: esito.spazio.id };
+    const conversazione = db.diretti.perCanale(esito.canale.id);
+    return { spazio: esito.spazio.id, conversazione: conversazione?.id ?? null, diretto: true };
+  };
+
+  /**
+   * Le due spunte, dette a chi ha scritto.
+   *
+   * Solo per le conversazioni dirette. In un canale di spazio "gli e' arrivato"
+   * non vuol dire niente — arrivato a chi, dei quaranta? — e mostrare una
+   * spunta li' sarebbe una promessa che nessuno puo' mantenere.
+   *
+   * Va a tutti e due i capi e non solo a chi ha scritto: cosi' la stessa riga
+   * di codice serve anche a chi apre la conversazione da due apparecchi.
+   */
+  const annunciaRicevute = (esito) => {
+    if (!esito.diretto) return;
+    for (const utente of destinatari(esito)) {
+      eventi.aUtenti([utente], {
+        tipo: 'ricevute',
+        ...dove(esito),
+        canale: esito.canale.id,
+        ricevute: db.ricevuteDi(esito.canale.id, utente),
+      });
+    }
+  };
 
   // -- Leggere ---------------------------------------------------------------
 
@@ -40,12 +83,26 @@ export function rotteMessaggi(app, { db, eventi }) {
       const quanti = richiesta.query.quanti ? Number(richiesta.query.quanti) : 50;
 
       const messaggi = db.messaggi(esito.canale.id, { prima, quanti });
+
+      // Leggere la conversazione e' la prova che i messaggi sono arrivati, ed
+      // e' la strada che copre chi era spento quando sono stati scritti:
+      // l'evento in tempo reale non l'ha ricevuto nessuno, ma adesso e' qui.
+      if (esito.diretto) {
+        const ultimo = db.ultimoMessaggioDi(esito.canale.id);
+        const erano = db.ricevuteDi(esito.canale.id, richiesta.utente.id);
+        db.segnaConsegnato(esito.canale.id, richiesta.utente.id, ultimo);
+        if (db.ricevuteDi(esito.canale.id, richiesta.utente.id).consegnato !== erano.consegnato) {
+          annunciaRicevute(esito);
+        }
+      }
+
       return {
         messaggi,
         // Se ne sono tornati meno di quanti chiesti, non ce n'e' altri dietro:
         // il client puo' smettere di risalire senza una seconda chiamata a
         // vuoto ogni volta che si arriva in cima.
         altri: messaggi.length >= Math.min(quanti, 100),
+        ricevute: esito.diretto ? db.ricevuteDi(esito.canale.id, richiesta.utente.id) : null,
       };
     },
   );
@@ -61,6 +118,9 @@ export function rotteMessaggi(app, { db, eventi }) {
       // Anche i canali vocali hanno la loro chat, come su Discord: si apre
       // dal fumetto mentre si e dentro. Il divieto che stava qui aveva senso
       // quando quella chat non esisteva.
+      if (!esito.permessi.has('sendMessages')) {
+        return risposta.code(403).send({ errore: 'non puoi scrivere in questo canale' });
+      }
 
       const { testo = '', rispondeA = null, allegati = [] } = richiesta.body ?? {};
       const pulito = String(testo).trim().slice(0, TESTO_MAX);
@@ -94,12 +154,26 @@ export function rotteMessaggi(app, { db, eventi }) {
       db.segnaLetto(esito.canale.id, richiesta.utente.id, id);
 
       const messaggio = db.messaggi(esito.canale.id, { prima: id + 1, quanti: 1 })[0];
-      eventi.aUtenti(membriDelloSpazio(esito.spazio.id), {
+      eventi.aUtenti(destinatari(esito), {
         tipo: 'messaggio',
-        spazio: esito.spazio.id,
+        ...dove(esito),
         canale: esito.canale.id,
         messaggio,
       });
+
+      // Consegnato vuol dire che il messaggio e' uscito verso un apparecchio
+      // acceso. Lo decide il server guardando se il flusso di quella persona e'
+      // aperto: chiederlo al client vorrebbe dire lasciare al destinatario la
+      // scelta di risultare raggiungibile o no, e la seconda spunta smetterebbe
+      // di voler dire qualcosa.
+      if (esito.diretto) {
+        for (const utente of destinatari(esito)) {
+          if (utente !== richiesta.utente.id && eventi.collegato(utente)) {
+            db.segnaConsegnato(esito.canale.id, utente, id);
+          }
+        }
+        annunciaRicevute(esito);
+      }
 
       return risposta.code(201).send({ messaggio });
     },
@@ -128,9 +202,9 @@ export function rotteMessaggi(app, { db, eventi }) {
       db.modificaMessaggio(quello.id, testo);
       const messaggio = db.messaggi(quello.canale, { prima: quello.id + 1, quanti: 1 })[0];
 
-      eventi.aUtenti(membriDelloSpazio(esito.spazio.id), {
+      eventi.aUtenti(destinatari(esito), {
         tipo: 'messaggio-modificato',
-        spazio: esito.spazio.id,
+        ...dove(esito),
         canale: quello.canale,
         messaggio,
       });
@@ -148,16 +222,24 @@ export function rotteMessaggi(app, { db, eventi }) {
       const esito = accessoAlCanale(db, richiesta.utente, quello.canale);
       if (esito.errore) return risposta.code(esito.stato).send({ errore: esito.errore });
 
-      // Il proprio sempre; quello altrui solo se si modera lo spazio.
-      const suo = quello.autore === richiesta.utente.id;
-      if (!suo && esito.ruolo !== 'admin') {
+      // Solo il proprio, come per la modifica: un messaggio e' di chi lo ha
+      // scritto, e lo toglie soltanto lui — nemmeno il proprietario dello
+      // spazio glielo cancella.
+      //
+      // L'unica riga in cui autore e padrone non coincidono e' la risposta
+      // dell'AI: a scriverla e' il bot dello spazio, ma esiste perche'
+      // qualcuno l'ha chiesta. Senza `richiestoDa` resterebbe li' per sempre,
+      // perche' il bot non fa login e quindi non cancella niente.
+      const suo = quello.autore === richiesta.utente.id
+        || quello.richiestoDa === richiesta.utente.id;
+      if (!suo) {
         return risposta.code(403).send({ errore: 'non puoi eliminare i messaggi degli altri' });
       }
 
       db.eliminaMessaggio(quello.id);
-      eventi.aUtenti(membriDelloSpazio(esito.spazio.id), {
+      eventi.aUtenti(destinatari(esito), {
         tipo: 'messaggio-eliminato',
-        spazio: esito.spazio.id,
+        ...dove(esito),
         canale: quello.canale,
         id: quello.id,
       });
@@ -189,9 +271,9 @@ export function rotteMessaggi(app, { db, eventi }) {
       if (!tolta) db.reagisci(quello.id, richiesta.utente.id, emoji);
 
       const reazioni = db.reazioniDi(quello.id);
-      eventi.aUtenti(membriDelloSpazio(esito.spazio.id), {
+      eventi.aUtenti(destinatari(esito), {
         tipo: 'reazioni',
-        spazio: esito.spazio.id,
+        ...dove(esito),
         canale: quello.canale,
         messaggio: quello.id,
         reazioni,
@@ -211,6 +293,11 @@ export function rotteMessaggi(app, { db, eventi }) {
 
       const fino = Number(richiesta.body?.fino) || db.ultimoMessaggioDi(esito.canale.id);
       db.segnaLetto(esito.canale.id, richiesta.utente.id, fino);
+      // Chi ha letto ha anche ricevuto: senza questo, aprire la conversazione
+      // da un apparecchio che non era collegato quando il messaggio e' arrivato
+      // farebbe comparire "letto" senza che sia mai comparso "consegnato".
+      db.segnaConsegnato(esito.canale.id, richiesta.utente.id, fino);
+      annunciaRicevute(esito);
       return { fino };
     },
   );
@@ -245,7 +332,7 @@ export function rotteMessaggi(app, { db, eventi }) {
           spazio: esito.spazio.id,
           canale,
           query,
-          utente: richiesta.utente.id,
+          utente: richiesta.utente,
           ruolo: esito.ruolo,
         }),
       };

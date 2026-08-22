@@ -22,14 +22,27 @@ export default function Chat({
   chat,
   io,
   profili,
-  amministra
+  intestazione,
+  nomeVisibile,
+  mostraAnteprimeLink = true
 }: {
   api: Api
   canale: Canale
   chat: ReturnType<typeof usaChat>
   io: Utente
   profili: Map<number, { nome: string; avatar: string | null }>
-  amministra: boolean
+  /**
+   * Cosa mettere al posto dell'intestazione con il cancelletto.
+   *
+   * Serve ai messaggi diretti, che sotto sono lo stesso canale ma sopra non
+   * sono un canale: hanno una faccia, un nome, e il pulsante per telefonare.
+   * Un secondo componente di chat, uguale tranne che nella prima riga,
+   * sarebbe stato quattrocento righe da tenere allineate per sempre.
+   */
+  intestazione?: React.ReactNode
+  /** Come si chiama questo posto nelle frasi. Di serie: #nome-del-canale. */
+  nomeVisibile?: string
+  mostraAnteprimeLink?: boolean
 }): React.JSX.Element {
   const scorrevole = useRef<HTMLDivElement>(null)
   const [rispondiA, setRispondiA] = useState<Dati | null>(null)
@@ -76,14 +89,16 @@ export default function Chat({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <header className="flex items-baseline gap-3 border-b border-bordo px-5 py-3">
-        <h1 className="font-medium">
-          <span className="text-testo-3">#</span> {canale.nome}
-        </h1>
-        {canale.argomento && (
-          <p className="min-w-0 truncate text-sm text-testo-3">{canale.argomento}</p>
-        )}
-      </header>
+      {intestazione ?? (
+        <header className="flex items-baseline gap-3 border-b border-bordo px-5 py-3">
+          <h1 className="font-medium">
+            <span className="text-testo-3">#</span> {canale.nome}
+          </h1>
+          {canale.argomento && (
+            <p className="min-w-0 truncate text-sm text-testo-3">{canale.argomento}</p>
+          )}
+        </header>
+      )}
 
       <div
         ref={scorrevole}
@@ -102,7 +117,7 @@ export default function Chat({
 
         {!chat.altri && chat.messaggi.length > 0 && (
           <p className="py-4 text-center text-xs text-testo-3">
-            L'inizio di <span className="text-testo-2">#{canale.nome}</span>.
+            L'inizio di <span className="text-testo-2">{nomeVisibile ?? `#${canale.nome}`}</span>.
           </p>
         )}
 
@@ -137,11 +152,12 @@ export default function Chat({
               profili={profili}
               io={io}
               raggruppato={raggruppato}
-              amministra={amministra}
+              ricevute={chat.ricevute}
               rispondi={() => setRispondiA(messaggio)}
               modifica={chat.modifica}
               elimina={chat.elimina}
               reagisci={chat.reagisci}
+              mostraAnteprimeLink={mostraAnteprimeLink}
             />
           )
         })}

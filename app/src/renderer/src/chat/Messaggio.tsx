@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
-import type { Allegato, Messaggio as Dati, Utente } from '@shared/tipi'
-import type { Api } from '../lib/api'
+import type { Allegato, Messaggio as Dati, Ricevute, Utente } from '@shared/tipi'
+import type { AnteprimaLink, Api } from '../lib/api'
 import { coloreDi, inizialiDi } from '../lib/avatar'
 import { ponte } from '../ponte'
-import { Cestino, Emoji, Matita, Rispondi } from '../icone'
+import { Cestino, Emoji, Matita, Rispondi, Spunta, SpuntaDoppia } from '../icone'
 
 /** Le emoji che si offrono al volo. Le altre si scrivono. */
 const RAPIDE = ['👍', '❤️', '😂', '🎉', '👀', '🔥']
@@ -15,11 +15,12 @@ export default function Messaggio({
   profili,
   io,
   raggruppato,
-  amministra,
+  ricevute,
   rispondi,
   modifica,
   elimina,
-  reagisci
+  reagisci,
+  mostraAnteprimeLink = true
 }: {
   api: Api
   dati: Dati
@@ -28,19 +29,109 @@ export default function Messaggio({
   profili: Map<number, { nome: string; avatar: string | null }>
   io: Utente
   raggruppato: boolean
-  amministra: boolean
+  /** Le due spunte, solo nelle conversazioni dirette e solo sui propri messaggi. */
+  ricevute: Ricevute | null
   rispondi: () => void
   modifica: (id: number, testo: string) => Promise<void>
   elimina: (id: number) => Promise<void>
   reagisci: (id: number, emoji: string) => Promise<void>
+  mostraAnteprimeLink?: boolean
 }): React.JSX.Element {
   const [inModifica, setInModifica] = useState(false)
   const [bozza, setBozza] = useState(dati.testo)
   const [mostraEmoji, setMostraEmoji] = useState(false)
+  const [linkSorvolato, setLinkSorvolato] = useState(false)
+  const [anteprima, setAnteprima] = useState<AnteprimaLink | null>(null)
+  const [immagineAnteprima, setImmagineAnteprima] = useState<string | null>(null)
+  const [faviconAnteprima, setFaviconAnteprima] = useState<string | null>(null)
 
-  const autore = profili.get(dati.autore)
+  const autore = profili.get(dati.autore) ?? (dati.autoreNome ? { nome: dati.autoreNome, avatar: dati.autoreAvatar } : undefined)
   const mio = dati.autore === io.id
+  // Il bot non fa login: la sua risposta la toglie chi se l'e' fatta scrivere,
+  // altrimenti resta nel canale per sempre.
+  const possoTogliere = mio || dati.richiestoDa === io.id
   const nome = autore?.nome ?? 'qualcuno'
+  const primoLink = dati.testo.match(/https?:\/\/[^\s]+/)?.[0]?.replace(/[),.;!?]+$/, '') ?? null
+  /**
+   * Un indirizzo che punta a una GIF, e da quale servizio arriva.
+   *
+   * Mandare una GIF vuol dire mandare il suo indirizzo, come fa Discord: e' il
+   * messaggio a riconoscerlo e a disegnarla al posto del link. Qui prima
+   * c'era scritto solo Tenor, quindi con GIPHY usciva la scheda grigia del
+   * link, e per vedere la GIF bisognava cliccare e aprire il browser.
+   *
+   * GIPHY distribuisce da media0 a media4 e il numero cambia a ogni risultato:
+   * quel numero facoltativo nel motivo serve a questo.
+   *
+   * Ed e' un motivo *letterale*, non costruito da una stringa. Scritto come
+   * stringa era gia' andato storto una volta: dentro agli apici `\d` diventa
+   * `d` e `\.` diventa `.`, quindi la regex compilata cercava `mediad*` — che
+   * con `media1` non combacia, e le GIF di GIPHY continuavano a uscire come
+   * link. Un letterale non ha quel passaggio in mezzo.
+   */
+  const gifDove = primoLink
+    ? primoLink.match(/^https:\/\/(media\.tenor\.com|media\d*\.giphy\.com)\//i)
+    : null
+  const gifUrl = gifDove ? primoLink : null
+  const gifDa = gifDove ? (/tenor/i.test(gifDove[1]) ? 'Tenor' : 'GIPHY') : null
+
+  /**
+   * Il messaggio e' soltanto una GIF: si disegna quella e basta.
+   *
+   * Mandare una GIF vuol dire mandare il suo indirizzo, quindi il testo del
+   * messaggio *e'* il link. Mostrarlo sopra all'immagine significa far vedere
+   * ottanta caratteri di indirizzo che non dicono niente a nessuno — e sotto la
+   * stessa cosa, disegnata. Se invece qualcuno ha scritto qualcosa attorno al
+   * link, quel qualcosa resta: e' un messaggio con dentro una GIF, non una GIF.
+   */
+  const soloGif = Boolean(gifUrl && dati.testo.trim() === gifUrl)
+
+  const immagineWeb = primoLink && /^https:\/\/images\.unsplash\.com\//i.test(primoLink) ? primoLink : null
+
+  useEffect(() => {
+    if (!primoLink || gifUrl || immagineWeb || (!mostraAnteprimeLink && !linkSorvolato) || anteprima) return
+    let vivo = true
+    const timer = window.setTimeout(() => {
+      void api
+        .anteprimaLink(primoLink)
+        .then(({ anteprima: ricevuta }) => vivo && setAnteprima(ricevuta))
+        .catch(() => undefined)
+    }, mostraAnteprimeLink ? 0 : 250)
+    return () => {
+      vivo = false
+      window.clearTimeout(timer)
+    }
+  }, [api, anteprima, gifUrl, immagineWeb, linkSorvolato, mostraAnteprimeLink, primoLink])
+
+  useEffect(() => {
+    if (!anteprima?.immagineId) return
+    let vivo = true
+    let locale: string | null = null
+    void api.scaricaImmagineAnteprima(anteprima.immagineId).then((url) => {
+      locale = url
+      if (vivo) setImmagineAnteprima(url)
+      else URL.revokeObjectURL(url)
+    }).catch(() => undefined)
+    return () => {
+      vivo = false
+      if (locale) URL.revokeObjectURL(locale)
+    }
+  }, [anteprima?.immagineId, api])
+
+  useEffect(() => {
+    if (!anteprima?.faviconId) return
+    let vivo = true
+    let locale: string | null = null
+    void api.scaricaImmagineAnteprima(anteprima.faviconId).then((url) => {
+      locale = url
+      if (vivo) setFaviconAnteprima(url)
+      else URL.revokeObjectURL(url)
+    }).catch(() => undefined)
+    return () => {
+      vivo = false
+      if (locale) URL.revokeObjectURL(locale)
+    }
+  }, [anteprima?.faviconId, api])
 
   const orario = new Date(dati.istante).toLocaleTimeString('it-IT', {
     hour: '2-digit',
@@ -99,6 +190,12 @@ export default function Messaggio({
           {!raggruppato && (
             <div className="flex items-baseline gap-2">
               <span className="text-sm font-medium">{nome}</span>
+              {dati.autoreTipo === 'bot' && (
+                <span className="rounded bg-vivo/20 px-1 py-0.5 text-[9px] font-bold tracking-wide text-vivo">BOT</span>
+              )}
+              {dati.origine !== 'umano' && (
+                <span className="text-[10px] text-testo-3">contenuto generato dall’AI</span>
+              )}
               <span className="numeri text-[11px] text-testo-3">{orario}</span>
             </div>
           )}
@@ -126,21 +223,70 @@ export default function Messaggio({
               </p>
             </div>
           ) : (
-            dati.testo && (
+            dati.testo &&
+            !soloGif && (
               <p className="text-sm leading-relaxed break-words whitespace-pre-wrap text-testo">
-                <ConLink testo={dati.testo} />
+                <ConLink
+                  testo={dati.testo}
+                  suLink={(url, sopra) => {
+                    if (url.replace(/[),.;!?]+$/, '') === primoLink) setLinkSorvolato(sopra)
+                  }}
+                />
                 {dati.modificato && (
                   <span className="ml-1.5 text-[11px] text-testo-3" title="modificato">
                     (modificato)
                   </span>
                 )}
+                <Ricevuta dati={dati} mio={mio} ricevute={ricevute} />
               </p>
             )
+          )}
+
+          {gifUrl && (
+            <figure className="mt-1.5 w-fit max-w-full">
+              <img src={gifUrl} alt="GIF condivisa" className="max-h-96 max-w-full rounded-lg border border-bordo" />
+              <figcaption className="mt-0.5 text-right text-[10px] text-testo-3">Via {gifDa}</figcaption>
+            </figure>
+          )}
+
+          {immagineWeb && (
+            <figure className="mt-1.5 w-fit max-w-full">
+              <img src={immagineWeb} alt="Immagine trovata sul web" className="max-h-96 max-w-full rounded-lg border border-bordo" />
+              <figcaption className="mt-0.5 text-right text-[10px] text-testo-3">Immagine trovata sul web · Unsplash</figcaption>
+            </figure>
+          )}
+
+          {anteprima && (mostraAnteprimeLink || linkSorvolato) && (
+            <button
+              onClick={() => ponte.apriEsterno(anteprima.url)}
+              onMouseEnter={() => setLinkSorvolato(true)}
+              onMouseLeave={() => setLinkSorvolato(false)}
+              className="mt-1.5 flex max-w-xl overflow-hidden rounded-lg border border-bordo bg-fondo-2 text-left hover:border-fondo-3"
+            >
+              <span className="min-w-0 flex-1 p-3">
+                <span className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-testo-3">
+                  {faviconAnteprima && <img src={faviconAnteprima} alt="" className="h-4 w-4 rounded-sm" />}
+                  {anteprima.dominio}
+                </span>
+                {anteprima.titolo && <span className="mt-0.5 block text-sm font-medium">{anteprima.titolo}</span>}
+                {anteprima.descrizione && <span className="mt-1 line-clamp-2 block text-xs text-testo-3">{anteprima.descrizione}</span>}
+              </span>
+              {immagineAnteprima && <img src={immagineAnteprima} alt="" className="h-28 w-36 shrink-0 object-cover" />}
+            </button>
           )}
 
           {dati.allegati.map((allegato) => (
             <Attaccato key={allegato.id} api={api} allegato={allegato} />
           ))}
+
+          {/* Un messaggio di soli allegati e' un messaggio valido, e le sue
+              spunte vanno dette lo stesso: quelle di sopra stanno in coda al
+              testo, e senza testo non ci sarebbe niente a cui accodarsi. */}
+          {(!dati.testo || soloGif) && !inModifica && (
+            <div className="text-right">
+              <Ricevuta dati={dati} mio={mio} ricevute={ricevute} />
+            </div>
+          )}
 
           {dati.reazioni.length > 0 && (
             <div className="mt-1 flex flex-wrap gap-1">
@@ -198,7 +344,7 @@ export default function Messaggio({
             <Matita className="h-4 w-4" />
           </button>
         )}
-        {(mio || amministra) && (
+        {possoTogliere && (
           <button
             onClick={() => void elimina(dati.id)}
             title="Elimina"
@@ -304,7 +450,13 @@ function Attaccato({ api, allegato }: { api: Api; allegato: Allegato }): React.J
 }
 
 /** I link cliccabili, che aprono il browser invece di sostituire l'app. */
-function ConLink({ testo }: { testo: string }): React.JSX.Element {
+function ConLink({
+  testo,
+  suLink
+}: {
+  testo: string
+  suLink?: (url: string, sopra: boolean) => void
+}): React.JSX.Element {
   const pezzi = testo.split(/(https?:\/\/[^\s]+)/g)
   return (
     <>
@@ -313,6 +465,10 @@ function ConLink({ testo }: { testo: string }): React.JSX.Element {
           <button
             key={indice}
             onClick={() => ponte.apriEsterno(pezzo)}
+            onMouseEnter={() => suLink?.(pezzo, true)}
+            onMouseLeave={() => suLink?.(pezzo, false)}
+            onFocus={() => suLink?.(pezzo, true)}
+            onBlur={() => suLink?.(pezzo, false)}
             className="text-vivo underline underline-offset-2 hover:text-vivo-2"
           >
             {pezzo}
@@ -322,5 +478,52 @@ function ConLink({ testo }: { testo: string }): React.JSX.Element {
         )
       )}
     </>
+  )
+}
+
+/**
+ * Le due spunte, come su WhatsApp.
+ *
+ * Tre stati e tre disegni: una spunta sola vuol dire che il messaggio e' sul
+ * server, due spunte grigie che e' arrivato all'apparecchio dell'altra persona,
+ * due spunte colorate che l'ha aperto.
+ *
+ * Solo sui propri messaggi e solo nelle conversazioni dirette. Sui messaggi
+ * altrui non direbbero niente — si sa gia' di averli ricevuti, si stanno
+ * guardando — e in un canale di spazio "gli e' arrivato" non e' una domanda con
+ * una risposta sola.
+ *
+ * Il confronto e' sugli id e non sulle date: gli id sono unici e crescenti, e
+ * "ho letto fino al messaggio 412" e' un fatto, mentre "ho letto fino alle
+ * 14:03" dipende da quale dei due orologi lo dice.
+ */
+function Ricevuta({
+  dati,
+  mio,
+  ricevute
+}: {
+  dati: Dati
+  mio: boolean
+  ricevute: Ricevute | null
+}): React.JSX.Element | null {
+  if (!mio || !ricevute || dati.eliminato) return null
+
+  const letto = dati.id <= ricevute.letto
+  const consegnato = dati.id <= ricevute.consegnato
+
+  const nome = letto ? 'Letto' : consegnato ? 'Consegnato' : 'Inviato'
+  const Segno = consegnato ? SpuntaDoppia : Spunta
+
+  // Il nome sta sul contenitore e non sull'icona: le icone qui dentro sono
+  // tutte `aria-hidden`, e il loro contenuto viene sostituito dai tracciati.
+  return (
+    <span
+      title={nome}
+      aria-label={nome}
+      role="img"
+      className={`ml-1.5 inline-block align-[-2px] ${letto ? 'text-vivo' : 'text-testo-3'}`}
+    >
+      <Segno className="h-3.5 w-3.5" />
+    </span>
   )
 }
