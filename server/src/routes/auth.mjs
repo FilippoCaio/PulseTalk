@@ -12,6 +12,7 @@
 import { richiedeRuolo } from '../auth.mjs';
 import { problemaConIlNomeUtente } from '../db.mjs';
 import { cifra, creaFreno, daRicifrare, problemaConLaPassword, verifica } from '../password.mjs';
+import { STATI_SCELTI } from '../stati.mjs';
 
 // Massimo 256 KB per la foto profilo. Il ridimensionamento lo fa il client
 // prima di mandarla; questo e' il muro contro chi non lo fa.
@@ -35,10 +36,18 @@ function vistaUtente(utente) {
   };
 }
 
-/** Gli unici stati che accettiamo: qualunque altra cosa e' un errore di chi chiama. */
-const STATI = ['online', 'inattivo', 'occupato', 'invisibile'];
+/**
+ * Gli unici stati che si possono scegliere.
+ *
+ * `inattivo` non c'e' piu': adesso lo dichiara l'applicazione dopo dieci minuti
+ * di silenzio, e non ha senso poterlo premere — dire "non sono davanti allo
+ * schermo" premendo un pulsante e' una contraddizione. Le righe vecchie che lo
+ * hanno ancora scritto dentro restano valide: `stati.visibile` le legge come
+ * "online", che e' cio' che sono appena qualcuno tocca un tasto.
+ */
+const STATI = STATI_SCELTI;
 
-export function rotteAuth(app, { db, config }) {
+export function rotteAuth(app, { db, config, stati }) {
   // Un freno per il nome utente e uno per l'indirizzo: chi prova mille
   // password sullo stesso account viene rallentato, e chi prova una password
   // su mille account pure. Sono due attacchi diversi e vanno contati a parte.
@@ -253,7 +262,34 @@ export function rotteAuth(app, { db, config }) {
         avatar,
         stato,
       });
+      // Lo stato scelto e' cambiato: chi ha la faccia di questa persona in un
+      // elenco deve vederlo adesso, non al prossimo ricaricamento.
+      if (stato !== undefined) stati.annuncia(richiesta.utente.id);
+
       return { utente: vistaUtente(db.utente(richiesta.utente.id)) };
+    },
+  );
+
+  /**
+   * "Sono qui ma sono fermo", detto dall'applicazione.
+   *
+   * Lo dichiara il client perche' e' l'unico che puo' saperlo: il server vede
+   * una connessione aperta e nient'altro, non sa se davanti allo schermo c'e'
+   * qualcuno. Le regole di *quando* dichiararlo stanno nel client — dieci
+   * minuti con il microfono spento o sempre sotto la soglia — e qui non si
+   * ricontrollano: sarebbero due copie della stessa idea, e la copia sbagliata
+   * si scopre sempre tardi.
+   *
+   * Non tocca il database. E' una condizione del momento, e chi chiude
+   * l'applicazione la perde: diventa offline, che e' un'altra cosa.
+   */
+  app.post(
+    '/api/auth/inattivita',
+    { onRequest: richiedeRuolo('ospite') },
+    async (richiesta) => {
+      const fermo = richiesta.body?.inattivo === true;
+      stati.dichiaraInattivita(richiesta.utente.id, fermo);
+      return { inattivo: fermo };
     },
   );
 
@@ -311,9 +347,12 @@ export function rotteAuth(app, { db, config }) {
         nome: u.nome,
         utente: u.utente,
         avatar: u.avatar,
-        // Invisibile non si dice: dall'altra parte deve sembrare offline, e
-        // l'unico modo per non tradirlo e' non mandare mai quella parola.
-        stato: (u.stato ?? 'online') === 'invisibile' ? 'offline' : (u.stato ?? 'online'),
+        tipo: u.tipo ?? 'umano',
+        // Cosa vede chi guarda, non cosa ha scelto lui: invisibile esce come
+        // offline, chi ha chiuso l'applicazione pure, e chi e' fermo da dieci
+        // minuti esce come inattivo. La regola sta in un posto solo (stati.mjs):
+        // scritta due volte, prima o poi una delle due tradisce un invisibile.
+        stato: stati.visibile(u),
       })),
     }),
   );

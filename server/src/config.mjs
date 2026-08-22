@@ -54,6 +54,25 @@ function urlAggiornamenti(env) {
   return url.toString();
 }
 
+/** Quale generatore di immagini usare. Vedi provider/generazione-immagini.mjs. */
+function providerImmagini(env) {
+  const grezzo = (env.TALK_IMMAGINI_PROVIDER ?? 'auto').trim().toLowerCase();
+  const ammessi = ['auto', 'openai', 'automatic1111', 'perchance', 'nessuno'];
+  if (!ammessi.includes(grezzo)) {
+    throw new Error(`TALK_IMMAGINI_PROVIDER deve essere uno fra ${ammessi.join(', ')}, non "${grezzo}"`);
+  }
+  return grezzo;
+}
+
+/** Il dialetto con cui parlare al modello. Vedi provider/ai-dialetti.mjs. */
+function formatoAi(env) {
+  const grezzo = (env.TALK_AI_FORMATO ?? 'auto').trim().toLowerCase();
+  if (!['auto', 'responses', 'chat'].includes(grezzo)) {
+    throw new Error(`TALK_AI_FORMATO deve essere auto, responses o chat, non "${grezzo}"`);
+  }
+  return grezzo;
+}
+
 export function leggiConfig(env = process.env) {
   const root = env.TALK_ROOT;
   if (!root) throw new Error('TALK_ROOT non impostata: e\' la cartella sul NAS dove vive talk.db');
@@ -163,10 +182,98 @@ export function leggiConfig(env = process.env) {
       // 0 = nessun limite. E' il default, e la SFU e' d'accordo.
       personePerStanza: intero(env, 'TALK_MAX_PERSONE', 0, { min: 0, max: 10_000 }),
 
-      // 100 MB per allegato. Non e' il disco a preoccupare — su un NAS ce n'e'
-      // — ma la linea in salita: mandare un file da un giga in chat significa
-      // occupare la banda che serve alle chiamate in corso.
-      allegatoMax: intero(env, 'TALK_MAX_ALLEGATO', 100 * 1024 * 1024, { min: 64 * 1024 }),
+      // Quanto puo' pesare un allegato, in tutto.
+      //
+      // Erano 100 MB, e il motivo non era il disco — su un NAS ce n'e' — ma la
+      // linea in salita: un file grosso si prende la banda che serve alle
+      // chiamate in corso. Adesso il caricamento va a pezzi, e fra un pezzo e
+      // l'altro il client rallenta da solo quando c'e' una chiamata aperta:
+      // quel motivo non regge piu' un tetto cosi' basso.
+      //
+      // Quattro giga e' una scelta, non una legge di natura: sta qui perche' e'
+      // la misura oltre la quale un file mandato in chat e' quasi sempre un
+      // trascinamento per sbaglio. Si alza con TALK_MAX_ALLEGATO.
+      allegatoMax: intero(env, 'TALK_MAX_ALLEGATO', 4 * 1024 * 1024 * 1024, { min: 64 * 1024 }),
+
+      // Quanto e' grosso un pezzo.
+      //
+      // Otto mega: abbastanza da non spendere piu' tempo in richieste che in
+      // byte, abbastanza poco da non perdere niente di serio quando la linea
+      // cade a meta' di uno. E' anche il tetto della singola richiesta, quindi
+      // il server non deve mai reggere un corpo piu' grande di questo.
+      allegatoPezzo: intero(env, 'TALK_PEZZO_ALLEGATO', 8 * 1024 * 1024, {
+        min: 256 * 1024,
+        max: 64 * 1024 * 1024,
+      }),
+    },
+
+    /**
+     * Le credenziali per la sessione musicale condivisa.
+     *
+     * Assenti su quasi tutte le installazioni, e va benissimo: senza, la
+     * sessione musicale resta una coda condivisa che si vede e si compila, e
+     * il collegamento a Spotify dice di non essere configurato invece di
+     * fallire a meta' del consenso.
+     *
+     * Il segreto sta qui e non nell'applicazione perche' e' l'unico modo di
+     * poter rinnovare i gettoni: un segreto dentro a un programma installato
+     * su venti computer non e' piu' un segreto.
+     */
+    spotify: {
+      clientId: env.SPOTIFY_CLIENT_ID ?? '',
+      clientSecret: env.SPOTIFY_CLIENT_SECRET ?? '',
+      // Deve combaciare, carattere per carattere, con quella scritta nel
+      // cruscotto per sviluppatori di Spotify: e' loro che la confrontano.
+      redirectUri: env.SPOTIFY_REDIRECT_URI ?? '',
+    },
+
+    /** Provider GIF ufficiale e facoltativo; le chiavi restano solo qui. */
+    tenor: {
+      apiKey: env.TALK_TENOR_API_KEY ?? '',
+      clientKey: env.TALK_TENOR_CLIENT_KEY ?? 'pulse_talk',
+    },
+
+    /** L'alternativa a Tenor, che le chiavi le da' ancora a chi le chiede. */
+    giphy: {
+      apiKey: env.TALK_GIPHY_API_KEY ?? '',
+    },
+
+    /** API AI opzionale. Il default e' l'API OpenAI; baseUrl puo puntare a un servizio compatibile. */
+    ai: {
+      baseUrl: (env.TALK_AI_BASE_URL ?? 'https://api.openai.com/v1').replace(/\/+$/, ''),
+      apiKey: env.TALK_AI_API_KEY ?? '',
+      // Quale formato parlare con il modello.
+      //
+      // 'auto' guarda l'indirizzo: l'API Responses di OpenAI sul suo dominio,
+      // '/chat/completions' ovunque altro — che e' cio' che implementano
+      // Ollama, LM Studio, vLLM, Groq e in genere tutto quello che si dichiara
+      // compatibile. Si forza a mano solo nei casi in mezzo: un proxy verso
+      // OpenAI su un dominio proprio, o un servizio che espone Responses.
+      formato: formatoAi(env),
+      chatModel: env.TALK_AI_CHAT_MODEL ?? '',
+      imageModel: env.TALK_AI_IMAGE_MODEL ?? '',
+      sttModel: env.TALK_AI_STT_MODEL ?? '',
+      webSearch: booleano(env, 'TALK_AI_WEB_SEARCH', false),
+      timeoutMs: intero(env, 'TALK_AI_TIMEOUT_MS', 60_000, { min: 1000, max: 300_000 }),
+      contestoMessaggi: intero(env, 'TALK_AI_CONTESTO_MESSAGGI', 20, { min: 1, max: 100 }),
+    },
+
+    unsplash: {
+      accessKey: env.TALK_UNSPLASH_ACCESS_KEY ?? '',
+    },
+
+    /**
+     * Chi genera le immagini.
+     *
+     * `auto` preferisce cio' che gira in casa: con un indirizzo di Stable
+     * Diffusion WebUI usa quello — gratis, e i prompt non escono dalla rete —
+     * altrimenti ripiega su OpenAI se e' configurato. Vedi
+     * provider/generazione-immagini.mjs.
+     */
+    immagini: {
+      provider: providerImmagini(env),
+      url: (env.TALK_IMMAGINI_URL ?? '').trim(),
+      passi: intero(env, 'TALK_IMMAGINI_PASSI', 25, { min: 1, max: 150 }),
     },
 
     senzaAuth,

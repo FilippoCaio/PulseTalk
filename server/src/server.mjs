@@ -22,15 +22,35 @@ import statico from '@fastify/static';
 import Fastify from 'fastify';
 
 import { agganciaAutenticazione } from './auth.mjs';
+import { avviaScadenzaCanali } from './canali-temporanei.mjs';
+import { creaChiamate } from './chiamate.mjs';
 import { leggiConfig } from './config.mjs';
 import { TalkDb } from './db.mjs';
 import { creaEventi } from './eventi.mjs';
-import { rotteAllegati, spazzaAllegati } from './routes/allegati.mjs';
+import { creaStati } from './stati.mjs';
+import { creaRegistroMusica } from './provider/musica.mjs';
+import { creaAnteprimeLink } from './provider/anteprime-link.mjs';
+import { creaGif } from './provider/gif.mjs';
+import { creaSpotify } from './provider/spotify.mjs';
+import { creaProviderAi } from './provider/ai.mjs';
+import { creaGeneratoreImmagini, elencoGeneratori } from './provider/generazione-immagini.mjs';
+import { creaUnsplash } from './provider/immagini.mjs';
+import { rotteAllegati, spazzaAllegati, spazzaParziali } from './routes/allegati.mjs';
+import { rotteAi } from './routes/ai.mjs';
+import { rotteAutoWriter } from './routes/autowriter.mjs';
+import { rotteBot } from './routes/bot.mjs';
 import { rotteAmici } from './routes/amici.mjs';
 import { rotteAuth } from './routes/auth.mjs';
 import { rotteCompatibilita } from './routes/compatibilita.mjs';
+import { rotteDiretti } from './routes/diretti.mjs';
+import { rotteEventiSpazio } from './routes/eventi-spazio.mjs';
 import { rotteInviti } from './routes/inviti.mjs';
+import { rotteInvitiSpazio } from './routes/inviti-spazio.mjs';
+import { rotteMedia } from './routes/media.mjs';
 import { rotteMessaggi } from './routes/messaggi.mjs';
+import { rotteMusica } from './routes/musica.mjs';
+import { rotteRuoli } from './routes/ruoli.mjs';
+import { rotteServizi } from './routes/servizi.mjs';
 import { rotteSpazi } from './routes/spazi.mjs';
 import { rotteWebhook } from './routes/webhook.mjs';
 import { creaVerificatore, Presenze } from './sfu.mjs';
@@ -69,16 +89,47 @@ export async function creaTalk(config) {
 
   const presenze = new Presenze(config, app.log);
   const eventi = creaEventi();
+  // Chi c'e' davvero, incrociato con lo stato scelto a mano. Vive accanto agli
+  // eventi perche' e' da li' che sa chi ha l'applicazione aperta.
+  const stati = creaStati({ eventi, db });
+  const chiamate = creaChiamate({ eventi, presenze, log: app.log });
+
+  // I servizi di musica disponibili. Registrarli sempre, anche senza
+  // credenziali: cosi' l'interfaccia puo' dire "Spotify c'e', ma questo server
+  // non e' configurato" invece di far sparire la funzione senza spiegazioni.
+  const registroMusica = creaRegistroMusica();
+  registroMusica.registra(creaSpotify({ config, db, log: app.log }));
+  const gif = creaGif(config);
+  const anteprime = creaAnteprimeLink();
+  const ai = creaProviderAi(config);
+  const immagini = creaUnsplash(config);
+  // Chi disegna e' scelto a parte da chi chiacchiera: si puo' avere la chat su
+  // OpenAI e le immagini da una Stable Diffusion in casa, o il contrario.
+  const generatoreImmagini = creaGeneratoreImmagini(config);
+  const generatori = elencoGeneratori(config);
 
   agganciaAutenticazione(app, { db, config });
   rotteCompatibilita(app, { config });
-  rotteAuth(app, { db, config });
+  rotteAuth(app, { db, config, stati });
   rotteInviti(app, { db });
   rotteAmici(app, { db, eventi });
   rotteSpazi(app, { db, config, presenze, eventi });
+  rotteRuoli(app, { db, eventi, presenze });
+  rotteInvitiSpazio(app, { db, eventi });
+  rotteEventiSpazio(app, { db, eventi });
+  rotteDiretti(app, { db, config, presenze, eventi, chiamate, stati });
+  rotteMedia(app, { db, eventi });
+  rotteMusica(app, { db, registro: registroMusica, config });
+  rotteServizi(app, { gif, anteprime, ai, immagini, generatoreImmagini, generatori });
+  rotteAi(app, { db, eventi, provider: ai, generatoreImmagini, config });
+  rotteAutoWriter(app, { db, eventi, provider: ai, presenze });
+  rotteBot(app, { db, eventi });
   rotteMessaggi(app, { db, eventi });
   await rotteAllegati(app, { db, config });
-  await rotteWebhook(app, { verificatore: creaVerificatore(config), presenze, eventi, db });
+  await rotteWebhook(app, { verificatore: creaVerificatore(config), presenze, eventi, db, chiamate });
+
+  const fermaScadenze = await avviaScadenzaCanali({ db, presenze, eventi, log: app.log });
+  app.addHook('onClose', async () => fermaScadenze());
 
   app.get('/salute', async () => ({ ok: true, ascolto: eventi.quanti }));
 
@@ -124,7 +175,7 @@ export async function creaTalk(config) {
     });
   }
 
-  return { app, db, config, presenze, eventi };
+  return { app, db, config, presenze, eventi, chiamate, registroMusica, stati };
 }
 
 export async function avvia(config = leggiConfig()) {
@@ -143,11 +194,16 @@ export async function avvia(config = leggiConfig()) {
     'PulseTalk in ascolto',
   );
 
-  // I file caricati e mai mandati: un giro all'avvio e poi ogni sei ore.
-  const spazza = () =>
-    spazzaAllegati(talk.db, config, talk.app.log).catch((e) =>
+  // I file caricati e mai mandati, e i caricamenti a pezzi lasciati a meta':
+  // un giro all'avvio e poi ogni sei ore.
+  const spazza = async () => {
+    await spazzaAllegati(talk.db, config, talk.app.log).catch((e) =>
       talk.app.log.error({ err: e }, 'spazzata degli allegati fallita'),
     );
+    await spazzaParziali(config, talk.app.log).catch((e) =>
+      talk.app.log.error({ err: e }, 'spazzata dei caricamenti a meta\' fallita'),
+    );
+  };
   await spazza();
   const spazzino = setInterval(spazza, 6 * 3600_000);
   spazzino.unref();
@@ -155,6 +211,7 @@ export async function avvia(config = leggiConfig()) {
   const chiudi = async () => {
     talk.app.log.info('chiusura');
     clearInterval(spazzino);
+    talk.chiamate.spegni();
     await talk.app.close();
     talk.db.close();
     process.exit(0);

@@ -21,7 +21,17 @@ _nas/
 *.db
 *.db-wal
 *.db-shm
-dati/
+# Ancorata alla radice, e non `dati/` come stava scritto prima.
+#
+# Senza la sbarra davanti la regola vale per QUALUNQUE cartella con quel nome a
+# qualsiasi profondita', e ne esisteva una che di dati non ne contiene:
+# `server/src/dati/`, che e' codice — i sei moduli che `db.mjs` importa per
+# leggere e scrivere diretti, ruoli, media, inviti ed eventi. Restavano fuori
+# dal repository in silenzio, e chi avesse ricostruito il server da git si
+# sarebbe trovato con un `import` che non risolve.
+/dati/
+/server/dati/
+/deploy/dati/
 
 # L'icona: la rigenera `npm run icon`, e un binario che cambia a ogni build
 # non ha niente da fare in un repository.

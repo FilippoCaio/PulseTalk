@@ -1,4 +1,5 @@
 import type { Codec, Limiti, ModoAudio } from './qualita'
+import type { Permesso } from './permessi'
 import { SERVER_PREDEFINITO } from './predefiniti'
 
 /**
@@ -176,6 +177,18 @@ export interface Impostazioni {
   altoparlanteId: string | null
 
   /**
+   * Il nome del dispositivo scelto, salvato accanto al suo id.
+   *
+   * Non serve a riaprirlo: per quello basta l'id. Serve a poterlo nominare il
+   * giorno in cui non c'e' piu' — un avviso che dice quali cuffie mancano si
+   * capisce, uno che dice "il dispositivo salvato" no. Nullo quando si lascia
+   * fare a Windows.
+   */
+  microfonoNome: string | null
+  cameraNome: string | null
+  altoparlanteNome: string | null
+
+  /**
    * Il volume in entrata e quello in uscita, come li chiama Discord.
    *
    * "Entrata" e' il proprio microfono prima che parta: un guadagno vero,
@@ -253,6 +266,15 @@ export interface Impostazioni {
    */
   microfonoAllIngresso: boolean
 
+  /** Nel passaggio diretto fra due canali, il nuovo parte con mic e camera spenti. */
+  disattivaMediaCambioCanale: boolean
+
+  /** Specchia soltanto la propria anteprima locale della webcam. */
+  specchiaCamera: boolean
+
+  /** Carica automaticamente dal server titolo e immagine del primo link. */
+  mostraAnteprimeLink: boolean
+
   /** L'app parte insieme a Windows e si apre da sola. */
   avvioAutomatico: boolean
 
@@ -264,6 +286,24 @@ export interface Impostazioni {
    * si accendono dal pannello degli amici.
    */
   avvisiPersone: number[]
+
+  /**
+   * Gli spazi silenziati, e fino a quando.
+   *
+   * Sta qui e non sul server perche' e' una preferenza di questo computer: chi
+   * silenzia un server mentre lavora non intende silenziarlo anche sul
+   * telefono. `fino` e' un istante in millisecondi; `null` vuol dire "finche'
+   * non lo riattivo".
+   */
+  spaziSilenziati: { spazio: number; fino: number | null }[]
+
+  /**
+   * Su quale dispositivo Spotify mandare la musica condivisa.
+   *
+   * Nullo: quello attivo, che e' quasi sempre quello giusto. Si sceglie solo
+   * quando ce ne sono due e la musica esce dalla stanza sbagliata.
+   */
+  dispositivoMusica: string | null
 }
 
 export const IMPOSTAZIONI_INIZIALI: Impostazioni = {
@@ -275,6 +315,10 @@ export const IMPOSTAZIONI_INIZIALI: Impostazioni = {
   microfonoId: null,
   cameraId: null,
   altoparlanteId: null,
+
+  microfonoNome: null,
+  cameraNome: null,
+  altoparlanteNome: null,
 
   volumeMicrofono: 1,
   volumeUscita: 1,
@@ -300,8 +344,13 @@ export const IMPOSTAZIONI_INIZIALI: Impostazioni = {
 
   mostraStatistiche: true,
   microfonoAllIngresso: true,
+  disattivaMediaCambioCanale: false,
+  specchiaCamera: true,
+  mostraAnteprimeLink: true,
   avvisiPersone: [],
-  avvioAutomatico: false
+  avvioAutomatico: false,
+  spaziSilenziati: [],
+  dispositivoMusica: null
 }
 
 /** I quattro lati a cui si puo' agganciare la striscia dei riquadri. */
@@ -323,6 +372,7 @@ export interface Utente {
   avatar: string | null
   /** Lo stato scelto a mano. Sul proprio profilo puo essere `invisibile`; su quello altrui mai. */
   stato: StatoUtente
+  tipo?: 'umano' | 'bot'
 }
 
 export interface Sessione {
@@ -348,6 +398,74 @@ export interface Categoria {
   spazio: number
   nome: string
   posizione: number
+}
+
+/** Un ruolo dentro a uno spazio. Non vale un centimetro fuori da li'. */
+export interface Ruolo {
+  id: number
+  spazio: number
+  nome: string
+  /** #rrggbb, oppure niente: e' solo il pallino accanto al nome. */
+  colore: string | null
+  permessi: Permesso[]
+  /** Piu' alto vince quando due override si contraddicono. */
+  priorita: number
+  /** I tre predefiniti non si cancellano. */
+  tipo: 'admin' | 'master' | 'base' | 'custom'
+  /** Chi ce l'ha. Nullo per il ruolo base, che ce l'hanno tutti. */
+  membri?: number[] | null
+}
+
+/** Un'eccezione ai permessi, su una categoria o su un canale. */
+export interface Override {
+  id: number
+  ambito: 'categoria' | 'canale'
+  bersaglio: number
+  tipo: 'ruolo' | 'utente'
+  soggetto: number
+  consenti: Permesso[]
+  nega: Permesso[]
+}
+
+/** Le preferenze di uno spazio: cose che si accendono, non permessi. */
+export interface ImpostazioniSpazio {
+  invitiAperti: boolean
+  invitiGiorni: number
+  invitiUsoSingolo: boolean
+  eventiAperti: boolean
+  notifichePredefinite: 'tutto' | 'menzioni' | 'niente'
+  apertoATutti: boolean
+}
+
+/** Un codice che fa entrare in uno spazio. Il codice vero si vede una volta sola. */
+export interface InvitoSpazio {
+  id: number
+  spazio: number
+  creatoDa: number | null
+  nomeCreatore?: string | null
+  creato: number
+  scade: number
+  usi: number
+  /** Zero: senza limite. */
+  usiMax: number
+  ruolo: number | null
+  nomeRuolo?: string | null
+}
+
+/** Qualcosa che succedera'. */
+export interface EventoSpazio {
+  id: number
+  spazio: number
+  canale: number | null
+  titolo: string
+  descrizione: string
+  /** Secondi epoch: il fuso e' di chi guarda. */
+  inizio: number
+  fine: number | null
+  creatoDa: number | null
+  creato: number
+  stato: 'programmato' | 'annullato'
+  partecipanti: { utente: number; stato: string; nome: string; avatar: string | null }[]
 }
 
 /**
@@ -381,10 +499,23 @@ export interface Canale {
    * database sotto mano, e fingere il contrario sarebbe una recita.
    */
   privato: boolean
+  /** Istanti Unix in secondi; `scade` nullo indica un canale permanente. */
+  creato: number
+  creatoDa: number | null
+  scade: number | null
+  /** Tempo residuo calcolato dall'orologio del server al caricamento. */
+  restanoMs: number | null
   /** Solo per quelli di testo. */
   nonLetti: number
   /** Solo per i vocali: chi c'e' dentro adesso. */
   presenti: Presente[]
+  /**
+   * Cosa posso fare qui dentro, gia' risolto dal server.
+   *
+   * Solo i permessi che cambiano da canale a canale. Serve a disegnare: a dire
+   * di no e' comunque il server, che rifa' lo stesso calcolo a ogni richiesta.
+   */
+  permessiMiei?: Permesso[]
 }
 
 export interface Spazio {
@@ -392,8 +523,20 @@ export interface Spazio {
   chiave: string
   nome: string
   icona: string | null
-  /** Il proprio ruolo qui dentro: decide chi vede i pulsanti di gestione. */
+  descrizione: string
+  regole: string
+  /** Chi non lo ferma nessun permesso. Puo' mancare sugli spazi piu' vecchi. */
+  proprietario: number | null
+  impostazioni: ImpostazioniSpazio
+  /**
+   * Il proprio ruolo qui dentro, in due parole.
+   *
+   * Resta perche' meta' dell'interfaccia chiede solo "sono admin?". La verita'
+   * fine sta in `permessiMiei`, e questo campo ne e' il riassunto: vale 'admin'
+   * per chi ha manageServer.
+   */
   ruoloMio: 'membro' | 'admin'
+  permessiMiei: Permesso[]
   categorie: Categoria[]
   canali: Canale[]
 }
@@ -420,6 +563,112 @@ export interface Amicizie {
   ricevute: Profilo[]
   /** A chi hai chiesto tu. */
   inviate: Profilo[]
+}
+
+/** Una conversazione a due, come compare nell'elenco. */
+export interface Conversazione {
+  id: number
+  /** Il canale che la contiene: e' da li' che passano i messaggi. */
+  canale: number
+  creato: number
+  con: Profilo & { stato: StatoUtente }
+  ultimo: {
+    id: number
+    autore: number
+    testo: string
+    istante: number
+    eliminato: boolean
+  } | null
+  nonLetti: number
+}
+
+/** Una chiamata fra due persone: prima squilla, poi c'e', poi non c'e' piu'. */
+export interface Chiamata {
+  conversazione: number
+  /** Il nome della stanza sulla SFU. */
+  stanza: string
+  da: number
+  a: number
+  stato: 'squilla' | 'in corso' | 'chiusa' | 'rifiutata' | 'persa'
+  iniziata: number
+  risposta: number | null
+}
+
+/** Una voce della coda condivisa. */
+export interface VoceCoda {
+  id: number
+  sessione: number
+  /** L'id del video di YouTube, o l'URI di Spotify. */
+  riferimento: string
+  titolo: string
+  durata: number | null
+  meta: Record<string, unknown> | null
+  aggiuntoDa: number | null
+  nomeAggiunto?: string | null
+  posizione: number
+  suonato: boolean
+  aggiunto: number
+}
+
+/**
+ * Lo stato di una sessione condivisa.
+ *
+ * `aggiornato` e `posizioneMs` vanno letti insieme: la posizione vera adesso e'
+ * la seconda piu' il tempo passato dalla prima, e solo se sta suonando. E'
+ * l'unico modo perche' due computer con orologi diversi arrivino allo stesso
+ * secondo.
+ */
+export interface StatoMedia {
+  riferimento?: string
+  titolo?: string
+  durataMs?: number
+  posizioneMs?: number
+  inRiproduzione?: boolean
+  velocita?: number
+  /** Millisecondi dell'orologio del SERVER, non del proprio. */
+  aggiornato?: number
+  vocePosizione?: number
+}
+
+export interface SessioneMedia {
+  id: number
+  canale: number
+  tipo: 'youtube' | 'musica'
+  provider: string | null
+  host: number | null
+  stato: StatoMedia
+  /** Dove sarebbe adesso, calcolata dal server nell'istante della risposta. */
+  posizioneAttesa: number
+  coda: VoceCoda[]
+  aggiornato: number
+}
+
+/** Un servizio di musica che questo server sa usare. */
+export interface ProviderMusica {
+  nome: string
+  etichetta: string
+  configurato: boolean
+  limiti: Record<string, string> | null
+}
+
+export interface CollegamentoProvider {
+  provider: string
+  identita: string | null
+  nome: string | null
+  /** 'premium' oppure 'free': i comandi funzionano solo col primo. */
+  prodotto: string | null
+  collegato: number
+  ambiti: string[]
+}
+
+/** Un brano trovato cercando su un provider. */
+export interface BranoTrovato {
+  riferimento: string
+  titolo: string
+  artista: string
+  album: string
+  durata: number | null
+  copertina: string | null
 }
 
 export interface Allegato {
@@ -450,22 +699,132 @@ export interface Messaggio {
   eliminato: boolean
   allegati: Allegato[]
   reazioni: Reazione[]
+  origine: 'umano' | 'ai' | 'ai-immagine'
+  provider: string | null
+  modello: string | null
+  /**
+   * Chi ha chiesto il messaggio, quando a scriverlo e' stato un bot.
+   *
+   * Vale solo per le risposte dell'AI: il bot non fa login, e senza questo
+   * la sua riga non la potrebbe togliere piu' nessuno.
+   */
+  richiestoDa: number | null
+  autoreTipo: 'umano' | 'bot'
+  autoreNome: string | null
+  autoreAvatar: string | null
 }
 
-/** Cosa arriva sul flusso degli eventi. */
+/**
+ * Cosa arriva sul flusso degli eventi.
+ *
+ * Un'unione discriminata e non un `{ tipo: string; dati: unknown }`: cosi' chi
+ * la legge, dopo aver controllato `tipo`, ha gia' i campi giusti sotto mano e
+ * il compilatore si accorge di un campo dimenticato. Aggiungerne uno nuovo
+ * senza gestirlo da' un errore dove serve, invece che silenzio a tempo di
+ * esecuzione.
+ *
+ * I messaggi di una conversazione diretta arrivano con `diretto` e
+ * `conversazione` valorizzati: e' lo stesso evento, perche' sotto e' lo stesso
+ * canale.
+ */
+/**
+ * Le due spunte di una conversazione diretta, dal punto di vista di chi guarda.
+ *
+ * Sono gli id dei messaggi fin dove l'altra persona e' arrivata: `consegnato` e'
+ * fin dove il messaggio le e' stato recapitato, `letto` fin dove ha aperto la
+ * conversazione. Zero vuol dire "non ancora".
+ *
+ * Solo per i diretti: in un canale con quaranta persone "gli e' arrivato" non
+ * e' una domanda con una risposta sola.
+ */
+export interface Ricevute {
+  consegnato: number
+  letto: number
+}
+
 export type Evento =
   | { tipo: 'spazi' }
   | { tipo: 'amici' }
+  | { tipo: 'diretti' }
+  | { tipo: 'ruoli'; spazio: number }
+  | { tipo: 'eventi'; spazio: number }
+  | { tipo: 'autowriter'; spazio: number; canale: number }
   | { tipo: 'presenza'; spazio: number }
-  | { tipo: 'messaggio'; spazio: number; canale: number; messaggio: Messaggio }
-  | { tipo: 'messaggio-modificato'; spazio: number; canale: number; messaggio: Messaggio }
-  | { tipo: 'messaggio-eliminato'; spazio: number; canale: number; id: number }
-  | { tipo: 'reazioni'; spazio: number; canale: number; messaggio: number; reazioni: Reazione[] }
+  /**
+   * Qualcuno e' comparso, sparito, si e' fermato o si e' messo a non
+   * disturbare. Da non confondere con `presenza`, che riguarda chi sta dentro
+   * a un canale vocale di *quello* spazio: questo riguarda la persona, ovunque
+   * sia, e lo stato e' gia' quello che si puo' mostrare — `invisibile` esce
+   * come `offline` e non arriva mai fin qui.
+   */
+  | { tipo: 'stato-utente'; utente: number; stato: StatoUtente }
+  | {
+      tipo: 'ricevute'
+      spazio: number
+      canale: number
+      conversazione?: number | null
+      diretto?: boolean
+      ricevute: Ricevute
+    }
+  | {
+      tipo: 'messaggio'
+      spazio: number
+      canale: number
+      messaggio: Messaggio
+      diretto?: boolean
+      conversazione?: number | null
+    }
+  | {
+      tipo: 'messaggio-modificato'
+      spazio: number
+      canale: number
+      messaggio: Messaggio
+      diretto?: boolean
+      conversazione?: number | null
+    }
+  | {
+      tipo: 'messaggio-eliminato'
+      spazio: number
+      canale: number
+      id: number
+      diretto?: boolean
+      conversazione?: number | null
+    }
+  | {
+      tipo: 'reazioni'
+      spazio: number
+      canale: number
+      messaggio: number
+      reazioni: Reazione[]
+      diretto?: boolean
+      conversazione?: number | null
+    }
+  | { tipo: 'chiamata-arriva'; conversazione: number; chiamata: Chiamata }
+  | { tipo: 'chiamata-risposta'; conversazione: number; chiamata: Chiamata }
+  | {
+      tipo: 'chiamata-finita'
+      conversazione: number
+      chiamata: Chiamata
+      motivo: 'chiusa' | 'rifiutata' | 'persa'
+      chiusaDa?: number
+    }
+  | {
+      tipo: 'media'
+      canale: number
+      sessione: SessioneMedia | null
+      /** L'orologio del server nell'istante in cui l'evento e' partito. */
+      adesso: number
+      evento?: string
+      chiusa?: number
+      da?: number
+    }
 
 export interface Permessi {
   puoTrasmettere: boolean
   puoAscoltare: boolean
   puoScrivere: boolean
+  /** Schermo, camera e sessioni da guardare insieme. */
+  puoCondividere?: boolean
   moderatore: boolean
 }
 
@@ -473,6 +832,14 @@ export interface Ingresso {
   gettone: string
   sfuUrl: string
   canale: { id: number; nome: string; spazio: number; soloAscolto: boolean }
+  /**
+   * Presente solo per le chiamate fra due persone.
+   *
+   * Il resto dell'ingresso e' identico a quello di un canale vocale, ed e'
+   * voluto: la sessione RTC non deve sapere se sta parlando in un canale o al
+   * telefono. Cambia solo cosa ci si disegna intorno.
+   */
+  diretta?: { conversazione: number; con: number }
   permessi: Permessi
   limiti: Limiti
 }

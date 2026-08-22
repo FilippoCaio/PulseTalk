@@ -16,6 +16,14 @@ import { dirname } from 'node:path';
 import Database from 'better-sqlite3';
 
 import { RUOLI } from './config.mjs';
+import { creaCollegamenti } from './dati/collegamenti.mjs';
+import { creaDiretti } from './dati/diretti.mjs';
+import { creaEventiSpazio } from './dati/eventi-spazio.mjs';
+import { creaInvitiSpazio } from './dati/inviti-spazio.mjs';
+import { creaMedia } from './dati/media.mjs';
+import { creaRuoli } from './dati/ruoli.mjs';
+import { PERMESSI } from './permessi/catalogo.mjs';
+import { risolvi } from './permessi/risoluzione.mjs';
 import { SCHEMA, SCHEMA_RICERCA } from './schema.mjs';
 
 export const impronta = (valore) => createHash('sha256').update(valore, 'utf8').digest('hex');
@@ -77,6 +85,7 @@ export function problemaConIlNomeUtente(grezzo) {
  * gestisce.
  */
 const COLONNE_AGGIUNTE = [
+  ['utenti', 'tipo', "TEXT NOT NULL DEFAULT 'umano'"],
   ['utenti', 'utente', 'TEXT'],
   ['utenti', 'password', 'TEXT'],
   ['utenti', 'avatar', 'TEXT'],
@@ -85,6 +94,26 @@ const COLONNE_AGGIUNTE = [
   ['inviti', 'usi', 'INTEGER NOT NULL DEFAULT 0'],
   ['inviti', 'creatoDa', 'INTEGER'],
   ['canali', 'privato', 'INTEGER NOT NULL DEFAULT 0'],
+  ['canali', 'creatoDa', 'INTEGER'],
+  ['canali', 'scade', 'INTEGER'],
+  ['messaggi', 'origine', "TEXT NOT NULL DEFAULT 'umano'"],
+  ['messaggi', 'provider', 'TEXT'],
+  ['messaggi', 'modello', 'TEXT'],
+  // Chi ha chiesto il messaggio, quando a scriverlo e' stato un bot.
+  //
+  // Un messaggio dell'AI ha per autore il bot dello spazio, e un bot non fa
+  // login: senza questa colonna nessuno potrebbe piu' toglierlo dal canale,
+  // ora che a cancellare e' soltanto l'autore. Chi lo ha chiesto e' la persona
+  // piu' vicina ad averlo scritto, ed e' quella che se lo riprende.
+  ['messaggi', 'richiestoDa', 'INTEGER'],
+
+  // Fin dove il messaggio e' *arrivato*, che non e' fin dove e' stato letto.
+  //
+  // Sono due cose diverse e servono a rispondere a due domande diverse: "gli e'
+  // arrivato?" e "l'ha letto?". Con il solo `ultimoMessaggio` chi scriveva
+  // vedeva un messaggio non letto e non aveva modo di sapere se il problema era
+  // il destinatario o la rete.
+  ['letture', 'ultimoConsegnato', 'INTEGER NOT NULL DEFAULT 0'],
   // Un'emoji davanti al nome. Solo estetica, ma e' l'unico modo per far
   // riconoscere un canale in una colonna di venti a colpo d'occhio.
   ['canali', 'icona', 'TEXT'],
@@ -94,7 +123,49 @@ const COLONNE_AGGIUNTE = [
   // chiusura dell'applicazione: chi si mette "non disturbare" la sera non
   // vuole ritrovarsi online il mattino dopo per aver riavviato il computer.
   ['utenti', 'stato', "TEXT NOT NULL DEFAULT 'online'"],
+
+  // Uno spazio non e' piu' solo un nome e un'icona.
+  //
+  // `proprietario` e' chi non puo' essere fermato da nessun permesso: serve a
+  // garantire che ci sia sempre almeno una persona capace di rientrare dopo
+  // essersi tolta un ruolo per sbaglio. `sistema` marca gli spazi che non
+  // appartengono a nessuno e non compaiono in nessuna barra — oggi ce n'e' uno
+  // solo, quello che contiene i canali dei messaggi diretti.
+  ['spazi', 'descrizione', "TEXT NOT NULL DEFAULT ''"],
+  ['spazi', 'regole', "TEXT NOT NULL DEFAULT ''"],
+  ['spazi', 'proprietario', 'INTEGER'],
+  ['spazi', 'sistema', 'INTEGER NOT NULL DEFAULT 0'],
+  ['spazi', 'impostazioni', "TEXT NOT NULL DEFAULT '{}'"],
 ];
+
+/**
+ * Le impostazioni di uno spazio, quando la colonna non dice niente.
+ *
+ * Stanno in un JSON e non in cinque colonne perche' sono preferenze: se ne
+ * aggiunge una ogni tanto, e una migrazione per ogni interruttore sarebbe piu'
+ * codice della cosa che gestisce. Cio' che decide chi puo' fare cosa non sta
+ * qui: quello sono i permessi, che hanno tabelle vere.
+ */
+export const IMPOSTAZIONI_SPAZIO = {
+  /** Se i membri senza permessi amministrativi possono generare inviti. */
+  invitiAperti: true,
+  /** Quanti giorni vale un invito appena creato. */
+  invitiGiorni: 7,
+  /** Se gli inviti dei membri normali valgono una volta sola. */
+  invitiUsoSingolo: false,
+  /** Se chi ha createEvents puo' creare eventi senza passare da un admin. */
+  eventiAperti: true,
+  /** Cosa notificare di serie a chi entra: 'tutto' | 'menzioni' | 'niente'. */
+  notifichePredefinite: 'tutto',
+  /**
+   * Chi si registra sull'istanza entra qui dentro da solo.
+   *
+   * Uno spazio nuovo nasce a porte chiuse. Gli spazi creati dalle versioni
+   * precedenti conservano esplicitamente il comportamento che avevano grazie
+   * a `#migraPrivacySpazi`.
+   */
+  apertoATutti: false,
+};
 
 export class TalkDb {
   constructor(percorso) {
@@ -114,7 +185,19 @@ export class TalkDb {
       this.ricercaDisponibile = false;
     }
 
+    // I moduli dei dati. Composizione e non ereditarieta': ognuno si prova da
+    // solo con un database in memoria, e questo file non diventa il posto in
+    // cui finisce tutto quello che non si sa dove mettere.
+    this.ruoli = creaRuoli(this.sql);
+    this.invitiSpazio = creaInvitiSpazio(this.sql);
+    this.eventiSpazio = creaEventiSpazio(this.sql);
+    this.media = creaMedia(this.sql);
+    this.collegamenti = creaCollegamenti(this.sql);
+    this.diretti = creaDiretti(this.sql, this);
+
     this.#migraStanze();
+    this.#migraPrivacySpazi();
+    this.#migraRuoli();
   }
 
   close() {
@@ -132,6 +215,9 @@ export class TalkDb {
     // in un indice unico.
     this.sql.exec(
       'CREATE UNIQUE INDEX IF NOT EXISTS idx_utenti_utente ON utenti(utente) WHERE utente IS NOT NULL',
+    );
+    this.sql.exec(
+      'CREATE INDEX IF NOT EXISTS idx_canali_scadenza ON canali(scade) WHERE scade IS NOT NULL',
     );
 
     // Gli inviti gia' riscattati prima che esistesse il contatore: `usato`
@@ -196,6 +282,72 @@ export class TalkDb {
     });
 
     trasferisci();
+  }
+
+  /**
+   * Le versioni precedenti consideravano aperto uno spazio senza la chiave
+   * `apertoATutti`. Scriverla una volta preserva quel comportamento, mentre il
+   * nuovo valore predefinito puo' essere privato senza cambiare gli spazi gia'
+   * esistenti. Gli spazi nuovi scrivono sempre la chiave e non vengono toccati.
+   */
+  #migraPrivacySpazi() {
+    const aggiorna = this.sql.prepare('UPDATE spazi SET impostazioni = ? WHERE id = ?');
+    const migra = this.sql.transaction(() => {
+      for (const spazio of this.sql.prepare('SELECT id, impostazioni FROM spazi WHERE sistema = 0').all()) {
+        let impostazioni;
+        try {
+          impostazioni = JSON.parse(spazio.impostazioni ?? '{}') ?? {};
+        } catch {
+          impostazioni = {};
+        }
+        if (Object.hasOwn(impostazioni, 'apertoATutti')) continue;
+        aggiorna.run(JSON.stringify({ ...impostazioni, apertoATutti: true }), spazio.id);
+      }
+    });
+    migra();
+  }
+
+  /**
+   * Gli spazi nati prima dei ruoli se li ritrovano addosso.
+   *
+   * Gira a ogni apertura ed e' idempotente: crea i tre ruoli predefiniti dove
+   * mancano, da' il ruolo Admin a chi risultava admin nella vecchia colonna
+   * `membri.ruolo`, e mette un proprietario dove non c'era. Nessuno perde
+   * niente — chi amministrava continua ad amministrare, con in piu' la
+   * possibilita' di dare via pezzi di quel potere invece che tutto o niente.
+   */
+  #migraRuoli() {
+    const spazi = this.sql.prepare('SELECT id, creatoDa, proprietario, sistema FROM spazi').all();
+
+    const converti = this.sql.transaction(() => {
+      for (const spazio of spazi) {
+        if (spazio.sistema) continue;
+        const admin = this.ruoli.assicuraPredefiniti(spazio.id);
+        if (!admin) continue;
+
+        for (const membro of this.sql
+          .prepare("SELECT utente FROM membri WHERE spazio = ? AND ruolo = 'admin'")
+          .all(spazio.id)) {
+          this.ruoli.assegna(admin.id, membro.utente);
+        }
+
+        if (!spazio.proprietario) {
+          // Chi lo ha creato, e se quella riga non c'e' piu' il primo admin
+          // rimasto. Uno spazio senza proprietario e' uno spazio in cui, il
+          // giorno in cui l'ultimo admin si toglie un permesso per sbaglio,
+          // non entra piu' nessuno a rimetterlo a posto.
+          const ripiego = this.sql
+            .prepare("SELECT utente FROM membri WHERE spazio = ? AND ruolo = 'admin' ORDER BY entrato LIMIT 1")
+            .get(spazio.id);
+          const chi = spazio.creatoDa ?? ripiego?.utente ?? null;
+          if (chi) {
+            this.sql.prepare('UPDATE spazi SET proprietario = ? WHERE id = ?').run(chi, spazio.id);
+          }
+        }
+      }
+    });
+
+    converti();
   }
 
   // -- Inviti ---------------------------------------------------------------
@@ -291,14 +443,22 @@ export class TalkDb {
         .run(ora(), utenteId, riga.id);
       if (agg.changes !== 1) throw new Error('codice gia\' usato');
 
-      // Chi entra adesso entra in tutti gli spazi che esistono. Su
-      // un'istanza di casa e' cio' che ci si aspetta: l'invito e' gia' il
-      // filtro, e trovarsi dentro senza nessun canale visibile sembrerebbe
-      // un guasto.
-      for (const s of this.sql.prepare('SELECT id FROM spazi').all()) {
+      // Chi entra adesso entra negli spazi aperti. Su un'istanza di casa e'
+      // cio' che ci si aspetta: l'invito all'istanza e' gia' il filtro, e
+      // trovarsi dentro senza nessun canale visibile sembrerebbe un guasto.
+      //
+      // Gli spazi di sistema no: quello dei messaggi diretti non ha membri, ha
+      // conversazioni. E nemmeno quelli chiusi a porte chiuse, dove si entra
+      // con un invito loro.
+      for (const s of this.sql.prepare('SELECT * FROM spazi WHERE sistema = 0').all()) {
+        if (!this.impostazioniSpazio(s).apertoATutti) continue;
         this.sql
           .prepare('INSERT OR IGNORE INTO membri (spazio, utente, ruolo, entrato) VALUES (?, ?, ?, ?)')
           .run(s.id, utenteId, riga.ruolo === 'admin' ? 'admin' : 'membro', ora());
+        if (riga.ruolo === 'admin') {
+          const admin = this.ruoli.perTipo(s.id, 'admin');
+          if (admin) this.ruoli.assegna(admin.id, utenteId);
+        }
       }
 
       return { token, utenteId };
@@ -367,10 +527,64 @@ export class TalkDb {
   }
 
   /** Cio' che di una persona possono vedere gli altri, e nient'altro. */
+  /**
+   * Le facce di tutti, per disegnare gli elenchi.
+   *
+   * `stato` c'e' e prima non c'era, ed e' il motivo per cui invisibile non ha
+   * mai funzionato: la rotta dei profili lo leggeva da queste righe, non lo
+   * trovava, e ripiegava su "online" per chiunque — compreso chi si era appena
+   * messo invisibile proprio per non comparire. Nessuno se n'era accorto
+   * perche' il valore di ripiego era quello giusto per la stragrande
+   * maggioranza delle righe.
+   */
   elencoProfili() {
     return this.sql
-      .prepare('SELECT id, nome, utente, avatar FROM utenti WHERE attivo = 1 ORDER BY id')
+      .prepare('SELECT id, nome, utente, avatar, tipo, stato FROM utenti WHERE attivo = 1 ORDER BY id')
       .all();
+  }
+
+  /** Installa un'identita' bot interna nello spazio, senza token o login. */
+  botInterno(spazioId, installatoDa, nome = 'Assistente PulseTalk') {
+    const esistente = this.sql.prepare(
+      `SELECT u.* FROM bot_installazioni b JOIN utenti u ON u.id = b.bot
+        WHERE b.spazio = ? AND b.attivo = 1 AND u.attivo = 1 ORDER BY b.installato LIMIT 1`,
+    ).get(spazioId);
+    if (esistente) return esistente;
+
+    const crea = this.sql.transaction(() => {
+      const ins = this.sql.prepare(
+        `INSERT INTO utenti (nome, utente, password, ruolo, creato, attivo, tipo)
+         VALUES (?, NULL, NULL, 'membro', ?, 1, 'bot')`,
+      ).run(nome, ora());
+      const id = Number(ins.lastInsertRowid);
+      this.aggiungiMembro(spazioId, id, 'membro');
+      this.sql.prepare(
+        'INSERT INTO bot_installazioni (spazio, bot, installatoDa, installato, attivo) VALUES (?, ?, ?, ?, 1)',
+      ).run(spazioId, id, installatoDa, ora());
+      return this.utente(id);
+    });
+    return crea();
+  }
+
+  botDiSpazio(spazioId) {
+    return this.sql.prepare(
+      `SELECT u.id, u.nome, u.avatar, u.tipo, b.installatoDa, b.installato, b.attivo
+         FROM bot_installazioni b JOIN utenti u ON u.id = b.bot
+        WHERE b.spazio = ? ORDER BY b.installato, u.id`,
+    ).all(spazioId).map((b) => ({ ...b, attivo: !!b.attivo }));
+  }
+
+  revocaBot(spazioId, botId) {
+    const revoca = this.sql.transaction(() => {
+      const r = this.sql.prepare(
+        'UPDATE bot_installazioni SET attivo = 0 WHERE spazio = ? AND bot = ? AND attivo = 1',
+      ).run(spazioId, botId);
+      if (!r.changes) return 0;
+      this.togliMembro(spazioId, botId);
+      this.sql.prepare('UPDATE utenti SET attivo = 0 WHERE id = ? AND tipo = \'bot\'').run(botId);
+      return 1;
+    });
+    return revoca();
   }
 
   sessioniDi(utenteId) {
@@ -382,12 +596,22 @@ export class TalkDb {
       .all(utenteId);
   }
 
+  /**
+   * Chi e' il proprietario di questo token.
+   *
+   * `stato` c'e' e prima non c'era, e con lui mancava all'applicazione la
+   * memoria di cio' che aveva scelto: `/api/auth/io` rispondeva sempre
+   * "online", quindi chi si metteva "non disturbare" la sera riapriva il
+   * giorno dopo trovandosi online. Lo stato era salvato correttamente sul
+   * disco — e' che nessuno lo rileggeva.
+   */
   utenteDaToken(token) {
     if (!token) return null;
     const riga = this.sql
       .prepare(
         `SELECT t.id AS tokenId, t.revocato,
-                u.id, u.nome, u.utente, u.ruolo, u.attivo, u.avatar, u.password
+                u.id, u.nome, u.utente, u.ruolo, u.attivo, u.avatar, u.password,
+                u.stato
            FROM token t JOIN utenti u ON u.id = t.utente
           WHERE t.impronta = ?`,
       )
@@ -407,6 +631,7 @@ export class TalkDb {
       utente: riga.utente,
       ruolo: riga.ruolo,
       avatar: riga.avatar,
+      stato: riga.stato ?? 'online',
       tokenId: riga.tokenId,
       deveCompletare: !riga.utente || !riga.password,
     };
@@ -437,7 +662,16 @@ export class TalkDb {
 
   // -- Spazi -----------------------------------------------------------------
 
-  creaSpazio({ nome, icona = null, creatoDa = null }) {
+  creaSpazio({
+    nome,
+    icona = null,
+    creatoDa = null,
+    descrizione = '',
+    regole = '',
+    sistema = false,
+    impostazioni = {},
+    canaliIniziali = true,
+  }) {
     const chiave = chiaveDa(nome);
     if (this.sql.prepare('SELECT id FROM spazi WHERE chiave = ?').get(chiave)) {
       return { errore: `esiste gia' uno spazio con la chiave "${chiave}"` };
@@ -445,15 +679,36 @@ export class TalkDb {
 
     const crea = this.sql.transaction(() => {
       const ins = this.sql
-        .prepare('INSERT INTO spazi (chiave, nome, icona, creato, creatoDa) VALUES (?, ?, ?, ?, ?)')
-        .run(chiave, nome, icona, ora(), creatoDa);
+        .prepare(
+          `INSERT INTO spazi (chiave, nome, icona, creato, creatoDa, descrizione, regole, proprietario, sistema, impostazioni)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          chiave,
+          nome,
+          icona,
+          ora(),
+          creatoDa,
+          String(descrizione).slice(0, 1000),
+          String(regole).slice(0, 8000),
+          creatoDa,
+          sistema ? 1 : 0,
+          JSON.stringify({ ...IMPOSTAZIONI_SPAZIO, ...impostazioni }),
+        );
       const id = Number(ins.lastInsertRowid);
+
+      // I ruoli prima dei membri: chi crea deve trovare l'Admin gia' pronto da
+      // indossare, o resterebbe padrone di casa senza le chiavi.
+      const admin = sistema ? null : this.ruoli.assicuraPredefiniti(id);
 
       if (creatoDa) {
         this.sql
           .prepare('INSERT INTO membri (spazio, utente, ruolo, entrato) VALUES (?, ?, ?, ?)')
           .run(id, creatoDa, 'admin', ora());
+        if (admin) this.ruoli.assegna(admin.id, creatoDa);
       }
+
+      if (!canaliIniziali) return id;
 
       // Uno spazio vuoto non si sa da dove cominciare a usarlo.
       this.sql
@@ -479,6 +734,114 @@ export class TalkDb {
     return this.sql.prepare('SELECT * FROM spazi WHERE id = ?').get(id) ?? null;
   }
 
+  aggiornaSpazio(id, { nome, icona, descrizione, regole, proprietario, impostazioni }) {
+    const attuale = this.spazio(id);
+    if (!attuale) return null;
+
+    this.sql
+      .prepare(
+        `UPDATE spazi SET nome = ?, icona = ?, descrizione = ?, regole = ?, proprietario = ?, impostazioni = ?
+          WHERE id = ?`,
+      )
+      .run(
+        nome === undefined ? attuale.nome : String(nome).slice(0, 60),
+        // Stringa vuota vuol dire "togli l'icona", undefined "non toccarla".
+        icona === undefined ? attuale.icona : icona || null,
+        descrizione === undefined ? attuale.descrizione : String(descrizione).slice(0, 1000),
+        regole === undefined ? attuale.regole : String(regole).slice(0, 8000),
+        proprietario === undefined ? attuale.proprietario : proprietario,
+        impostazioni === undefined
+          ? attuale.impostazioni
+          : JSON.stringify({ ...this.impostazioniSpazio(attuale), ...impostazioni }),
+        id,
+      );
+    return this.spazio(id);
+  }
+
+  /**
+   * Passa la proprieta' verificando tutti gli invarianti nello stesso lock di
+   * scrittura SQLite. Fra controllo dell'amicizia e UPDATE non puo' infilarsi
+   * una richiesta che la rimuove lasciando un trasferimento ormai invalido.
+   */
+  trasferisciProprieta(spazioId, proprietarioAttuale, nuovoProprietario) {
+    const trasferisci = this.sql.transaction(() => {
+      const spazio = this.spazio(spazioId);
+      if (!spazio || spazio.sistema) return { errore: 'spazio inesistente', stato: 404 };
+      if (spazio.proprietario !== proprietarioAttuale) {
+        return { errore: 'solo il proprietario passa la proprieta\'', stato: 403 };
+      }
+      if (!Number.isInteger(nuovoProprietario) || nuovoProprietario === proprietarioAttuale) {
+        return { errore: 'scegli un altro membro dello spazio', stato: 400 };
+      }
+
+      const membro = this.sql
+        .prepare(
+          `SELECT 1 FROM membri m JOIN utenti u ON u.id = m.utente
+            WHERE m.spazio = ? AND m.utente = ? AND u.attivo = 1`,
+        )
+        .get(spazioId, nuovoProprietario);
+      if (!membro) return { errore: 'questa persona non e\' in questo spazio', stato: 404 };
+
+      const amicizia = this.amicizia(proprietarioAttuale, nuovoProprietario);
+      if (amicizia?.stato !== 'amici') {
+        return { errore: 'la proprieta\' si puo\' passare soltanto a un amico', stato: 400 };
+      }
+
+      const admin = this.ruoli.perTipo(spazioId, 'admin');
+      if (admin) this.ruoli.assegna(admin.id, nuovoProprietario);
+      const cambiato = this.sql
+        .prepare('UPDATE spazi SET proprietario = ? WHERE id = ? AND proprietario = ?')
+        .run(nuovoProprietario, spazioId, proprietarioAttuale).changes;
+      if (cambiato !== 1) return { errore: 'la proprieta\' e\' cambiata, rileggi lo spazio', stato: 409 };
+      return { spazio: this.spazio(spazioId) };
+    });
+    return trasferisci();
+  }
+
+  /** Le preferenze dello spazio, con i buchi riempiti dai valori di serie. */
+  impostazioniSpazio(spazio) {
+    const riga = typeof spazio === 'object' ? spazio : this.spazio(spazio);
+    if (!riga) return { ...IMPOSTAZIONI_SPAZIO };
+    try {
+      return { ...IMPOSTAZIONI_SPAZIO, ...(JSON.parse(riga.impostazioni ?? '{}') ?? {}) };
+    } catch {
+      return { ...IMPOSTAZIONI_SPAZIO };
+    }
+  }
+
+  /**
+   * Cosa puo' fare questa persona qui dentro.
+   *
+   * L'unico modo per saperlo, in tutto il programma. Prende lo spazio e, se
+   * c'e', il canale: la categoria la ricava da solo, perche' un chiamante che
+   * dovesse ricordarsi di passarla e' un chiamante che prima o poi la
+   * dimentica — e dimenticarla vuol dire concedere.
+   */
+  permessiIn(utente, { spazio, canale = null }) {
+    const riga = typeof spazio === 'object' ? spazio : this.spazio(spazio);
+    if (!riga) return new Set();
+
+    const suoCanale = canale === null ? null : typeof canale === 'object' ? canale : this.canale(canale);
+    const categoria = suoCanale?.categoria ?? null;
+
+    return risolvi({
+      utente: utente.id,
+      ruoli: this.ruoli.diUtente(riga.id, utente.id),
+      // Su uno spazio di sistema — quello dei messaggi diretti — non esiste
+      // nessun padrone di casa: sono conversazioni fra due persone, e
+      // l'amministratore dell'istanza non ci mette piede piu' degli altri.
+      proprietario: !riga.sistema && riga.proprietario === utente.id,
+      amministratoreIstanza: !riga.sistema && utente.ruolo === 'admin',
+      overrideCategoria: categoria ? this.ruoli.overrideDi('categoria', categoria) : [],
+      overrideCanale: suoCanale ? this.ruoli.overrideDi('canale', suoCanale.id) : [],
+    });
+  }
+
+  /** Comodita': un permesso solo, senza costruire l'insieme a mano fuori. */
+  puo(utente, permesso, { spazio, canale = null }) {
+    return this.permessiIn(utente, { spazio, canale }).has(permesso);
+  }
+
   spazioPerChiave(chiave) {
     return this.sql.prepare('SELECT * FROM spazi WHERE chiave = ?').get(chiave) ?? null;
   }
@@ -489,7 +852,7 @@ export class TalkDb {
       .prepare(
         `SELECT s.*, m.ruolo AS ruoloMio
            FROM spazi s JOIN membri m ON m.spazio = s.id
-          WHERE m.utente = ? ORDER BY m.entrato, s.id`,
+          WHERE m.utente = ? AND s.sistema = 0 ORDER BY m.entrato, s.id`,
       )
       .all(utenteId);
   }
@@ -502,12 +865,27 @@ export class TalkDb {
     this.sql
       .prepare('INSERT OR IGNORE INTO membri (spazio, utente, ruolo, entrato) VALUES (?, ?, ?, ?)')
       .run(spazioId, utenteId, ruolo, ora());
+
+    // Il ruolo grosso adesso vive nei ruoli veri: chiedere 'admin' qui vuol
+    // dire ricevere il ruolo Admin dello spazio, non una stringa in una
+    // colonna che nessuno legge piu' per decidere.
+    if (ruolo === 'admin') {
+      const admin = this.ruoli.perTipo(spazioId, 'admin');
+      if (admin) this.ruoli.assegna(admin.id, utenteId);
+    }
   }
 
   togliMembro(spazioId, utenteId) {
-    return this.sql
-      .prepare('DELETE FROM membri WHERE spazio = ? AND utente = ?')
-      .run(spazioId, utenteId).changes;
+    const via = this.sql.transaction(() => {
+      // Prima i ruoli: restare assegnati a un ruolo di uno spazio da cui si e'
+      // usciti vorrebbe dire riprenderseli tutti rientrando, anche dopo un
+      // bando revocato per pieta'.
+      this.ruoli.togliTuttiDelloSpazio(spazioId, utenteId);
+      return this.sql
+        .prepare('DELETE FROM membri WHERE spazio = ? AND utente = ?')
+        .run(spazioId, utenteId).changes;
+    });
+    return via();
   }
 
   membriDi(spazioId) {
@@ -521,6 +899,35 @@ export class TalkDb {
       .all(spazioId);
   }
 
+  /** Gli stessi membri, con addosso i ruoli che hanno qui. Per il pannello. */
+  membriConRuoli(spazioId) {
+    const per = new Map();
+    for (const riga of this.sql
+      .prepare(
+        `SELECT rm.utente, r.id, r.nome, r.colore, r.priorita, r.tipo
+           FROM ruoli_membri rm JOIN ruoli r ON r.id = rm.ruolo
+          WHERE r.spazio = ?
+          ORDER BY r.priorita DESC, r.id`,
+      )
+      .all(spazioId)) {
+      if (!per.has(riga.utente)) per.set(riga.utente, []);
+      per.get(riga.utente).push({
+        id: riga.id,
+        nome: riga.nome,
+        colore: riga.colore,
+        priorita: riga.priorita,
+        tipo: riga.tipo,
+      });
+    }
+
+    const proprietario = this.spazio(spazioId)?.proprietario ?? null;
+    return this.membriDi(spazioId).map((m) => ({
+      ...m,
+      ruoli: per.get(m.id) ?? [],
+      proprietario: m.id === proprietario,
+    }));
+  }
+
   /**
    * Che ruolo ha questa persona in questo spazio.
    *
@@ -529,11 +936,34 @@ export class TalkDb {
    * non possa moderare uno spazio sarebbe una recita.
    */
   ruoloNelloSpazio(spazioId, utente) {
+    const spazio = this.spazio(spazioId);
+    if (!spazio) return null;
+
+    // Uno spazio di sistema non ha membri nel senso normale: ci si sta se si e'
+    // iscritti a un canale suo, e a deciderlo e' accessoAlCanale.
+    if (spazio.sistema) {
+      return this.sql
+        .prepare(
+          `SELECT 1 FROM iscritti i JOIN canali c ON c.id = i.canale
+            WHERE c.spazio = ? AND i.utente = ? LIMIT 1`,
+        )
+        .get(spazioId, utente.id)
+        ? 'membro'
+        : null;
+    }
+
     if (utente.ruolo === 'admin') return 'admin';
+
     const riga = this.sql
       .prepare('SELECT ruolo FROM membri WHERE spazio = ? AND utente = ?')
       .get(spazioId, utente.id);
-    return riga?.ruolo ?? null;
+    if (!riga) return null;
+
+    // Il ruolo grosso non e' piu' una colonna: e' cio' che i permessi dicono.
+    // Cosi' non esistono due verita' — una nella colonna e una nei ruoli — e
+    // togliere manageServer a qualcuno lo declassa davvero, invece di lasciarlo
+    // admin agli occhi di meta' del codice.
+    return this.permessiIn(utente, { spazio }).has('manageServer') ? 'admin' : 'membro';
   }
 
   // -- Categorie e canali ----------------------------------------------------
@@ -554,14 +984,65 @@ export class TalkDb {
       .all(spazioId);
   }
 
+  categoria(id) {
+    return this.sql.prepare('SELECT * FROM categorie WHERE id = ?').get(id) ?? null;
+  }
+
+  aggiornaCategoria(id, { nome, posizione }) {
+    const attuale = this.categoria(id);
+    if (!attuale) return null;
+    this.sql
+      .prepare('UPDATE categorie SET nome = ?, posizione = ? WHERE id = ?')
+      .run(
+        nome === undefined ? attuale.nome : String(nome).trim().slice(0, 40) || attuale.nome,
+        posizione === undefined ? attuale.posizione : Number(posizione),
+        id,
+      );
+    return this.categoria(id);
+  }
+
+  /**
+   * Rimette in fila categorie o canali, in un colpo solo.
+   *
+   * Un ordine si trascina tutto insieme: mandare una PATCH per riga vorrebbe
+   * dire che una connessione caduta a meta' lascia l'elenco in un ordine che
+   * nessuno ha mai voluto.
+   */
+  riordina(tabella, spazioId, idInOrdine) {
+    if (tabella !== 'categorie' && tabella !== 'canali') throw new Error('tabella sconosciuta');
+    const scrivi = this.sql.prepare(
+      `UPDATE ${tabella} SET posizione = ? WHERE id = ? AND spazio = ?`,
+    );
+    const tutte = this.sql.transaction(() => {
+      idInOrdine.forEach((id, indice) => scrivi.run(indice, Number(id), spazioId));
+    });
+    tutte();
+  }
+
   eliminaCategoria(id) {
+    // Gli override della categoria se ne vanno con lei: restare in tabella
+    // vorrebbe dire che la prossima categoria con lo stesso id nascerebbe con
+    // dentro i permessi di una che non c'e' piu'.
+    this.ruoli.eliminaOverrideDi('categoria', id);
     // I canali dentro non si perdono: la ON DELETE SET NULL li lascia dove
     // sono, senza categoria, in cima all'elenco. Cancellare un raggruppamento
     // non deve mai cancellare quello che raggruppa.
     return this.sql.prepare('DELETE FROM categorie WHERE id = ?').run(id).changes;
   }
 
-  creaCanale(spazioId, { nome, tipo, categoria = null, argomento = '', soloAscolto = false, privato = false }) {
+  creaCanale(
+    spazioId,
+    {
+      nome,
+      tipo,
+      categoria = null,
+      argomento = '',
+      soloAscolto = false,
+      privato = false,
+      creatoDa = null,
+      scade = null,
+    },
+  ) {
     if (tipo !== 'testo' && tipo !== 'voce') return { errore: 'il tipo deve essere testo o voce' };
 
     let chiave = chiaveDa(nome);
@@ -580,8 +1061,9 @@ export class TalkDb {
 
     const ins = this.sql
       .prepare(
-        `INSERT INTO canali (spazio, categoria, chiave, nome, tipo, argomento, posizione, soloAscolto, privato, creato)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO canali
+           (spazio, categoria, chiave, nome, tipo, argomento, posizione, soloAscolto, privato, creato, creatoDa, scade)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         spazioId,
@@ -594,20 +1076,24 @@ export class TalkDb {
         soloAscolto ? 1 : 0,
         privato ? 1 : 0,
         ora(),
+        creatoDa,
+        scade,
       );
 
     return { canale: this.canale(Number(ins.lastInsertRowid)) };
   }
 
   canale(id) {
-    const riga = this.sql.prepare('SELECT * FROM canali WHERE id = ?').get(id);
+    const riga = this.sql
+      .prepare('SELECT * FROM canali WHERE id = ? AND (scade IS NULL OR scade > ?)')
+      .get(id, ora());
     return riga ? { ...riga, soloAscolto: !!riga.soloAscolto, privato: !!riga.privato } : null;
   }
 
   canaliDi(spazioId) {
     return this.sql
-      .prepare('SELECT * FROM canali WHERE spazio = ? ORDER BY posizione, id')
-      .all(spazioId)
+      .prepare('SELECT * FROM canali WHERE spazio = ? AND (scade IS NULL OR scade > ?) ORDER BY posizione, id')
+      .all(spazioId, ora())
       .map((r) => ({ ...r, soloAscolto: !!r.soloAscolto, privato: !!r.privato }));
   }
 
@@ -620,11 +1106,46 @@ export class TalkDb {
    * sia nascosto sarebbe una recita — la stessa posizione, per lo stesso
    * motivo, di `ruoloNelloSpazio`.
    */
-  canaliVisibili(spazioId, utenteId, ruolo) {
+  canaliVisibili(spazioId, utente, ruolo) {
+    // Retrocompatibilita': fino a ieri qui arrivava un id, adesso arriva la
+    // persona intera perche' i permessi hanno bisogno del ruolo d'istanza.
+    const chi = typeof utente === 'object' ? utente : { id: utente, ruolo: ruolo ?? 'membro' };
     const tutti = this.canaliDi(spazioId);
-    if (ruolo === 'admin') return tutti;
-    const miei = new Set(this.canaliIscritto(utenteId));
-    return tutti.filter((c) => !c.privato || miei.has(c.id));
+    const spazio = this.spazio(spazioId);
+    const miei = new Set(this.canaliIscritto(chi.id));
+
+    return tutti.filter((canale) => {
+      // Il canale privato resta quello che era: lo vedono gli invitati. E' la
+      // scorciatoia di sempre, e continua a valere accanto agli override.
+      if (canale.privato && !miei.has(canale.id) && ruolo !== 'admin') return false;
+      return this.permessiIn(chi, { spazio, canale }).has('viewChannel');
+    });
+  }
+
+  /**
+   * Le persone a cui si puo' rivelare cio' che succede in un canale.
+   *
+   * Le rotte HTTP controllano l'accesso di chi le chiama, ma gli eventi SSE
+   * partono dal server: mandare un messaggio intero a tutti i membri dello
+   * spazio aggirerebbe un override `viewChannel` proprio sul canale nascosto.
+   * Questa e' la stessa regola di `canaliVisibili`, usata dal lato push.
+   */
+  destinatariCanale(canaleId) {
+    const canale = this.canale(Number(canaleId));
+    if (!canale) return [];
+
+    const spazio = this.spazio(canale.spazio);
+    if (!spazio) return [];
+    if (spazio.sistema) return this.iscrittiAlCanale(canale.id).map((i) => i.id);
+
+    return this.membriDi(spazio.id)
+      .filter((membro) => {
+        const utente = this.utente(membro.id);
+        if (!utente) return false;
+        const ruolo = this.ruoloNelloSpazio(spazio.id, utente);
+        return this.canaliVisibili(spazio.id, utente, ruolo).some((c) => c.id === canale.id);
+      })
+      .map((membro) => membro.id);
   }
 
   // -- Iscritti ai canali privati --------------------------------------------
@@ -751,12 +1272,12 @@ export class TalkDb {
     };
   }
 
-  aggiornaCanale(id, { nome, argomento, categoria, posizione, soloAscolto, privato, icona }) {
+  aggiornaCanale(id, { nome, argomento, categoria, posizione, soloAscolto, privato, icona, scade }) {
     const attuale = this.canale(id);
     if (!attuale) return 0;
     return this.sql
       .prepare(
-        `UPDATE canali SET nome = ?, argomento = ?, categoria = ?, posizione = ?, soloAscolto = ?, privato = ?, icona = ?
+        `UPDATE canali SET nome = ?, argomento = ?, categoria = ?, posizione = ?, soloAscolto = ?, privato = ?, icona = ?, scade = ?
           WHERE id = ?`,
       )
       .run(
@@ -770,11 +1291,21 @@ export class TalkDb {
         // toccarla". Senza questa distinzione un'icona messa non si leverebbe
         // piu'.
         icona === undefined ? attuale.icona : icona || null,
+        scade === undefined ? attuale.scade : scade,
         id,
       ).changes;
   }
 
+  /** Canali scaduti ancora da rimuovere, inclusi quelli vocali da chiudere. */
+  canaliScaduti(adesso = ora()) {
+    return this.sql
+      .prepare('SELECT * FROM canali WHERE scade IS NOT NULL AND scade <= ? ORDER BY scade, id')
+      .all(adesso)
+      .map((r) => ({ ...r, soloAscolto: !!r.soloAscolto, privato: !!r.privato }));
+  }
+
   eliminaCanale(id) {
+    this.ruoli.eliminaOverrideDi('canale', id);
     return this.sql.prepare('DELETE FROM canali WHERE id = ?').run(id).changes;
   }
 
@@ -786,11 +1317,16 @@ export class TalkDb {
 
   // -- Messaggi --------------------------------------------------------------
 
-  scriviMessaggio({ canale, autore, testo, rispondeA = null }) {
+  scriviMessaggio({
+    canale, autore, testo, rispondeA = null,
+    origine = 'umano', provider = null, modello = null, richiestoDa = null,
+  }) {
     const scrivi = this.sql.transaction(() => {
       const ins = this.sql
-        .prepare('INSERT INTO messaggi (canale, autore, testo, istante, rispondeA) VALUES (?, ?, ?, ?, ?)')
-        .run(canale, autore, testo, Date.now(), rispondeA);
+        .prepare(
+          'INSERT INTO messaggi (canale, autore, testo, istante, rispondeA, origine, provider, modello, richiestoDa) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        )
+        .run(canale, autore, testo, Date.now(), rispondeA, origine, provider, modello, richiestoDa);
       const id = Number(ins.lastInsertRowid);
       this.#indicizza(id, testo);
       return id;
@@ -847,6 +1383,7 @@ export class TalkDb {
   }
 
   #componiMessaggio(riga) {
+    const autore = this.utente(riga.autore);
     return {
       id: riga.id,
       canale: riga.canale,
@@ -856,6 +1393,13 @@ export class TalkDb {
       modificato: riga.modificato,
       rispondeA: riga.rispondeA,
       eliminato: !!riga.eliminato,
+      origine: riga.origine ?? 'umano',
+      provider: riga.provider ?? null,
+      modello: riga.modello ?? null,
+      richiestoDa: riga.richiestoDa ?? null,
+      autoreTipo: autore?.tipo ?? 'umano',
+      autoreNome: autore?.nome ?? null,
+      autoreAvatar: autore?.avatar ?? null,
       allegati: riga.eliminato ? [] : this.allegatiDi(riga.id),
       reazioni: this.reazioniDi(riga.id),
     };
@@ -996,6 +1540,49 @@ export class TalkDb {
       .run(canaleId, utenteId, fino);
   }
 
+  /**
+   * Fin dove il messaggio e' arrivato all'apparecchio di questa persona.
+   *
+   * "Arrivato" e non "letto": lo scrive il server quando riesce a consegnare
+   * l'evento, o quando quella persona rilegge il canale. Non chiede niente al
+   * client — un destinatario che non conferma sarebbe un destinatario che
+   * decide da solo se risultare raggiungibile.
+   */
+  segnaConsegnato(canaleId, utenteId, fino) {
+    if (!fino) return;
+    this.sql
+      .prepare(
+        `INSERT INTO letture (canale, utente, ultimoConsegnato) VALUES (?, ?, ?)
+         ON CONFLICT(canale, utente) DO UPDATE SET ultimoConsegnato = MAX(ultimoConsegnato, excluded.ultimoConsegnato)`,
+      )
+      .run(canaleId, utenteId, fino);
+  }
+
+  /**
+   * Le due spunte, dal punto di vista di chi ha scritto.
+   *
+   * Sono i valori piu' *bassi* fra gli altri iscritti al canale, non i piu'
+   * alti: in una conversazione a due la differenza non si vede, ma la regola
+   * giusta e' quella — "consegnato" vuol dire a tutti, e con il massimo
+   * basterebbe il piu' veloce a far comparire la spunta anche per chi non ha
+   * ricevuto niente.
+   *
+   * Chi ha scritto non conta: le proprie spunte le mette gia' l'invio.
+   */
+  ricevuteDi(canaleId, autore) {
+    const riga = this.sql
+      .prepare(
+        `SELECT MIN(COALESCE(l.ultimoConsegnato, 0)) AS consegnato,
+                MIN(COALESCE(l.ultimoMessaggio, 0))  AS letto
+           FROM iscritti i
+           LEFT JOIN letture l ON l.canale = i.canale AND l.utente = i.utente
+          WHERE i.canale = ? AND i.utente <> ?`,
+      )
+      .get(canaleId, autore);
+
+    return { consegnato: riga?.consegnato ?? 0, letto: riga?.letto ?? 0 };
+  }
+
   /** Quanti messaggi non letti per canale, per una persona sola. */
   nonLetti(utenteId, spazioId) {
     return this.sql
@@ -1049,22 +1636,20 @@ export class TalkDb {
           .all(termine, spazio, limite);
 
     const messaggi = righe.map((r) => this.#componiMessaggio(this.messaggio(r.id)));
-    if (ruolo === 'admin' || utente === null) return messaggi;
+    if (utente === null) return messaggi;
 
-    // I canali privati in cui non si e' stati invitati non esistono, e non
-    // esistono neanche in una ricerca: senza questo filtro basterebbe cercare
-    // una parola per leggere cio' che si dicono gli altri.
-    const nascosti = new Set(
-      this.sql
-        .prepare(
-          `SELECT c.id FROM canali c
-            WHERE c.spazio = ? AND c.privato = 1
-              AND NOT EXISTS (SELECT 1 FROM iscritti i WHERE i.canale = c.id AND i.utente = ?)`,
-        )
-        .all(spazio, utente)
-        .map((r) => r.id),
-    );
-    return messaggi.filter((m) => !nascosti.has(m.canale));
+    // Un canale che non si puo' vedere non si puo' nemmeno trovare cercando
+    // una parola: senza questo filtro il campo di ricerca sarebbe la porta di
+    // servizio di ogni permesso negato.
+    const chi = typeof utente === 'object' ? utente : { id: utente, ruolo: ruolo ?? 'membro' };
+    const visibili = new Set(this.canaliVisibili(spazio, chi, ruolo).map((c) => c.id));
+    return messaggi.filter((m) => visibili.has(m.canale));
+
+  }
+
+  /** L'elenco completo dei permessi che questa versione del server conosce. */
+  get catalogoPermessi() {
+    return PERMESSI;
   }
 }
 

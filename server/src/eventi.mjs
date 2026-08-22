@@ -26,16 +26,45 @@ export function creaEventi() {
   // browser sul telefono, e un evento deve arrivare a entrambi.
   const ascoltatori = new Map();
 
+  // Chi vuole sapere quando qualcuno compare o sparisce. Ci sta la presenza, e
+  // per ora nessun altro; e' un elenco invece di una funzione sola perche' un
+  // secondo interessato non deve costringere a riscrivere il primo.
+  const spettatori = new Set();
+
   function iscrivi(utenteId, manda) {
     if (!ascoltatori.has(utenteId)) ascoltatori.set(utenteId, new Set());
-    ascoltatori.get(utenteId).add(manda);
+    const suoi = ascoltatori.get(utenteId);
+    const primo = suoi.size === 0;
+    suoi.add(manda);
+    // Solo il primo flusso e' un arrivo: aprire l'app anche sul telefono non
+    // vuol dire tornare online, perche' online lo si era gia'.
+    if (primo) avvisaSpettatori(utenteId, true);
 
     return () => {
-      const suoi = ascoltatori.get(utenteId);
-      if (!suoi) return;
-      suoi.delete(manda);
-      if (suoi.size === 0) ascoltatori.delete(utenteId);
+      const ancora = ascoltatori.get(utenteId);
+      if (!ancora) return;
+      ancora.delete(manda);
+      if (ancora.size === 0) {
+        ascoltatori.delete(utenteId);
+        avvisaSpettatori(utenteId, false);
+      }
     };
+  }
+
+  function avvisaSpettatori(utenteId, collegato) {
+    for (const spettatore of spettatori) {
+      try {
+        spettatore(utenteId, collegato);
+      } catch {
+        // Chi guarda i cambi di presenza non deve poter rompere una
+        // disiscrizione: un flusso che si chiude va tolto comunque.
+      }
+    }
+  }
+
+  /** Mandare a tutti quelli che stanno ascoltando, chiunque siano. */
+  function aTutti(evento) {
+    aUtenti([...ascoltatori.keys()], evento);
   }
 
   function aUtenti(utenti, evento) {
@@ -58,6 +87,14 @@ export function creaEventi() {
   return {
     iscrivi,
     aUtenti,
+    aTutti,
+    /** Se questa persona ha almeno un flusso aperto: e' la definizione di "c'e'". */
+    collegato: (utenteId) => ascoltatori.has(utenteId),
+    /** Da avvisare quando qualcuno apre il primo flusso o chiude l'ultimo. */
+    quandoCambiaPresenza(spettatore) {
+      spettatori.add(spettatore);
+      return () => spettatori.delete(spettatore);
+    },
     /** Quante persone stanno ascoltando adesso. Serve al /salute. */
     get quanti() {
       return ascoltatori.size;
@@ -74,7 +111,27 @@ export function creaEventi() {
  * certi proxy a cento secondi.
  */
 export function apriFlusso(richiesta, risposta) {
+  // Cio' che Fastify aveva gia' preparato per questa risposta, prima di tutto.
+  //
+  // Scrivendo le intestazioni con `raw.writeHead` si scavalca la pipeline di
+  // Fastify, e con essa i plugin che le aggiungono — CORS in testa. Il
+  // risultato era un flusso senza `access-control-allow-origin`: il browser lo
+  // bloccava e l'applicazione mostrava "Failed to fetch, riprovo" all'infinito,
+  // con tutto il resto funzionante perche' le altre rotte le intestazioni le
+  // ricevono normalmente.
+  //
+  // Non si e' visto per un pezzo perche' l'interfaccia viveva su file://, che
+  // non ha un'origine da confrontare. Appena la pagina ne ha avuta una vera —
+  // e lo stesso sarebbe successo aprendo l'app web da un dominio diverso da
+  // quello dell'API — il divieto e' diventato visibile.
+  //
+  // Si copia invece di riscrivere la regola: quale origine sia consentita lo
+  // decide gia' la registrazione di @fastify/cors in server.mjs, e averlo
+  // scritto in due posti vorrebbe dire due politiche che prima o poi divergono.
+  const preparate = typeof risposta.getHeaders === 'function' ? risposta.getHeaders() : {};
+
   risposta.raw.writeHead(200, {
+    ...preparate,
     'content-type': 'text/event-stream',
     'cache-control': 'no-cache, no-transform',
     connection: 'keep-alive',
