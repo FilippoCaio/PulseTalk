@@ -1,10 +1,12 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { Canale, Spazio } from '@shared/tipi'
+import { puo } from '@shared/permessi'
 import { coloreDi, inizialiDi } from '../lib/avatar'
 import { Avviso, Bottone, Campo, classiInput } from '../ui'
 import {
   Altoparlante,
   Cancelletto,
+  Chevron,
   Cestino,
   Chiudi,
   Cuffie,
@@ -41,7 +43,10 @@ export default function ColonnaCanali({
   gestisciIscritti,
   profili,
   microfoniSpenti,
-  parlanti
+  parlanti,
+  menu,
+  menuAperto = false,
+  alternaMenu
 }: {
   spazio: Spazio
   apertoId: number | null
@@ -55,10 +60,14 @@ export default function ColonnaCanali({
     tipo: 'testo' | 'voce'
     soloAscolto: boolean
     privato: boolean
+    durataMinuti: number | null
   }) => Promise<void>
   elimina: (canale: Canale) => Promise<void>
   /** Rinomina, cambia icona e argomento. */
-  modificaCanale: (canale: Canale, modifiche: { nome: string; icona: string; argomento: string }) => Promise<void>
+  modificaCanale: (
+    canale: Canale,
+    modifiche: { nome: string; icona: string; argomento: string; durataMinuti?: number | null }
+  ) => Promise<void>
   apriRicerca: () => void
   /** Apre l'elenco di chi sta dentro a un canale privato. */
   gestisciIscritti: (canale: Canale) => void
@@ -87,11 +96,26 @@ export default function ColonnaCanali({
    * vorrebbe saperlo.
    */
   parlanti?: Set<string>
+  /**
+   * Il menu del server, gia' costruito da chi sta sopra.
+   *
+   * Arriva come nodo invece che come elenco di richiami: le sue voci
+   * dipendono da cose che questa colonna non ha — le impostazioni locali, gli
+   * eventi, il pannello di gestione — e passarle tutte una per una avrebbe
+   * fatto crescere questa firma di dieci righe per un pulsante.
+   */
+  menu?: React.ReactNode
+  menuAperto?: boolean
+  alternaMenu?: () => void
 }): React.JSX.Element {
   const [creando, setCreando] = useState<'testo' | 'voce' | null>(null)
   const [errore, setErrore] = useState<string | null>(null)
 
+  // I pulsanti seguono i permessi risolti dal server, non il ruolo grosso:
+  // chi puo' creare canali di testo ma non vocali vede un pulsante solo.
   const amministra = spazio.ruoloMio === 'admin'
+  const puoCreareTesto = puo(spazio.permessiMiei, 'createTextChannels')
+  const puoCreareVoce = puo(spazio.permessiMiei, 'createVoiceChannels')
   const perCategoria = (id: number | null): Canale[] =>
     spazio.canali.filter((c) => c.categoria === id).sort((a, b) => a.posizione - b.posizione)
 
@@ -109,8 +133,28 @@ export default function ColonnaCanali({
     // l'altezza data dal contenuto si fermava dov'era finito l'ultimo canale, e
     // sotto restava un rettangolo vuoto con il bordo interrotto a meta'.
     <div className="flex min-h-0 flex-1 flex-col">
-      <header className="flex items-center justify-between gap-2 border-b border-bordo px-4 py-3">
-        <h2 className="min-w-0 truncate font-medium">{spazio.nome}</h2>
+      {/* `relative` e' l'ancora del menu del server, che scende da qui. */}
+      <header className="relative flex items-center justify-between gap-2 border-b border-bordo px-4 py-3">
+        {/* Il nome del server e' anche il pulsante del suo menu: e' il posto in
+            cui la mano va da sola, ed e' come funziona ovunque. */}
+        <button
+          onClick={alternaMenu}
+          disabled={!alternaMenu}
+          title={alternaMenu ? `Impostazioni di ${spazio.nome}` : spazio.nome}
+          aria-haspopup={alternaMenu ? 'menu' : undefined}
+          aria-expanded={alternaMenu ? menuAperto : undefined}
+          data-menu-spazio-trigger
+          className="flex min-w-0 flex-1 items-center gap-1.5 text-left disabled:cursor-default"
+        >
+          <h2 className="min-w-0 truncate font-medium">{spazio.nome}</h2>
+          {alternaMenu && (
+            <Chevron
+              className={`h-3.5 w-3.5 shrink-0 text-testo-3 transition-transform ${
+                menuAperto ? 'rotate-180' : ''
+              }`}
+            />
+          )}
+        </button>
         <button
           onClick={apriRicerca}
           title="Cerca nei messaggi"
@@ -119,6 +163,8 @@ export default function ColonnaCanali({
         >
           <Lente className="h-4 w-4" />
         </button>
+
+        {menuAperto && menu}
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-2">
@@ -160,8 +206,9 @@ export default function ColonnaCanali({
           )
         )}
 
-        {amministra && (
+        {(puoCreareTesto || puoCreareVoce) && (
           <div className="mt-2 flex gap-1 px-1">
+            {puoCreareTesto && (
             <button
               onClick={() => setCreando('testo')}
               title="Nuovo canale di testo"
@@ -171,6 +218,8 @@ export default function ColonnaCanali({
               <Piu className="h-3.5 w-3.5" />
               <Cancelletto className="h-4 w-4" />
             </button>
+            )}
+            {puoCreareVoce && (
             <button
               onClick={() => setCreando('voce')}
               title="Nuovo canale vocale"
@@ -180,6 +229,7 @@ export default function ColonnaCanali({
               <Piu className="h-3.5 w-3.5" />
               <Altoparlante className="h-4 w-4" />
             </button>
+            )}
           </div>
         )}
       </div>
@@ -224,7 +274,7 @@ function RigaCanale({
   esci: () => void
   elimina: () => Promise<void>
   gestisciIscritti: () => void
-  modifica: (m: { nome: string; icona: string; argomento: string }) => Promise<void>
+  modifica: (m: { nome: string; icona: string; argomento: string; durataMinuti?: number | null }) => Promise<void>
   profili?: Map<number, { nome: string; avatar: string | null }>
   microfoniSpenti?: Set<string>
   /** Valorizzato solo per il canale in cui si sta parlando adesso. */
@@ -254,6 +304,9 @@ function RigaCanale({
             )}
           </span>
           <span className="min-w-0 flex-1 truncate">{canale.nome}</span>
+          {typeof canale.restanoMs === 'number' && Number.isFinite(canale.restanoMs) && (
+            <ScadenzaCanale restanoMs={canale.restanoMs} />
+          )}
           {canale.privato && (
             <span title="Privato: lo vedono solo gli invitati" className="shrink-0 text-attenzione">
               <Lucchetto className="h-3 w-3" />
@@ -425,19 +478,23 @@ function ModuloCanale({
     tipo: 'testo' | 'voce'
     soloAscolto: boolean
     privato: boolean
+    durataMinuti: number | null
   }) => Promise<void>
   chiudi: () => void
 }): React.JSX.Element {
   const [nome, setNome] = useState('')
   const [palco, setPalco] = useState(false)
   const [privato, setPrivato] = useState(false)
+  const [durata, setDurata] = useState('0')
+  const [personalizzata, setPersonalizzata] = useState('60')
   const [inCorso, setInCorso] = useState(false)
 
   const conferma = async (): Promise<void> => {
     if (!nome.trim()) return
     setInCorso(true)
     try {
-      await crea({ nome: nome.trim(), tipo, soloAscolto: palco, privato })
+      const durataMinuti = durata === 'custom' ? Number(personalizzata) : Number(durata)
+      await crea({ nome: nome.trim(), tipo, soloAscolto: palco, privato, durataMinuti })
     } finally {
       setInCorso(false)
     }
@@ -466,6 +523,13 @@ function ModuloCanale({
             autoFocus
           />
         </Campo>
+
+        <DurataCanale
+          valore={durata}
+          personalizzata={personalizzata}
+          cambia={setDurata}
+          cambiaPersonalizzata={setPersonalizzata}
+        />
 
         {tipo === 'voce' && (
           <label className="flex cursor-pointer items-start gap-2.5 text-sm">
@@ -526,12 +590,14 @@ function ModuloModifica({
   annulla
 }: {
   canale: Canale
-  salva: (m: { nome: string; icona: string; argomento: string }) => Promise<void>
+  salva: (m: { nome: string; icona: string; argomento: string; durataMinuti?: number | null }) => Promise<void>
   annulla: () => void
 }): React.JSX.Element {
   const [nome, setNome] = useState(canale.nome)
   const [icona, setIcona] = useState(canale.icona ?? '')
   const [argomento, setArgomento] = useState(canale.argomento)
+  const [durata, setDurata] = useState('invariata')
+  const [personalizzata, setPersonalizzata] = useState('60')
   const [errore, setErrore] = useState<string | null>(null)
   const [salvando, setSalvando] = useState(false)
 
@@ -544,7 +610,9 @@ function ModuloModifica({
     setSalvando(true)
     setErrore(null)
     try {
-      await salva({ nome: pulito, icona: icona.trim(), argomento })
+      const durataMinuti =
+        durata === 'invariata' ? undefined : durata === 'custom' ? Number(personalizzata) : Number(durata)
+      await salva({ nome: pulito, icona: icona.trim(), argomento, durataMinuti })
     } catch (e) {
       setErrore((e as Error).message)
       setSalvando(false)
@@ -591,6 +659,14 @@ function ModuloModifica({
         className="w-full rounded-md border border-bordo bg-fondo px-2 py-1 text-xs"
       />
 
+      <DurataCanale
+        valore={durata}
+        personalizzata={personalizzata}
+        cambia={setDurata}
+        cambiaPersonalizzata={setPersonalizzata}
+        consentiInvariata
+      />
+
       {errore && <p className="text-xs text-male">{errore}</p>}
 
       <div className="flex gap-1.5">
@@ -606,5 +682,69 @@ function ModuloModifica({
         </button>
       </div>
     </div>
+  )
+}
+
+function DurataCanale({
+  valore,
+  personalizzata,
+  cambia,
+  cambiaPersonalizzata,
+  consentiInvariata = false
+}: {
+  valore: string
+  personalizzata: string
+  cambia: (valore: string) => void
+  cambiaPersonalizzata: (valore: string) => void
+  consentiInvariata?: boolean
+}): React.JSX.Element {
+  return (
+    <Campo etichetta="Durata">
+      <div className="flex gap-2">
+        <select className={classiInput} value={valore} onChange={(e) => cambia(e.target.value)}>
+          {consentiInvariata && <option value="invariata">Non cambiare</option>}
+          <option value="0">Permanente</option>
+          <option value="30">30 minuti</option>
+          <option value="60">1 ora</option>
+          <option value="180">3 ore</option>
+          <option value="360">6 ore</option>
+          <option value="720">12 ore</option>
+          <option value="1440">24 ore</option>
+          <option value="custom">Personalizzata</option>
+        </select>
+        {valore === 'custom' && (
+          <input
+            className={`${classiInput} w-28`}
+            type="number"
+            min={1}
+            max={2880}
+            value={personalizzata}
+            onChange={(e) => cambiaPersonalizzata(e.target.value)}
+            aria-label="Durata personalizzata in minuti"
+          />
+        )}
+      </div>
+      {valore === 'custom' && <span className="mt-1 block text-xs text-testo-3">Da 1 minuto a 48 ore.</span>}
+    </Campo>
+  )
+}
+
+function ScadenzaCanale({ restanoMs }: { restanoMs: number }): React.JSX.Element {
+  const [restano, setRestano] = useState(restanoMs)
+
+  useEffect(() => {
+    const partenza = performance.now()
+    const aggiorna = (): void => setRestano(Math.max(0, restanoMs - (performance.now() - partenza)))
+    aggiorna()
+    const timer = window.setInterval(aggiorna, 30_000)
+    return () => window.clearInterval(timer)
+  }, [restanoMs])
+
+  const minuti = Math.ceil(restano / 60_000)
+  const testo = minuti < 60 ? `${minuti}m` : minuti < 1440 ? `${Math.ceil(minuti / 60)}h` : `${Math.ceil(minuti / 1440)}g`
+  return (
+    <span className="numeri shrink-0 text-[10px] text-attenzione" title={`Scade tra ${testo}`}>
+      {testo}
+    </span>
   )
 }

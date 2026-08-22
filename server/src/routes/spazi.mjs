@@ -2,8 +2,36 @@
 
 import { richiedeRuolo } from '../auth.mjs';
 import { apriFlusso } from '../eventi.mjs';
-import { accessoAlCanale, accessoAlloSpazio, puoInvitare, puoTrasmettere } from '../permessi.mjs';
+import { PERMESSI_DI_CANALE } from '../permessi/catalogo.mjs';
+import {
+  accessoAlCanale,
+  accessoAlloSpazio,
+  puoEntrare,
+  puoInvitare,
+  puoTrasmettere,
+  richiedePermesso,
+} from '../permessi.mjs';
 import { creaGettone } from '../sfu.mjs';
+
+/** Quale permesso serve per creare/modificare/eliminare un canale di questo tipo. */
+const PERMESSO_CANALE = {
+  crea: { testo: 'createTextChannels', voce: 'createVoiceChannels' },
+  modifica: { testo: 'editTextChannels', voce: 'editVoiceChannels' },
+  elimina: { testo: 'deleteTextChannels', voce: 'deleteVoiceChannels' },
+};
+
+const DURATA_MASSIMA_MINUTI = 48 * 60;
+
+/** Converte una durata relativa in un istante Unix, validandola in un posto solo. */
+function scadenzaDaDurata(durataMinuti) {
+  if (durataMinuti === undefined) return { scade: undefined };
+  if (durataMinuti === null || durataMinuti === 0) return { scade: null };
+  const minuti = Number(durataMinuti);
+  if (!Number.isFinite(minuti) || minuti <= 0 || minuti > DURATA_MASSIMA_MINUTI) {
+    return { errore: 'la durata deve essere maggiore di zero e non superare 48 ore' };
+  }
+  return { scade: Math.floor(Date.now() / 1000 + minuti * 60) };
+}
 
 export function rotteSpazi(app, { db, config, presenze, eventi }) {
   /** A chi va detto che qualcosa e' cambiato qui dentro. */
@@ -20,6 +48,12 @@ export function rotteSpazi(app, { db, config, presenze, eventi }) {
    * vocali. Sono cinque interrogazioni al database e una alla SFU: farne
    * cinque chiamate HTTP separate significherebbe cinque giri di rete su una
    * connessione che magari passa da un telefono.
+   *
+   * Da qui escono anche i permessi gia' risolti — quelli sullo spazio e quelli
+   * su ogni canale. Non e' un'ottimizzazione: e' l'unico modo perche' la
+   * colonna a sinistra mostri gli stessi pulsanti che il server accettera'.
+   * Il calcolo resta comunque di qua, e ogni rotta lo rifa' per conto suo:
+   * quello che va al client serve a disegnare, non a decidere.
    */
   app.get(
     '/api/spazi',
@@ -30,7 +64,9 @@ export function rotteSpazi(app, { db, config, presenze, eventi }) {
 
       return {
         spazi: miei.map((spazio) => {
-          const canali = db.canaliVisibili(spazio.id, richiesta.utente.id, spazio.ruoloMio);
+          const permessi = db.permessiIn(richiesta.utente, { spazio });
+          const ruoloMio = permessi.has('manageServer') ? 'admin' : 'membro';
+          const canali = db.canaliVisibili(spazio.id, richiesta.utente, ruoloMio);
           const nonLetti = new Map(db.nonLetti(richiesta.utente.id, spazio.id).map((r) => [r.canale, r.quanti]));
 
           return {
@@ -38,21 +74,37 @@ export function rotteSpazi(app, { db, config, presenze, eventi }) {
             chiave: spazio.chiave,
             nome: spazio.nome,
             icona: spazio.icona,
-            ruoloMio: spazio.ruoloMio,
+            descrizione: spazio.descrizione ?? '',
+            regole: spazio.regole ?? '',
+            proprietario: spazio.proprietario ?? null,
+            impostazioni: db.impostazioniSpazio(spazio),
+            ruoloMio,
+            permessiMiei: [...permessi],
             categorie: db.categorieDi(spazio.id),
-            canali: canali.map((canale) => ({
-              id: canale.id,
-              chiave: canale.chiave,
-              nome: canale.nome,
-              tipo: canale.tipo,
-              argomento: canale.argomento,
-              categoria: canale.categoria,
-              posizione: canale.posizione,
-              soloAscolto: canale.soloAscolto,
-              privato: canale.privato,
-              nonLetti: canale.tipo === 'testo' ? (nonLetti.get(canale.id) ?? 0) : 0,
-              presenti: canale.tipo === 'voce' ? (dentro.get(db.chiaveSfu(canale)) ?? []) : [],
-            })),
+            canali: canali.map((canale) => {
+              const suoi = db.permessiIn(richiesta.utente, { spazio, canale });
+              return {
+                id: canale.id,
+                chiave: canale.chiave,
+                nome: canale.nome,
+                icona: canale.icona ?? null,
+                tipo: canale.tipo,
+                argomento: canale.argomento,
+                categoria: canale.categoria,
+                posizione: canale.posizione,
+                soloAscolto: canale.soloAscolto,
+                privato: canale.privato,
+                creato: canale.creato,
+                creatoDa: canale.creatoDa ?? null,
+                scade: canale.scade ?? null,
+                restanoMs: canale.scade === null ? null : Math.max(0, canale.scade * 1000 - Date.now()),
+                // Solo quelli che cambiano da canale a canale: mandare tutti e
+                // ventotto per ogni riga sarebbe rumore che non dice niente.
+                permessiMiei: PERMESSI_DI_CANALE.filter((p) => suoi.has(p)),
+                nonLetti: canale.tipo === 'testo' ? (nonLetti.get(canale.id) ?? 0) : 0,
+                presenti: canale.tipo === 'voce' ? (dentro.get(db.chiaveSfu(canale)) ?? []) : [],
+              };
+            }),
           };
         }),
       };
@@ -84,13 +136,35 @@ export function rotteSpazi(app, { db, config, presenze, eventi }) {
     },
   );
 
+  /**
+   * Che ora e' per il server.
+   *
+   * Serve alle sessioni condivise — guardare un video insieme, ascoltare
+   * insieme — che si sincronizzano su un orologio solo. Il client la chiama
+   * qualche volta, misura il giro, e ne ricava di quanto e' avanti o indietro
+   * rispetto a qui. Senza, ogni computer partirebbe dal proprio orologio, che
+   * fra due macchine puo' differire di secondi.
+   */
+  app.get('/api/tempo', { onRequest: richiedeRuolo('ospite') }, async () => ({
+    adesso: Date.now(),
+  }));
+
   // -- Spazi -----------------------------------------------------------------
 
   app.post(
     '/api/spazi',
     { onRequest: richiedeRuolo('admin') },
     async (richiesta, risposta) => {
-      const { nome, icona = null } = richiesta.body ?? {};
+      const {
+        nome,
+        icona = null,
+        descrizione = '',
+        regole = '',
+        impostazioni = {},
+        categorie = [],
+        canali = [],
+        invitati = [],
+      } = richiesta.body ?? {};
       if (typeof nome !== 'string' || !nome.trim()) {
         return risposta.code(400).send({ errore: 'serve un nome' });
       }
@@ -98,16 +172,101 @@ export function rotteSpazi(app, { db, config, presenze, eventi }) {
       const esito = db.creaSpazio({
         nome: nome.trim().slice(0, 60),
         icona: typeof icona === 'string' ? icona.slice(0, 8) : null,
+        descrizione: typeof descrizione === 'string' ? descrizione : '',
+        regole: typeof regole === 'string' ? regole : '',
+        impostazioni: typeof impostazioni === 'object' && impostazioni ? impostazioni : {},
         creatoDa: richiesta.utente.id,
+        // Con una struttura gia' descritta non servono i due canali di serie:
+        // nascerebbero accanto a quelli chiesti e andrebbero cancellati subito.
+        canaliIniziali: !Array.isArray(canali) || canali.length === 0,
       });
       if (esito.errore) return risposta.code(409).send({ errore: esito.errore });
 
+      const spazio = esito.spazio;
+
+      // La struttura chiesta al momento della creazione: categorie prima,
+      // cosi' i canali possono gia' finirci dentro.
+      const perNome = new Map();
+      for (const c of Array.isArray(categorie) ? categorie.slice(0, 20) : []) {
+        const nomeCat = String(c?.nome ?? c ?? '').trim();
+        if (!nomeCat) continue;
+        perNome.set(nomeCat, db.creaCategoria(spazio.id, nomeCat.slice(0, 40)).id);
+      }
+
+      for (const c of Array.isArray(canali) ? canali.slice(0, 40) : []) {
+        if (typeof c?.nome !== 'string' || !c.nome.trim()) continue;
+        db.creaCanale(spazio.id, {
+          nome: c.nome.trim().slice(0, 40),
+          tipo: c.tipo === 'voce' ? 'voce' : 'testo',
+          categoria: c.categoria ? (perNome.get(String(c.categoria)) ?? null) : null,
+          argomento: String(c.argomento ?? '').slice(0, 200),
+          soloAscolto: !!c.soloAscolto,
+          creatoDa: richiesta.utente.id,
+        });
+      }
+
       // Su un'istanza di casa uno spazio nuovo e' per tutti: chi c'e' gia' non
       // deve aspettare un invito per una cosa che e' stata creata in casa sua.
-      for (const u of db.elencoProfili()) db.aggiungiMembro(esito.spazio.id, u.id);
+      // A porte chiuse, invece, ci entra solo chi viene chiamato per nome.
+      if (db.impostazioniSpazio(spazio).apertoATutti) {
+        for (const u of db.elencoProfili()) db.aggiungiMembro(spazio.id, u.id);
+      } else {
+        for (const chi of Array.isArray(invitati) ? invitati.slice(0, 100) : []) {
+          if (db.utente(Number(chi))) db.aggiungiMembro(spazio.id, Number(chi));
+        }
+      }
+
+      avvisa(spazio.id, { tipo: 'spazi' });
+      return risposta.code(201).send({ spazio: db.spazio(spazio.id) });
+    },
+  );
+
+  /**
+   * Nome, icona, descrizione, regole e preferenze.
+   *
+   * Una rotta sola e non cinque: sono i campi di un pannello unico, si salvano
+   * insieme, e cinque rotte vorrebbero dire cinque modi diversi di sbagliare
+   * il controllo dei permessi.
+   */
+  app.patch(
+    '/api/spazi/:spazio',
+    { onRequest: richiedeRuolo('membro') },
+    async (richiesta, risposta) => {
+      const esito = richiedePermesso(
+        db,
+        richiesta.utente,
+        { spazio: richiesta.params.spazio },
+        'manageServerSettings',
+      );
+      if (esito.errore) return risposta.code(esito.stato).send({ errore: esito.errore });
+
+      const { nome, icona, descrizione, regole, impostazioni, proprietario } = richiesta.body ?? {};
+
+      // Passare la casa a un altro e' cosa del proprietario, e di nessun altro:
+      // nemmeno di chi ha manageServer. Altrimenti il permesso di amministrare
+      // sarebbe anche il permesso di prendersi lo spazio.
+      let nuovoProprietario;
+      if (proprietario !== undefined) {
+        const chi = Number(proprietario);
+        const trasferito = db.trasferisciProprieta(esito.spazio.id, richiesta.utente.id, chi);
+        if (trasferito.errore) {
+          return risposta.code(trasferito.stato).send({ errore: trasferito.errore });
+        }
+        nuovoProprietario = trasferito.spazio.proprietario;
+      }
+
+      const aggiornato = db.aggiornaSpazio(esito.spazio.id, {
+        nome: typeof nome === 'string' && nome.trim() ? nome.trim() : undefined,
+        icona: icona === undefined ? undefined : typeof icona === 'string' ? icona.slice(0, 8) : null,
+        descrizione: typeof descrizione === 'string' ? descrizione : undefined,
+        regole: typeof regole === 'string' ? regole : undefined,
+        proprietario: nuovoProprietario,
+        impostazioni:
+          impostazioni && typeof impostazioni === 'object' ? ripuliscImpostazioni(impostazioni) : undefined,
+      });
 
       avvisa(esito.spazio.id, { tipo: 'spazi' });
-      return risposta.code(201).send({ spazio: esito.spazio });
+      return { spazio: aggiornato };
     },
   );
 
@@ -135,13 +294,39 @@ export function rotteSpazi(app, { db, config, presenze, eventi }) {
     },
   );
 
+  /** Tutto letto, in tutti i canali. E' la voce "segna come gia' letto". */
+  app.post(
+    '/api/spazi/:spazio/letto',
+    { onRequest: richiedeRuolo('ospite') },
+    async (richiesta, risposta) => {
+      const esito = accessoAlloSpazio(db, richiesta.utente, richiesta.params.spazio);
+      if (esito.errore) return risposta.code(esito.stato).send({ errore: esito.errore });
+
+      for (const canale of db.canaliVisibili(esito.spazio.id, richiesta.utente, esito.ruolo)) {
+        if (canale.tipo !== 'testo') continue;
+        db.segnaLetto(canale.id, richiesta.utente.id, db.ultimoMessaggioDi(canale.id));
+      }
+
+      // Solo a chi ha premuto: i non letti degli altri non sono cambiati.
+      eventi.aUtenti([richiesta.utente.id], { tipo: 'spazi' });
+      return { ok: true };
+    },
+  );
+
+  // -- Membri ----------------------------------------------------------------
+
   app.get(
     '/api/spazi/:spazio/membri',
     { onRequest: richiedeRuolo('ospite') },
     async (richiesta, risposta) => {
       const esito = accessoAlloSpazio(db, richiesta.utente, richiesta.params.spazio);
       if (esito.errore) return risposta.code(esito.stato).send({ errore: esito.errore });
-      return { membri: db.membriDi(esito.spazio.id) };
+      return {
+        membri: db.membriConRuoli(esito.spazio.id).map((membro) => ({
+          ...membro,
+          amico: db.amicizia(richiesta.utente.id, membro.id)?.stato === 'amici',
+        })),
+      };
     },
   );
 
@@ -149,16 +334,60 @@ export function rotteSpazi(app, { db, config, presenze, eventi }) {
     '/api/spazi/:spazio/membri',
     { onRequest: richiedeRuolo('membro') },
     async (richiesta, risposta) => {
-      const esito = accessoAlloSpazio(db, richiesta.utente, richiesta.params.spazio, 'admin');
+      const esito = richiedePermesso(
+        db,
+        richiesta.utente,
+        { spazio: richiesta.params.spazio },
+        'manageMembers',
+      );
       if (esito.errore) return risposta.code(esito.stato).send({ errore: esito.errore });
 
       const chi = Number(richiesta.body?.utente);
       if (!db.utente(chi)) return risposta.code(404).send({ errore: 'utente inesistente' });
+      if (db.ruoli.eBandito(esito.spazio.id, chi)) {
+        return risposta.code(403).send({ errore: 'questa persona e\' stata bandita da qui' });
+      }
 
-      db.aggiungiMembro(esito.spazio.id, chi, richiesta.body?.ruolo === 'admin' ? 'admin' : 'membro');
+      // Promuovere ad admin e' cosa dei ruoli: chiederlo qui vorrebbe dire
+      // aggirare il controllo che impedisce di regalare piu' di quanto si ha.
+      db.aggiungiMembro(esito.spazio.id, chi, 'membro');
       avvisa(esito.spazio.id, { tipo: 'spazi' });
       eventi.aUtenti([chi], { tipo: 'spazi' });
       return { aggiunto: chi };
+    },
+  );
+
+  /**
+   * Uscire da uno spazio.
+   *
+   * Sta prima della rotta con l'id perche' Fastify sceglie il percorso piu'
+   * specifico, ma tenerle vicine e in quest'ordine e' cio' che rende evidente
+   * che sono due cose diverse: andarsene e cacciare qualcuno.
+   */
+  app.delete(
+    '/api/spazi/:spazio/membri/io',
+    { onRequest: richiedeRuolo('ospite') },
+    async (richiesta, risposta) => {
+      const esito = accessoAlloSpazio(db, richiesta.utente, richiesta.params.spazio);
+      if (esito.errore) return risposta.code(esito.stato).send({ errore: esito.errore });
+
+      if (esito.spazio.proprietario === richiesta.utente.id) {
+        return risposta.code(400).send({
+          errore:
+            'sei il proprietario di questo spazio: passa la proprieta\' a qualcun altro, oppure eliminalo',
+        });
+      }
+
+      const destinatari = membriDelloSpazio(esito.spazio.id);
+      db.togliMembro(esito.spazio.id, richiesta.utente.id);
+
+      // Fuori dai canali privati e dalle chiamate: restare dentro a un canale
+      // vocale di uno spazio che si e' appena lasciato e' esattamente il tipo
+      // di stato incoerente che nessuno va a cercare finche' non capita.
+      await sgomberaDaiVocali(db, presenze, esito.spazio.id, richiesta.utente.id);
+
+      eventi.aUtenti(destinatari, { tipo: 'spazi' });
+      return { uscito: richiesta.utente.id };
     },
   );
 
@@ -166,14 +395,73 @@ export function rotteSpazi(app, { db, config, presenze, eventi }) {
     '/api/spazi/:spazio/membri/:utente',
     { onRequest: richiedeRuolo('membro') },
     async (richiesta, risposta) => {
-      const esito = accessoAlloSpazio(db, richiesta.utente, richiesta.params.spazio, 'admin');
+      const esito = richiedePermesso(
+        db,
+        richiesta.utente,
+        { spazio: richiesta.params.spazio },
+        'kickMembers',
+      );
       if (esito.errore) return risposta.code(esito.stato).send({ errore: esito.errore });
 
       const chi = Number(richiesta.params.utente);
+      const problema = nonToccare(db, esito, richiesta.utente, chi);
+      if (problema) return risposta.code(403).send({ errore: problema });
+
       const destinatari = membriDelloSpazio(esito.spazio.id);
       db.togliMembro(esito.spazio.id, chi);
+      await sgomberaDaiVocali(db, presenze, esito.spazio.id, chi);
+
       eventi.aUtenti(destinatari, { tipo: 'spazi' });
       return { tolto: chi };
+    },
+  );
+
+  // -- Bandi -----------------------------------------------------------------
+
+  app.get(
+    '/api/spazi/:spazio/bandi',
+    { onRequest: richiedeRuolo('membro') },
+    async (richiesta, risposta) => {
+      const esito = richiedePermesso(db, richiesta.utente, { spazio: richiesta.params.spazio }, 'banMembers');
+      if (esito.errore) return risposta.code(esito.stato).send({ errore: esito.errore });
+      return { bandi: db.ruoli.bandi(esito.spazio.id) };
+    },
+  );
+
+  app.post(
+    '/api/spazi/:spazio/bandi',
+    { onRequest: richiedeRuolo('membro') },
+    async (richiesta, risposta) => {
+      const esito = richiedePermesso(db, richiesta.utente, { spazio: richiesta.params.spazio }, 'banMembers');
+      if (esito.errore) return risposta.code(esito.stato).send({ errore: esito.errore });
+
+      const chi = Number(richiesta.body?.utente);
+      if (!db.utente(chi)) return risposta.code(404).send({ errore: 'utente inesistente' });
+      const problema = nonToccare(db, esito, richiesta.utente, chi);
+      if (problema) return risposta.code(403).send({ errore: problema });
+
+      const destinatari = membriDelloSpazio(esito.spazio.id);
+      db.ruoli.bandisci(esito.spazio.id, chi, {
+        motivo: richiesta.body?.motivo ?? '',
+        da: richiesta.utente.id,
+      });
+      db.togliMembro(esito.spazio.id, chi);
+      await sgomberaDaiVocali(db, presenze, esito.spazio.id, chi);
+
+      eventi.aUtenti(destinatari, { tipo: 'spazi' });
+      return risposta.code(201).send({ bandito: chi });
+    },
+  );
+
+  app.delete(
+    '/api/spazi/:spazio/bandi/:utente',
+    { onRequest: richiedeRuolo('membro') },
+    async (richiesta, risposta) => {
+      const esito = richiedePermesso(db, richiesta.utente, { spazio: richiesta.params.spazio }, 'banMembers');
+      if (esito.errore) return risposta.code(esito.stato).send({ errore: esito.errore });
+
+      db.ruoli.perdona(esito.spazio.id, Number(richiesta.params.utente));
+      return { perdonato: Number(richiesta.params.utente) };
     },
   );
 
@@ -183,7 +471,12 @@ export function rotteSpazi(app, { db, config, presenze, eventi }) {
     '/api/spazi/:spazio/categorie',
     { onRequest: richiedeRuolo('membro') },
     async (richiesta, risposta) => {
-      const esito = accessoAlloSpazio(db, richiesta.utente, richiesta.params.spazio, 'admin');
+      const esito = richiedePermesso(
+        db,
+        richiesta.utente,
+        { spazio: richiesta.params.spazio },
+        'createCategories',
+      );
       if (esito.errore) return risposta.code(esito.stato).send({ errore: esito.errore });
 
       const nome = richiesta.body?.nome;
@@ -197,11 +490,77 @@ export function rotteSpazi(app, { db, config, presenze, eventi }) {
     },
   );
 
+  app.patch(
+    '/api/spazi/:spazio/categorie/:categoria',
+    { onRequest: richiedeRuolo('membro') },
+    async (richiesta, risposta) => {
+      const esito = richiedePermesso(
+        db,
+        richiesta.utente,
+        { spazio: richiesta.params.spazio },
+        'editCategories',
+      );
+      if (esito.errore) return risposta.code(esito.stato).send({ errore: esito.errore });
+
+      const categoria = db.categoria(Number(richiesta.params.categoria));
+      if (!categoria || categoria.spazio !== esito.spazio.id) {
+        return risposta.code(404).send({ errore: 'categoria inesistente' });
+      }
+
+      const aggiornata = db.aggiornaCategoria(categoria.id, {
+        nome: richiesta.body?.nome,
+        posizione: richiesta.body?.posizione,
+      });
+      avvisa(esito.spazio.id, { tipo: 'spazi' });
+      return { categoria: aggiornata };
+    },
+  );
+
+  /** L'ordine di categorie e canali, tutto insieme. */
+  app.post(
+    '/api/spazi/:spazio/ordine',
+    { onRequest: richiedeRuolo('membro') },
+    async (richiesta, risposta) => {
+      const esito = accessoAlloSpazio(db, richiesta.utente, richiesta.params.spazio);
+      if (esito.errore) return risposta.code(esito.stato).send({ errore: esito.errore });
+
+      const { categorie, canali } = richiesta.body ?? {};
+
+      if (Array.isArray(categorie)) {
+        if (!esito.permessi.has('editCategories')) {
+          return risposta.code(403).send({ errore: 'non puoi riordinare le categorie' });
+        }
+        db.riordina('categorie', esito.spazio.id, categorie);
+      }
+
+      if (Array.isArray(canali)) {
+        // Riordinare i canali e' modificarli: si chiede il permesso per il
+        // tipo di ognuno di quelli toccati, invece di uno solo per tutti.
+        for (const id of canali) {
+          const canale = db.canale(Number(id));
+          if (!canale || canale.spazio !== esito.spazio.id) continue;
+          if (!esito.permessi.has(PERMESSO_CANALE.modifica[canale.tipo])) {
+            return risposta.code(403).send({ errore: `non puoi spostare ${canale.nome}` });
+          }
+        }
+        db.riordina('canali', esito.spazio.id, canali);
+      }
+
+      avvisa(esito.spazio.id, { tipo: 'spazi' });
+      return { ok: true };
+    },
+  );
+
   app.delete(
     '/api/spazi/:spazio/categorie/:categoria',
     { onRequest: richiedeRuolo('membro') },
     async (richiesta, risposta) => {
-      const esito = accessoAlloSpazio(db, richiesta.utente, richiesta.params.spazio, 'admin');
+      const esito = richiedePermesso(
+        db,
+        richiesta.utente,
+        { spazio: richiesta.params.spazio },
+        'deleteCategories',
+      );
       if (esito.errore) return risposta.code(esito.stato).send({ errore: esito.errore });
 
       db.eliminaCategoria(Number(richiesta.params.categoria));
@@ -216,9 +575,6 @@ export function rotteSpazi(app, { db, config, presenze, eventi }) {
     '/api/spazi/:spazio/canali',
     { onRequest: richiedeRuolo('membro') },
     async (richiesta, risposta) => {
-      const esito = accessoAlloSpazio(db, richiesta.utente, richiesta.params.spazio, 'admin');
-      if (esito.errore) return risposta.code(esito.stato).send({ errore: esito.errore });
-
       const {
         nome,
         tipo,
@@ -227,18 +583,33 @@ export function rotteSpazi(app, { db, config, presenze, eventi }) {
         soloAscolto = false,
         privato = false,
         invitati = [],
+        durataMinuti,
       } = richiesta.body ?? {};
+
+      const quale = tipo === 'voce' ? 'voce' : 'testo';
+      const esito = richiedePermesso(
+        db,
+        richiesta.utente,
+        { spazio: richiesta.params.spazio },
+        PERMESSO_CANALE.crea[quale],
+      );
+      if (esito.errore) return risposta.code(esito.stato).send({ errore: esito.errore });
+
       if (typeof nome !== 'string' || !nome.trim()) {
         return risposta.code(400).send({ errore: 'serve un nome' });
       }
+      const durata = scadenzaDaDurata(durataMinuti);
+      if (durata.errore) return risposta.code(400).send({ errore: durata.errore });
 
       const creato = db.creaCanale(esito.spazio.id, {
         nome: nome.trim().slice(0, 40),
-        tipo,
+        tipo: quale,
         categoria: categoria ? Number(categoria) : null,
         argomento: String(argomento).slice(0, 200),
         soloAscolto: !!soloAscolto,
         privato: !!privato,
+        creatoDa: richiesta.utente.id,
+        scade: durata.scade ?? null,
       });
       if (creato.errore) return risposta.code(400).send({ errore: creato.errore });
 
@@ -262,11 +633,28 @@ export function rotteSpazi(app, { db, config, presenze, eventi }) {
     '/api/canali/:canale',
     { onRequest: richiedeRuolo('membro') },
     async (richiesta, risposta) => {
-      const esito = accessoAlCanale(db, richiesta.utente, richiesta.params.canale, 'admin');
+      const esito = accessoAlCanale(db, richiesta.utente, richiesta.params.canale);
       if (esito.errore) return risposta.code(esito.stato).send({ errore: esito.errore });
+      if (esito.diretto) return risposta.code(404).send({ errore: 'canale inesistente' });
 
-      const { nome, argomento, categoria, posizione, soloAscolto, privato, icona } =
+      if (!esito.permessi.has(PERMESSO_CANALE.modifica[esito.canale.tipo])) {
+        return risposta.code(403).send({ errore: 'non puoi modificare questo canale' });
+      }
+
+      const { nome, argomento, categoria, posizione, soloAscolto, privato, icona, durataMinuti } =
         richiesta.body ?? {};
+      const durata = scadenzaDaDurata(durataMinuti);
+      if (durata.errore) return risposta.code(400).send({ errore: durata.errore });
+
+      // Spostare un canale dentro a una categoria di un altro spazio lo
+      // farebbe sparire dalla colonna senza cancellarlo: 400, non silenzio.
+      if (categoria !== undefined && categoria !== null) {
+        const dove = db.categoria(Number(categoria));
+        if (!dove || dove.spazio !== esito.spazio.id) {
+          return risposta.code(400).send({ errore: 'categoria inesistente in questo spazio' });
+        }
+      }
+
       db.aggiornaCanale(esito.canale.id, {
         // Due caratteri bastano per un'emoji: il taglio serve a impedire che
         // qualcuno ci infili una frase e sfondi la colonna.
@@ -277,6 +665,7 @@ export function rotteSpazi(app, { db, config, presenze, eventi }) {
         posizione: posizione === undefined ? undefined : Number(posizione),
         soloAscolto,
         privato,
+        scade: durata.scade,
       });
 
       // Un canale che diventa privato adesso non ha iscritti: senza questa
@@ -294,8 +683,13 @@ export function rotteSpazi(app, { db, config, presenze, eventi }) {
     '/api/canali/:canale',
     { onRequest: richiedeRuolo('membro') },
     async (richiesta, risposta) => {
-      const esito = accessoAlCanale(db, richiesta.utente, richiesta.params.canale, 'admin');
+      const esito = accessoAlCanale(db, richiesta.utente, richiesta.params.canale);
       if (esito.errore) return risposta.code(esito.stato).send({ errore: esito.errore });
+      if (esito.diretto) return risposta.code(404).send({ errore: 'canale inesistente' });
+
+      if (!esito.permessi.has(PERMESSO_CANALE.elimina[esito.canale.tipo])) {
+        return risposta.code(403).send({ errore: 'non puoi eliminare questo canale' });
+      }
 
       if (esito.canale.tipo === 'voce') {
         await presenze.chiudiStanza(db.chiaveSfu(esito.canale)).catch(() => {});
@@ -324,6 +718,7 @@ export function rotteSpazi(app, { db, config, presenze, eventi }) {
     async (richiesta, risposta) => {
       const esito = accessoAlCanale(db, richiesta.utente, richiesta.params.canale);
       if (esito.errore) return risposta.code(esito.stato).send({ errore: esito.errore });
+      if (esito.diretto) return risposta.code(404).send({ errore: 'canale inesistente' });
       if (!esito.canale.privato) {
         return risposta.code(400).send({ errore: 'questo canale lo vedono gia\' tutti' });
       }
@@ -352,6 +747,7 @@ export function rotteSpazi(app, { db, config, presenze, eventi }) {
     async (richiesta, risposta) => {
       const esito = accessoAlCanale(db, richiesta.utente, richiesta.params.canale);
       if (esito.errore) return risposta.code(esito.stato).send({ errore: esito.errore });
+      if (esito.diretto) return risposta.code(404).send({ errore: 'canale inesistente' });
 
       const chi = Number(richiesta.params.utente);
       // Se stesso sempre — si esce da un canale senza chiedere il permesso —
@@ -377,8 +773,11 @@ export function rotteSpazi(app, { db, config, presenze, eventi }) {
     '/api/canali/:canale/caccia',
     { onRequest: richiedeRuolo('membro') },
     async (richiesta, risposta) => {
-      const esito = accessoAlCanale(db, richiesta.utente, richiesta.params.canale, 'admin');
+      const esito = accessoAlCanale(db, richiesta.utente, richiesta.params.canale);
       if (esito.errore) return risposta.code(esito.stato).send({ errore: esito.errore });
+      if (!esito.permessi.has('manageVoiceMembers')) {
+        return risposta.code(403).send({ errore: 'non puoi moderare questo canale vocale' });
+      }
 
       const identita = richiesta.body?.identita;
       if (typeof identita !== 'string' || !identita) {
@@ -406,6 +805,9 @@ export function rotteSpazi(app, { db, config, presenze, eventi }) {
       if (esito.canale.tipo !== 'voce') {
         return risposta.code(400).send({ errore: 'questo e\' un canale di testo' });
       }
+      if (!puoEntrare({ ruoloSpazio: esito.ruolo, permessi: esito.permessi })) {
+        return risposta.code(403).send({ errore: 'non puoi entrare in questo canale vocale' });
+      }
 
       const chiave = db.chiaveSfu(esito.canale);
 
@@ -423,13 +825,14 @@ export function rotteSpazi(app, { db, config, presenze, eventi }) {
         utente: richiesta.utente,
         ruoloSpazio: esito.ruolo,
         canale: esito.canale,
+        permessi: esito.permessi,
       });
 
       const gettone = await creaGettone({
         utente: richiesta.utente,
         stanza: { chiave, soloAscolto: !trasmette },
         config,
-        moderatore: esito.ruolo === 'admin',
+        moderatore: esito.permessi.has('manageVoiceMembers'),
       });
 
       return {
@@ -444,11 +847,65 @@ export function rotteSpazi(app, { db, config, presenze, eventi }) {
         permessi: {
           puoTrasmettere: trasmette,
           puoAscoltare: true,
-          puoScrivere: true,
-          moderatore: esito.ruolo === 'admin',
+          puoScrivere: esito.permessi.has('sendMessages'),
+          puoCondividere: esito.permessi.has('stream'),
+          moderatore: esito.permessi.has('manageVoiceMembers'),
         },
         limiti: config.limiti,
       };
     },
   );
+}
+
+/**
+ * Chi non si tocca: se stessi, il proprietario, e chi sta piu' in alto.
+ *
+ * Senza la terza regola, chiunque possa cacciare potrebbe cacciare chi gli ha
+ * dato quel permesso — e la moderazione diventerebbe una gara a chi preme per
+ * primo.
+ */
+function nonToccare(db, esito, chi, bersaglio) {
+  if (bersaglio === chi.id) return 'non puoi farlo a te stesso';
+  if (bersaglio === esito.spazio.proprietario) return 'il proprietario non si tocca';
+
+  const suoi = db.ruoli.diUtente(esito.spazio.id, bersaglio);
+  const miei = db.ruoli.diUtente(esito.spazio.id, chi.id);
+  const alto = (elenco) => elenco.reduce((max, r) => Math.max(max, r.priorita ?? 0), 0);
+
+  // L'admin dell'istanza e il proprietario passano sopra alla gerarchia: sono
+  // gli stessi che potrebbero aprire il database a mano.
+  if (chi.ruolo === 'admin' || esito.spazio.proprietario === chi.id) return null;
+
+  return alto(suoi) >= alto(miei) ? 'questa persona sta al tuo stesso livello, o piu\' in alto' : null;
+}
+
+/**
+ * Fuori dai canali vocali di questo spazio, adesso.
+ *
+ * Chi viene cacciato o se ne va mentre sta parlando resterebbe collegato alla
+ * SFU: il suo gettone vale ancora sei ore, e nessuno lo controlla piu' dopo
+ * l'ingresso. E' l'unico posto in cui una revoca deve arrivare fino li'.
+ */
+async function sgomberaDaiVocali(db, presenze, spazioId, utenteId) {
+  for (const canale of db.canaliDi(spazioId)) {
+    if (canale.tipo !== 'voce') continue;
+    await presenze.caccia(db.chiaveSfu(canale), `u${utenteId}`).catch(() => {});
+  }
+}
+
+/** Solo le preferenze che esistono, e solo con valori sensati. */
+function ripuliscImpostazioni(grezzo) {
+  const pulite = {};
+  if (typeof grezzo.invitiAperti === 'boolean') pulite.invitiAperti = grezzo.invitiAperti;
+  if (typeof grezzo.invitiUsoSingolo === 'boolean') pulite.invitiUsoSingolo = grezzo.invitiUsoSingolo;
+  if (typeof grezzo.eventiAperti === 'boolean') pulite.eventiAperti = grezzo.eventiAperti;
+  if (typeof grezzo.apertoATutti === 'boolean') pulite.apertoATutti = grezzo.apertoATutti;
+
+  const giorni = Number(grezzo.invitiGiorni);
+  if (Number.isInteger(giorni) && giorni >= 1 && giorni <= 30) pulite.invitiGiorni = giorni;
+
+  if (['tutto', 'menzioni', 'niente'].includes(grezzo.notifichePredefinite)) {
+    pulite.notifichePredefinite = grezzo.notifichePredefinite;
+  }
+  return pulite;
 }

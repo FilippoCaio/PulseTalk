@@ -340,7 +340,13 @@ function MenuRapido({
   return (
     <>
       <div className="fixed inset-0 z-40" onClick={chiudi} />
-      <div className="absolute bottom-full right-0 z-50 mb-1 w-72 space-y-3 rounded-xl border border-bordo bg-fondo-2 p-3 shadow-xl shadow-black/40">
+      {/* Si apre verso destra, non verso sinistra.
+          Ancorato a `right-0` il pannello cresceva di 18rem partendo dal bordo
+          destro del pulsante — che sta in fondo alla colonna di sinistra, a
+          meno di 18rem dal bordo della finestra: il menu usciva dallo schermo e
+          i nomi dei dispositivi restavano tagliati a meta'. Da qui c'e' tutta
+          la larghezza della chiamata davanti. */}
+      <div className="absolute bottom-full left-0 z-50 mb-1 w-72 space-y-3 rounded-xl border border-bordo bg-fondo-2 p-3 shadow-xl shadow-black/40">
         <ControlliAudio
           impostazioni={impostazioni}
           salva={salva}
