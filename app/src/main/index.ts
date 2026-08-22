@@ -5,6 +5,7 @@ import { agganciaCattura, elencaSorgenti, ricordaScelta } from './cattura'
 import { dimenticaToken, leggiImpostazioni, scriviImpostazioni, scriviToken } from './impostazioni'
 import { chiudiPuntatori, mostraPuntatore } from './puntatore'
 import { preparaAggiornamenti } from './aggiorna'
+import { avviaSito, type Sito } from './sito'
 import {
   IPC,
   type Impostazioni,
@@ -28,6 +29,14 @@ import {
 const DEV = !!process.env.ELECTRON_RENDERER_URL
 
 let finestra: BrowserWindow | null = null
+
+/**
+ * Il servitore di loopback che da' un'origine vera all'interfaccia.
+ *
+ * Esiste solo in produzione: in sviluppo ci pensa Vite, che gia' serve la
+ * pagina da http://localhost. Vedi sito.ts per il perche' non basta file://.
+ */
+let sito: Sito | null = null
 
 /**
  * Quante volte la pagina e' stata rianimata dopo un crollo.
@@ -70,7 +79,7 @@ function registraDiagnosticaAudio(testo: string): void {
 // quella vera. Senza, Windows la lascia sulla integrata "per risparmiare".
 app.commandLine.appendSwitch('force_high_performance_gpu')
 
-function creaFinestra(): void {
+async function creaFinestra(): Promise<void> {
   finestra = new BrowserWindow({
     width: 1360,
     height: 860,
@@ -113,9 +122,40 @@ function creaFinestra(): void {
   })
 
   if (DEV) {
-    finestra.loadURL(process.env.ELECTRON_RENDERER_URL!)
-  } else {
-    finestra.loadFile(join(import.meta.dirname, '../renderer/index.html'))
+    await finestra.loadURL(process.env.ELECTRON_RENDERER_URL!)
+    return
+  }
+
+  // Da qui in poi la pagina ha un'origine vera (http://127.0.0.1:<porta>)
+  // invece di quella opaca di file://. Se il servitore non parte si ricade
+  // sul caricamento da file: l'applicazione funziona lo stesso, e a non
+  // funzionare sara' solo il player di YouTube — meglio di una finestra vuota.
+  try {
+    sito ??= await avviaSito(join(import.meta.dirname, '../renderer'))
+    await finestra.loadURL(sito.url)
+  } catch (errore) {
+    registraGuasto(`servitore locale non partito: ${(errore as Error).message}`)
+    await finestra.loadFile(join(import.meta.dirname, '../renderer/index.html'))
+  }
+}
+
+/**
+ * Se un indirizzo e' una pagina di PulseTalk, e non roba di terzi.
+ *
+ * Sono i due posti da cui l'interfaccia puo' arrivare: il servitore di
+ * loopback quando parte (il caso normale) e `file://` quando non parte. Tutto
+ * il resto — l'iframe di YouTube e cio' che si tira dietro — e' di qualcun
+ * altro, gira in un'origine sua, e le nostre regole non lo riguardano.
+ */
+function nostra(indirizzo: string): boolean {
+  if (indirizzo.startsWith('file://')) return true
+  if (!sito) return false
+  try {
+    return new URL(indirizzo).origin === new URL(sito.url).origin
+  } catch {
+    // Un indirizzo che non si riesce nemmeno a leggere non e' una nostra
+    // pagina: nel dubbio non gli si scrive addosso niente.
+    return false
   }
 }
 
@@ -137,13 +177,38 @@ function agganciaPermessi(): void {
 
   agganciaCattura(session.defaultSession)
 
-  // In produzione la pagina arriva da file://, e da li' non deve poter
-  // chiamare niente che non sia il server scelto dall'utente. In sviluppo no:
-  // Vite ha bisogno di eval per il ricaricamento a caldo, e una CSP severa
-  // trasformerebbe ogni salvataggio in una pagina bianca.
+  // In sviluppo niente CSP: Vite ha bisogno di eval per il ricaricamento a
+  // caldo, e una CSP severa trasformerebbe ogni salvataggio in una pagina
+  // bianca.
   if (DEV) return
 
+  // Qui prima c'era un `Referer` scritto a mano verso YouTube, per farsi
+  // riconoscere da una pagina file:// che origine non ne ha. Non bastava — il
+  // player rispondeva comunque errore 153 — e per giunta cuciva un dominio
+  // fisso dentro alla build di chiunque. Adesso l'interfaccia arriva da
+  // http://127.0.0.1 e si identifica da sola: vedi sito.ts.
+
   session.defaultSession.webRequest.onHeadersReceived((dettagli, continua) => {
+    // La CSP vale per le NOSTRE pagine, e solo per quelle.
+    //
+    // Questo gancio vede ogni risposta della sessione, comprese quelle che
+    // caricano l'iframe di YouTube — che ha un'origine sua e una CSP sua.
+    // Sovrascrivergliela voleva dire imporre al player di YouTube le regole
+    // scritte per PulseTalk: dentro a quel documento `'self'` e'
+    // youtube-nocookie.com, e `script-src` senza `'unsafe-inline'` fermava lo
+    // script in linea con cui la pagina si avvia. Il risultato era un iframe
+    // che rispondeva, si caricava, e restava nero per sempre — sia con il
+    // player sincronizzato sia con quello standard, perche' la causa non era
+    // in nessuno dei due.
+    //
+    // Delle regole qui sotto nessuna serve a difendersi da YouTube: servono a
+    // tenere stretta la pagina di PulseTalk, che e' l'unica che esegue codice
+    // nostro. Fuori da quella non hanno niente da proteggere.
+    if (!nostra(dettagli.url)) {
+      continua({})
+      return
+    }
+
     continua({
       responseHeaders: {
         ...dettagli.responseHeaders,
@@ -167,10 +232,32 @@ function agganciaPermessi(): void {
             "connect-src 'self' https: wss: http: ws:",
             // I video arrivano come blob: dalle tracce WebRTC.
             "media-src 'self' blob:",
-            "img-src 'self' data: blob:",
+            // Le anteprime dei video e le copertine dei dischi arrivano dai
+            // due host che le servono, e da nessun altro: `https:` intero
+            // permetterebbe a un messaggio con dentro un'immagine remota di
+            // fare da segnale di lettura verso un server qualunque.
+            // GIPHY serve da media0..media4.giphy.com e cambia numero a ogni
+            // risultato, quindi qui ci vuole il carattere jolly: elencarli a
+            // mano vorrebbe dire scoprire il sesto il giorno in cui compare.
+            // Resta comunque una famiglia di domini sola, non `https:` intero.
+            "img-src 'self' data: blob: https://i.ytimg.com https://i.scdn.co https://media.tenor.com https://*.giphy.com https://images.unsplash.com",
             // Tailwind scrive gli stili nel documento.
             "style-src 'self' 'unsafe-inline'",
-            "script-src 'self'",
+            // Il player di YouTube, e nient'altro.
+            //
+            // Guardare un video insieme vuol dire che ogni computer lo
+            // riproduce per conto suo con il player ufficiale: PulseTalk
+            // sincronizza solo lo stato. Il player si comanda con l'IFrame
+            // Player API, che e' uno script servito da YouTube e che gira in
+            // questa pagina — e' il prezzo della strada ufficiale, e va
+            // scritto invece che nascosto.
+            //
+            // Cio' che lo tiene stretto e' che sono due host precisi, non
+            // `https:`: uno script iniettato da un'altra parte resta bloccato
+            // come prima. Il video vero sta dentro all'iframe, che ha
+            // un'origine sua e non vede niente di questa pagina.
+            "script-src 'self' https://www.youtube.com https://s.ytimg.com",
+            "frame-src https://www.youtube-nocookie.com https://www.youtube.com",
             "object-src 'none'",
             "base-uri 'none'"
           ].join('; ')
@@ -296,7 +383,7 @@ if (!app.requestSingleInstanceLock()) {
     // l'utente descrive come "non compare nulla", perche' e' esattamente cio'
     // che vede.
     if (!finestra || finestra.isDestroyed()) {
-      creaFinestra()
+      void creaFinestra().catch((e) => registraGuasto(`finestra non riaperta: ${(e as Error).message}`))
       return
     }
     if (finestra.isMinimized()) finestra.restore()
@@ -327,10 +414,12 @@ if (!app.requestSingleInstanceLock()) {
     agganciaCanali()
     agganciaScorciatoie(leggiImpostazioni())
     preparaAggiornamenti()
-    creaFinestra()
+    void creaFinestra().catch((e) => registraGuasto(`finestra non creata: ${(e as Error).message}`))
 
     app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0) creaFinestra()
+      if (BrowserWindow.getAllWindows().length === 0) {
+        void creaFinestra().catch((e) => registraGuasto(`finestra non creata: ${(e as Error).message}`))
+      }
     })
   })
 
@@ -341,5 +430,6 @@ if (!app.requestSingleInstanceLock()) {
   app.on('will-quit', () => {
     globalShortcut.unregisterAll()
     chiudiPuntatori()
+    void sito?.chiudi()
   })
 }
