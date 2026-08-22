@@ -24,6 +24,8 @@ export type Suono =
   | 'cameraSpenta'
   | 'condivisioneIniziata'
   | 'condivisioneFinita'
+  | 'insiemeIniziato'
+  | 'insiemeFinito'
   | 'entrato'
   | 'uscito'
   | 'altroEntrato'
@@ -78,6 +80,21 @@ const SEQUENZE: Record<Suono, Nota[]> = {
     { frequenza: 784, quando: 0, durata: 60, volume: 0.4 },
     { frequenza: 587, quando: 50, durata: 60, volume: 0.4 },
     { frequenza: 440, quando: 100, durata: 130, volume: 0.4 }
+  ],
+
+  // Guardare insieme: le stesse tre note della condivisione — perche' e' la
+  // stessa famiglia di cose, qualcosa che compare nella stanza per tutti — ma
+  // in triangolo e un tono sotto, cosi' non si confonde con uno schermo
+  // condiviso mentre si sta guardando altrove.
+  insiemeIniziato: [
+    { frequenza: 392, quando: 0, durata: 60, volume: 0.38, forma: 'triangle' },
+    { frequenza: 523, quando: 50, durata: 60, volume: 0.38, forma: 'triangle' },
+    { frequenza: 698, quando: 100, durata: 140, volume: 0.38, forma: 'triangle' }
+  ],
+  insiemeFinito: [
+    { frequenza: 698, quando: 0, durata: 60, volume: 0.38, forma: 'triangle' },
+    { frequenza: 523, quando: 50, durata: 60, volume: 0.38, forma: 'triangle' },
+    { frequenza: 392, quando: 100, durata: 140, volume: 0.38, forma: 'triangle' }
   ],
 
   // Entrare e uscire da una stanza: intervallo largo, si sente da lontano.

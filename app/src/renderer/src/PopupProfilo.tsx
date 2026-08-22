@@ -6,12 +6,21 @@ import { Ingranaggio, Persona, Utenti } from './icone'
 /**
  * Il colore del pallino di stato, e come si chiama a parole.
  *
- * `offline` non e' scegliibile: e' cio' che gli altri vedono al posto di
- * `invisibile`, e compare qui solo per disegnare il pallino di chi non c'e'.
+ * Due di questi cinque non si scelgono e stanno qui solo per essere disegnati:
+ * `offline` e' cio' che gli altri vedono al posto di `invisibile` o di chi ha
+ * chiuso l'applicazione, e `inattivo` lo decide il microfono dopo dieci minuti
+ * di silenzio (vedi lib/usaInattivita.ts). Sceglierlo a mano non aveva senso —
+ * dire "non sono davanti allo schermo" premendo un pulsante e' una
+ * contraddizione — ed era anche una bugia comoda: restava li' anche mentre si
+ * parlava.
  */
 export const STATI: Record<StatoUtente, { nome: string; sotto?: string; colore: string }> = {
   online: { nome: 'Online', colore: 'var(--color-ok)' },
-  inattivo: { nome: 'Inattivo', sotto: 'Ci sei, ma non davanti allo schermo.', colore: 'var(--color-attenzione)' },
+  inattivo: {
+    nome: 'Inattivo',
+    sotto: 'Dieci minuti senza parlare. Lo mette l\'applicazione da sola.',
+    colore: 'var(--color-attenzione)'
+  },
   occupato: {
     nome: 'Non disturbare',
     sotto: 'Le notifiche restano zitte.',
@@ -25,8 +34,8 @@ export const STATI: Record<StatoUtente, { nome: string; sotto?: string; colore: 
   offline: { nome: 'Offline', colore: 'var(--color-testo-3)' }
 }
 
-/** I quattro che si possono scegliere. `offline` non e' fra questi apposta. */
-const SCEGLIBILI: StatoUtente[] = ['online', 'inattivo', 'occupato', 'invisibile']
+/** I tre che si possono scegliere. Gli altri due li mette l'applicazione. */
+const SCEGLIBILI: StatoUtente[] = ['online', 'occupato', 'invisibile']
 
 /**
  * Il pallino di stato, da mettere sopra a un'icona.

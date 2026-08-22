@@ -1,15 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Impostazioni } from '@shared/tipi'
-import { PRESET_SCHERMO } from '@shared/qualita'
 import ControlliAudio from '../ControlliAudio'
 import type { AudioCondiviso, AudioRemoto } from '../lib/usaSessione'
-import { usaDispositivi } from '../lib/usaDispositivi'
+import { scegli, usaDispositivi, vociTendina } from '../lib/usaDispositivi'
 import {
   Altoparlante,
   AltoparlanteMuto,
   Camera,
   CameraSpenta,
   Esci,
+  Fumetto,
+  Ingranaggio,
   Microfono,
   MicrofonoSpento,
   Onde,
@@ -19,7 +20,9 @@ import {
   SchermoIntero,
   SchermoNormale,
   SchermoStop,
-  Su
+  Su,
+  Utenti,
+  Video
 } from '../icone'
 
 /**
@@ -48,14 +51,20 @@ export default function OverlayChiamata({
   mutoAudioRemoto,
   riascoltoAttivo,
   secondiRiascolto,
+  nomeCanale,
+  quantePersone,
+  soloAscolto,
+  collegando,
+  chat,
+  insieme,
+  soloGrande,
   impostazioni,
   schermoIntero,
   alternaMicrofono,
   alternaCamera,
   apriCondivisione,
+  modificaCondivisione,
   smettiDiCondividere,
-  cambiaQualita,
-  presetDi,
   riascolta,
   salva,
   apriImpostazioni,
@@ -75,14 +84,31 @@ export default function OverlayChiamata({
   mutoAudioRemoto: (id: string) => void
   riascoltoAttivo: boolean
   secondiRiascolto: number
+  nomeCanale: string
+  quantePersone: number
+  soloAscolto: boolean
+  /** La linea sta rientrando: si dice, e sparisce da solo quando torna. */
+  collegando: boolean
+  /** Assente quando il canale non ha una chat: allora il pulsante non c'e'. */
+  chat?: { aperta: boolean; alterna: () => void }
+  /**
+   * Il pannello delle cose da fare insieme: un video, una coda musicale.
+   *
+   * Sta accanto alla chat perche' e' la stessa idea — un pannello a destra dei
+   * riquadri — e perche' i due si escludono a vicenda nello spazio: aprirne
+   * uno chiude l'altro, ed e' cio' che ci si aspetta da due schede.
+   */
+  insieme?: { aperta: boolean; alterna: () => void; attiva: boolean }
+  /** Assente quando non c'e' niente in sovraimpressione: niente da nascondere. */
+  soloGrande?: { attivo: boolean; alterna: () => void }
   impostazioni: Impostazioni
   schermoIntero: { attivo: boolean; alterna: () => void }
   alternaMicrofono: () => void
   alternaCamera: () => void
   apriCondivisione: () => void
+  /** Riapre il pannello della condivisione gia' accesa, per cambiarla senza spegnerla. */
+  modificaCondivisione: (id: string, soloAudio: boolean) => void
   smettiDiCondividere: (id: string) => void
-  cambiaQualita: (id: string, presetId: string) => void
-  presetDi: (id: string) => string | null
   riascolta: () => void
   salva: (modifiche: Partial<Impostazioni>) => void
   apriImpostazioni: () => void
@@ -139,6 +165,14 @@ export default function OverlayChiamata({
   // Quanti audio ci sono in giro, e se almeno uno sta davvero suonando: il
   // primo numero va nel cerchietto, il secondo decide se l'icona si muove.
   const quantiAudio = audioCondivisi.length + audioRemoti.length
+
+  // Stessa storia per gli audio, e qui si vedeva peggio: chiuso l'ultimo, il
+  // pulsante che aveva aperto il pannello spariva dalla barra — perche' non
+  // c'e' piu' niente da regolare — e restava sospeso in aria un rettangolo
+  // vuoto, senza nemmeno il modo di farlo sparire.
+  useEffect(() => {
+    if (aperto === 'audio' && quantiAudio === 0) setAperto(null)
+  }, [aperto, quantiAudio])
   const qualcunoSuona =
     audioCondivisi.some((a) => a.attivo) || audioRemoti.some((a) => !a.muto && a.volume > 0)
 
@@ -147,11 +181,94 @@ export default function OverlayChiamata({
   return (
     <div
       ref={radice}
-      className={`pointer-events-none absolute inset-x-0 bottom-0 z-30 flex justify-center p-4 transition-opacity duration-200 ${
-        mostra ? 'opacity-100' : 'opacity-0'
-      }`}
+      // Si ferma dove comincia il pannello laterale, invece di arrivare al
+      // bordo della finestra. Chat e sessioni media hanno larghezze diverse:
+      // entrambe vanno sottratte, altrimenti i pulsanti finiscono sopra al
+      // pannello e la barra inferiore e' centrata sulla finestra anziche'
+      // sulla chiamata.
+      className={`pointer-events-none absolute top-0 bottom-0 left-0 z-30 transition-opacity duration-200 ${
+        insieme?.aperta
+          ? 'right-[clamp(18rem,34vw,26rem)]'
+          : chat?.aperta
+            ? 'right-[clamp(14rem,28vw,20rem)]'
+            : 'right-0'
+      } ${mostra ? 'opacity-100' : 'opacity-0'}`}
     >
-      <div className="pointer-events-auto relative flex items-end gap-2">
+      {/* La barra alta: quello che prima era l'intestazione fissa.
+          Sta nello stesso involucro dei comandi in basso, quindi compare e
+          sparisce con lo stesso gesto e con la stessa opacita' — due strisce
+          che si nascondono con tempi propri sarebbero due cose diverse da
+          imparare. */}
+      <div className="absolute inset-x-0 top-0 flex items-start justify-between gap-3 p-4">
+        <div className="pointer-events-auto flex min-w-0 items-center gap-2 rounded-2xl border border-bordo bg-fondo-2/95 px-3 py-2 shadow-xl shadow-black/40 backdrop-blur">
+          <Altoparlante className="h-4 w-4 shrink-0 text-testo-3" />
+          <div className="min-w-0">
+            <h1 className="truncate text-sm leading-tight font-medium">{nomeCanale}</h1>
+            <p className="flex items-center gap-1.5 text-[11px] leading-tight text-testo-3">
+              {quantePersone === 1 ? 'sei solo qui' : `${quantePersone} persone`}
+              {soloAscolto && ' · palco'}
+              {!puoTrasmettere && ' · puoi solo ascoltare'}
+              {/* Detto, e non nascosto: l'anello del riascolto tiene in
+                  memoria la voce di altre persone. Non esce da questo computer
+                  e muore uscendo dalla stanza, ma chi c'e' dentro ha diritto di
+                  vederlo scritto da qualche parte. */}
+              {riascoltoAttivo && (
+                <span
+                  title={`Gli ultimi ${secondiRiascolto} secondi di voce restano in memoria, qui, per poterli riascoltare. Non toccano il disco e spariscono uscendo.`}
+                  className="flex items-center gap-1"
+                >
+                  ·
+                  <Riavvolgi className="h-3 w-3" />
+                  {secondiRiascolto}s
+                </span>
+              )}
+            </p>
+          </div>
+        </div>
+
+        <div className="pointer-events-auto flex shrink-0 items-center gap-2">
+          {collegando && (
+            <span className="respiro rounded-2xl border border-bordo bg-fondo-2/95 px-3 py-2 text-xs text-attenzione shadow-xl shadow-black/40 backdrop-blur">
+              riprendo la linea…
+            </span>
+          )}
+          {insieme && (
+            <button
+              onClick={insieme.alterna}
+              title={insieme.aperta ? 'Chiudi guarda e ascolta insieme' : 'Guarda e ascolta insieme'}
+              aria-label={
+                insieme.aperta ? 'Chiudi guarda e ascolta insieme' : 'Guarda e ascolta insieme'
+              }
+              className={`relative flex h-10 w-10 items-center justify-center rounded-2xl border border-bordo bg-fondo-2/95 shadow-xl shadow-black/40 backdrop-blur transition-colors ${
+                insieme.aperta ? 'text-vivo' : 'text-testo-3 hover:text-testo'
+              }`}
+            >
+              <Video className="h-5 w-5" />
+              {/* Il pallino verde dice che una sessione c'e' gia': senza,
+                  chi entra a meta' non saprebbe che gli altri stanno
+                  guardando qualcosa. */}
+              {insieme.attiva && !insieme.aperta && (
+                <span className="absolute top-1.5 right-1.5 h-1.5 w-1.5 rounded-full bg-ok" />
+              )}
+            </button>
+          )}
+          {chat && (
+            <button
+              onClick={chat.alterna}
+              title={chat.aperta ? 'Chiudi la chat del canale' : 'Apri la chat del canale'}
+              aria-label={chat.aperta ? 'Chiudi la chat del canale' : 'Apri la chat del canale'}
+              className={`flex h-10 w-10 items-center justify-center rounded-2xl border border-bordo bg-fondo-2/95 shadow-xl shadow-black/40 backdrop-blur transition-colors ${
+                chat.aperta ? 'text-vivo' : 'text-testo-3 hover:text-testo'
+              }`}
+            >
+              <Fumetto className="h-5 w-5" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="absolute inset-x-0 bottom-0 flex justify-center p-4">
+        <div className="pointer-events-auto relative flex items-end gap-2">
         {aperto === 'microfono' && (
           <MenuMicrofono
             impostazioni={impostazioni}
@@ -165,12 +282,13 @@ export default function OverlayChiamata({
         {aperto === 'camera' && (
           <MenuCamera impostazioni={impostazioni} salva={salva} accesa={cameraAccesa} />
         )}
-        {aperto === 'audio' && (
+        {aperto === 'audio' && quantiAudio > 0 && (
           <MenuAudio
             miei={audioCondivisi}
             loro={audioRemoti}
             volumeMio={volumeAudioCondiviso}
             mutoMio={mutoAudioCondiviso}
+            smettiMio={smettiDiCondividere}
             volumeLoro={volumeAudioRemoto}
             mutoLoro={mutoAudioRemoto}
           />
@@ -178,8 +296,10 @@ export default function OverlayChiamata({
         {aperto === 'condivisioni' && schermiAttivi.length > 0 && (
           <MenuCondivisioni
             schermi={schermiAttivi}
-            presetDi={presetDi}
-            cambiaQualita={cambiaQualita}
+            modifica={(id) => {
+              setAperto(null)
+              modificaCondivisione(id, false)
+            }}
             smetti={smettiDiCondividere}
           />
         )}
@@ -260,6 +380,26 @@ export default function OverlayChiamata({
             </span>
           )}
 
+          {/* Compare solo con qualcosa in sovraimpressione, ed e' l'unico caso
+              in cui un pulsante che va e viene ha senso: toglie di mezzo la
+              striscia delle persone per lasciare la sovraimpressione da sola
+              in tutta la finestra. Senza niente in primo piano non avrebbe
+              nessuna striscia da nascondere, e sarebbe un pulsante che non fa
+              niente. */}
+          {soloGrande && (
+            <Tondo
+              acceso={soloGrande.attivo}
+              titolo={
+                soloGrande.attivo
+                  ? 'Rimetti le persone accanto'
+                  : 'Solo la sovraimpressione: nascondi le persone'
+              }
+              premi={soloGrande.alterna}
+            >
+              <Utenti />
+            </Tondo>
+          )}
+
           {/* Sempre presente, anche spento.
               
               Prima compariva solo con il riascolto attivo, e un pulsante che a
@@ -283,6 +423,7 @@ export default function OverlayChiamata({
           </Tondo>
         </div>
 
+        </div>
       </div>
 
       {/* In fondo alla riga, cioe' nell'angolo: non e' un comando della
@@ -413,7 +554,7 @@ function MenuCamera({
   salva: (m: Partial<Impostazioni>) => void
   accesa: boolean
 }): React.JSX.Element {
-  const { per } = usaDispositivi()
+  const { tutti } = usaDispositivi()
   const video = useRef<HTMLVideoElement>(null)
   const [errore, setErrore] = useState<string | null>(null)
 
@@ -452,12 +593,12 @@ function MenuCamera({
         <select
           className={CLASSI_SELECT}
           value={impostazioni.cameraId ?? ''}
-          onChange={(e) => salva({ cameraId: e.target.value || null })}
+          onChange={(e) => salva(scegli('camera', tutti, e.target.value))}
         >
           <option value="">Predefinita</option>
-          {per('videoinput').map((d) => (
-            <option key={d.deviceId} value={d.deviceId}>
-              {d.label || 'Camera senza nome'}
+          {vociTendina('camera', tutti, impostazioni).map((voce) => (
+            <option key={voce.id} value={voce.id} disabled={voce.assente}>
+              {voce.nome}
             </option>
           ))}
         </select>
@@ -486,52 +627,51 @@ function MenuCamera({
   )
 }
 
+/**
+ * L'elenco delle proprie condivisioni: cosa sta uscendo, e i due comandi.
+ *
+ * Una riga, tre cose: il nome, l'ingranaggio che riapre il pannello della
+ * condivisione, e la croce che la chiude. La tendina della qualita' stava
+ * qui e se n'e' andata: era l'unica impostazione delle sei arrivata fin
+ * quassu', e averne una a portata di mano e cinque nascoltate altrove faceva
+ * sembrare che le altre non si potessero cambiare. Adesso si aprono tutte
+ * dallo stesso posto, che e' il pannello da cui la condivisione era nata.
+ */
 function MenuCondivisioni({
   schermi,
-  presetDi,
-  cambiaQualita,
+  modifica,
   smetti
 }: {
   schermi: { id: string; etichetta: string }[]
-  presetDi: (id: string) => string | null
-  cambiaQualita: (id: string, presetId: string) => void
+  modifica: (id: string) => void
   smetti: (id: string) => void
 }): React.JSX.Element {
   return (
     <Pannello>
       <Etichetta>Stai condividendo</Etichetta>
-      <div className="space-y-3">
+      <div className="space-y-1.5">
         {schermi.map((schermo) => (
-          <div key={schermo.id} className="space-y-1.5">
-            <div className="flex items-center gap-2">
-              <span className="min-w-0 flex-1 truncate text-xs text-testo">{schermo.etichetta}</span>
-              <button
-                onClick={() => smetti(schermo.id)}
-                title={`Smetti di condividere ${schermo.etichetta}`}
-                aria-label={`Smetti di condividere ${schermo.etichetta}`}
-                className="shrink-0 text-male hover:opacity-80"
-              >
-                <SchermoStop className="h-4 w-4" />
-              </button>
-            </div>
-            <select
-              className={CLASSI_SELECT}
-              value={presetDi(schermo.id) ?? ''}
-              onChange={(e) => cambiaQualita(schermo.id, e.target.value)}
+          <div key={schermo.id} className="flex items-center gap-2">
+            <span className="min-w-0 flex-1 truncate text-xs text-testo">{schermo.etichetta}</span>
+            <button
+              onClick={() => modifica(schermo.id)}
+              title={`Impostazioni di ${schermo.etichetta} — qualita', audio, sorgente`}
+              aria-label={`Impostazioni di ${schermo.etichetta}`}
+              className="shrink-0 text-testo-3 hover:text-testo"
             >
-              {presetDi(schermo.id) === null && <option value="">Qualita sconosciuta</option>}
-              {PRESET_SCHERMO.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.nome}
-                </option>
-              ))}
-            </select>
+              <Ingranaggio className="h-4 w-4" />
+            </button>
+            <button
+              onClick={() => smetti(schermo.id)}
+              title={`Smetti di condividere ${schermo.etichetta}`}
+              aria-label={`Smetti di condividere ${schermo.etichetta}`}
+              className="shrink-0 text-male hover:opacity-80"
+            >
+              <SchermoStop className="h-4 w-4" />
+            </button>
           </div>
         ))}
       </div>
-      <p className="text-[11px] text-testo-3">
-        Cambiare qualita non interrompe niente: chi guarda non vede nessun salto.
-      </p>
     </Pannello>
   )
 }
@@ -550,6 +690,7 @@ function MenuAudio({
   loro,
   volumeMio,
   mutoMio,
+  smettiMio,
   volumeLoro,
   mutoLoro
 }: {
@@ -557,6 +698,7 @@ function MenuAudio({
   loro: AudioRemoto[]
   volumeMio: (id: string, volume: number) => void
   mutoMio: (id: string) => void
+  smettiMio: (id: string) => void
   volumeLoro: (id: string, volume: number) => void
   mutoLoro: (id: string) => void
 }): React.JSX.Element {
@@ -575,6 +717,11 @@ function MenuAudio({
                 muto={a.muto}
                 cambia={(v) => volumeMio(a.id, v)}
                 alterna={() => mutoMio(a.id)}
+                // Le proprie si chiudono da qui, e non c'era modo di farlo:
+                // una condivisione di solo audio non ha un riquadro, quindi
+                // non ha nemmeno il menu del tasto destro con cui si spengono
+                // le altre. L'unica uscita era uscire dalla chiamata.
+                chiudi={() => smettiMio(a.id)}
               />
             ))}
           </div>
@@ -609,7 +756,8 @@ function RigaAudio({
   volume,
   muto,
   cambia,
-  alterna
+  alterna,
+  chiudi
 }: {
   nome: string
   sotto: string
@@ -617,6 +765,8 @@ function RigaAudio({
   muto: boolean
   cambia: (volume: number) => void
   alterna: () => void
+  /** Solo sulle proprie: smette di condividere. Sugli altrui non ha senso. */
+  chiudi?: () => void
 }): React.JSX.Element {
   return (
     <div>
@@ -636,6 +786,16 @@ function RigaAudio({
         <span className="numeri shrink-0 text-[10px] text-testo-3">
           {Math.round(volume * 100)}%
         </span>
+        {chiudi && (
+          <button
+            onClick={chiudi}
+            title={`Smetti di condividere ${nome}`}
+            aria-label={`Smetti di condividere ${nome}`}
+            className="shrink-0 text-male hover:opacity-80"
+          >
+            <SchermoStop className="h-4 w-4" />
+          </button>
+        )}
       </div>
       <input
         type="range"

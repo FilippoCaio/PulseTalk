@@ -23,11 +23,21 @@ type Modo = 'accedi' | 'registra'
 export default function Accesso({
   impostazioni,
   salva,
-  quandoEntra
+  quandoEntra,
+  motivo = null
 }: {
   impostazioni: Impostazioni
   salva: (modifiche: Partial<Impostazioni>) => Promise<Impostazioni>
   quandoEntra: (utente: Utente) => void
+  /**
+   * Perche' si e' finiti qui invece che dentro.
+   *
+   * Vuoto quando si apre l'applicazione senza aver mai fatto l'accesso. Pieno
+   * quando una sessione che c'era non vale piu': senza questa riga, chi viene
+   * buttato fuori da una revoca si ritrova davanti al modulo di accesso senza
+   * sapere se ha sbagliato qualcosa lui.
+   */
+  motivo?: string | null
 }): React.JSX.Element {
   // Un link di invito porta il codice nella query: `?invito=...`. Se c'e', si
   // parte gia' sul modulo di registrazione con il codice dentro — chi ha
@@ -126,6 +136,8 @@ export default function Accesso({
         </div>
 
         <div className="space-y-4 rounded-xl border border-bordo bg-fondo-2 p-5">
+          {motivo && <Avviso tono="attenzione">{motivo}</Avviso>}
+
           {modo === 'registra' && (
             <Campo
               etichetta="Codice di invito"

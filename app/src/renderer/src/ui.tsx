@@ -169,3 +169,61 @@ export function Conferma({
 export function Pallino({ colore }: { colore: string }): React.JSX.Element {
   return <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: colore }} />
 }
+
+/**
+ * Un blocco di impostazioni: titolo, una riga di spiegazione, e il contenuto.
+ *
+ * Sta qui e non dentro al pannello delle impostazioni perche' adesso i pannelli
+ * sono due — quello dell'applicazione e quello di ogni server — e due copie
+ * della stessa intestazione divergono di due pixel al primo ritocco.
+ */
+export function Sezione({
+  titolo,
+  sotto,
+  children
+}: {
+  titolo: string
+  sotto?: string
+  children: ReactNode
+}): React.JSX.Element {
+  return (
+    <section className="space-y-3">
+      <div>
+        <h3 className="text-sm font-semibold">{titolo}</h3>
+        {sotto && <p className="mt-0.5 text-xs text-testo-3">{sotto}</p>}
+      </div>
+      {children}
+    </section>
+  )
+}
+
+/** Una casella con accanto cosa fa, e sotto perche'. */
+export function Interruttore({
+  acceso,
+  cambia,
+  titolo,
+  sotto,
+  disabilitato = false
+}: {
+  acceso: boolean
+  cambia: (valore: boolean) => void
+  titolo: string
+  sotto: string
+  disabilitato?: boolean
+}): React.JSX.Element {
+  return (
+    <label className={`flex items-start gap-2.5 ${disabilitato ? 'opacity-50' : 'cursor-pointer'}`}>
+      <input
+        type="checkbox"
+        className="mt-0.5 accent-vivo"
+        checked={acceso}
+        disabled={disabilitato}
+        onChange={(e) => cambia(e.target.checked)}
+      />
+      <span className="text-sm">
+        {titolo}
+        <span className="mt-0.5 block text-xs leading-relaxed text-testo-3">{sotto}</span>
+      </span>
+    </label>
+  )
+}

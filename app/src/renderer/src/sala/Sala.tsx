@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ConnectionState } from 'livekit-client'
+import { ConnectionState, Track } from 'livekit-client'
 import type {
   Canale,
   Impostazioni,
@@ -10,11 +10,12 @@ import type {
   Utente
 } from '@shared/tipi'
 import { PRESET_SCHERMO, type PresetSchermo } from '@shared/qualita'
-import type { Api } from '../lib/api'
+import { ErroreApi, type Api, type SessioneAutoWriter } from '../lib/api'
+import { MAX_CONDIVISIONI_GUARDATE } from '../lib/usaSessione'
 import type { Riquadro as DatiRiquadro, Sessione } from '../lib/usaSessione'
 import { usaMisura } from '../lib/misura'
 import { ponte } from '../ponte'
-import { Altoparlante, Chiudi, Fumetto, Riavvolgi } from '../icone'
+import { Chiudi, Riavvolgi } from '../icone'
 import { Avviso } from '../ui'
 import OverlayChiamata from './OverlayChiamata'
 import MenuRiquadro from './MenuRiquadro'
@@ -22,7 +23,11 @@ import Chat from '../chat/Chat'
 import type { usaChat } from '../lib/usaChat'
 import Riquadro from './Riquadro'
 import SceltaSorgente from './SceltaSorgente'
+import PannelloInsieme from '../media/PannelloInsieme'
+import RiquadroYouTube from '../media/RiquadroYouTube'
+import type { SessioniMedia } from '../lib/usaSessioniMedia'
 import type { VoceVolume } from './Volume'
+import { usaProblema } from '../lib/diagnostica'
 
 /**
  * La griglia di un canale vocale.
@@ -57,7 +62,8 @@ export default function Sala({
   schermoIntero,
   chatVocale,
   canaleVocale,
-  utente
+  utente,
+  media
 }: {
   api: Api
   ingresso: Ingresso
@@ -88,13 +94,42 @@ export default function Sala({
   chatVocale: ReturnType<typeof usaChat>
   canaleVocale: Canale | null
   utente: Utente
+  /**
+   * Le sessioni condivise di questo canale: guardare un video, ascoltare
+   * insieme.
+   *
+   * Arriva da fuori invece di nascere qui perche' vive quanto la chiamata, non
+   * quanto questa schermata: chi apre un video e poi va a leggere una chat non
+   * deve trovare la sessione chiusa quando torna.
+   */
+  media?: SessioniMedia
 }): React.JSX.Element {
   const [aFuoco, setAFuoco] = useState<string | null>(null)
   // Vero quando l'utente ha tolto lui il fuoco. Serve a non rimetterlo subito:
   // senza, chiudere l'unico schermo condiviso lo farebbe tornare grande al
   // disegno successivo, e sembrerebbe che il clic non abbia funzionato.
   const [senzaFuoco, setSenzaFuoco] = useState(false)
-  const [scegliSorgente, setScegliSorgente] = useState(false)
+  /**
+   * Il selettore delle sorgenti, e per cosa e' aperto.
+   *
+   * `modifica` nullo: se ne sta aprendo una nuova. Altrimenti e' l'id della
+   * condivisione gia' accesa da cambiare — stesso pannello, ma alla conferma
+   * la sorgente si sostituisce sotto a chi guarda invece di aggiungerne una
+   * seconda, e nessuno vede un salto.
+   */
+  const [scegliSorgente, setScegliSorgente] = useState<{
+    modifica: string | null
+    soloAudio: boolean
+  } | null>(null)
+  /**
+   * La sovraimpressione da sola, senza la striscia delle persone.
+   *
+   * Non e' il tutto schermo della finestra — quello e' `schermoIntero`, e
+   * toglie le colonne. Questo toglie i riquadri degli altri e basta: serve a
+   * chi sta guardando uno schermo condiviso e in quel momento delle facce non
+   * gli importa niente.
+   */
+  const [soloGrande, setSoloGrande] = useState(false)
   const [erroreLocale, setErroreLocale] = useState<string | null>(null)
   /**
    * L'ordine deciso a mano, per id di riquadro.
@@ -210,6 +245,36 @@ export default function Sala({
    * fumetto in alto a destra e resta com'e' stata lasciata.
    */
   const [mostraChat, setMostraChat] = useState(false)
+  /**
+   * Il pannello delle cose da fare insieme.
+   *
+   * Si escludono con la chat: sono due pannelli per lo stesso posto, e tenerli
+   * aperti insieme lascerebbe ai riquadri delle persone meno spazio di quello
+   * che serve a riconoscerle.
+   */
+  const [mostraInsieme, setMostraInsieme] = useState(false)
+  const [youtubeAFuoco, setYoutubeAFuoco] = useState(false)
+  const [volumeYoutube, setVolumeYoutube] = useState(1)
+  const [youtubeMuto, setYoutubeMuto] = useState(false)
+  const youtube =
+    media?.sessioni.find((s) => s.tipo === 'youtube' && Boolean(s.stato.riferimento)) ?? null
+  const youtubePrecedente = useRef<number | null>(null)
+
+  // Un nuovo video si comporta come l'unica condivisione schermo: va in primo
+  // piano una volta. Se l'utente lo rimette piccolo, gli aggiornamenti di
+  // play/pausa non devono ingrandirlo di nuovo.
+  useEffect(() => {
+    if (!youtube) {
+      youtubePrecedente.current = null
+      setYoutubeAFuoco(false)
+      return
+    }
+    if (youtubePrecedente.current === youtube.id) return
+    youtubePrecedente.current = youtube.id
+    setAFuoco(null)
+    setSenzaFuoco(true)
+    setYoutubeAFuoco(true)
+  }, [youtube?.id])
 
   /** Gli aloni ancora vivi su questo riquadro. */
   const puntatoriDi = (riquadro: DatiRiquadro): typeof sessione.puntatori =>
@@ -270,6 +335,7 @@ export default function Sala({
         if (prima) setSenzaFuoco(true)
         return null
       })
+      setYoutubeAFuoco(false)
     }
     window.addEventListener('keydown', tasto)
     return () => window.removeEventListener('keydown', tasto)
@@ -307,9 +373,19 @@ export default function Sala({
     return { grande: null, striscia: [], griglia: riquadri }
   }, [aFuoco, senzaFuoco, riquadri])
 
+  // Tolta la sovraimpressione, le persone tornano.
+  //
+  // Senza questo la scelta resterebbe appesa: si rimette tutto in griglia, poi
+  // piu' tardi qualcosa torna in primo piano — magari da solo, perche' e'
+  // rimasto un unico schermo condiviso — e gli altri sparirebbero senza che
+  // nessuno abbia premuto niente.
+  useEffect(() => {
+    if (!grande) setSoloGrande(false)
+  }, [grande])
+
   const tessera = useMemo(
-    () => tessere(griglia.length, spazio.larghezza, spazio.altezza),
-    [griglia.length, spazio.larghezza, spazio.altezza]
+    () => tessere(griglia.length + (youtube && !youtubeAFuoco ? 1 : 0), spazio.larghezza, spazio.altezza),
+    [griglia.length, spazio.larghezza, spazio.altezza, youtube, youtubeAFuoco]
   )
 
   // Chi e' in primo piano riceve tutto, gli altri schermi calano.
@@ -322,6 +398,7 @@ export default function Sala({
   }, [grande?.id, grande?.tipo, sessione.applicaQualita])
 
   const metti = (riquadro: DatiRiquadro): void => {
+    setYoutubeAFuoco(false)
     setAFuoco(riquadro.id)
     setSenzaFuoco(false)
   }
@@ -339,7 +416,19 @@ export default function Sala({
     bitrateAudio: number,
     permettiInterazione: boolean
   ): Promise<void> => {
-    setScegliSorgente(false)
+    const aperto = scegliSorgente
+    setScegliSorgente(null)
+    if (!aperto) return
+
+    // Cambiare una condivisione accesa non e' spegnerla e riaccenderla: la
+    // traccia resta la stessa, cambia cosa ci passa dentro. Chi guarda non
+    // vede il riquadro sparire e ricomparire, e chi l'aveva in primo piano se
+    // lo tiene.
+    if (aperto.modifica) {
+      await sessione.cambiaSorgenteCondivisione(aperto.modifica, sorgente, preset, audio)
+      return
+    }
+
     // La scelta fatta qui vale per questa condivisione: quella di serie resta
     // nelle impostazioni e non viene riscritta da un ripensamento di un minuto.
     await sessione.condividi(sorgente, preset, audio, soloAudio, bitrateAudio, permettiInterazione)
@@ -348,63 +437,49 @@ export default function Sala({
   const aggancio: PosizioneStriscia = impostazioni.posizioneStriscia ?? 'sotto'
   const collegando = sessione.stato === ConnectionState.Reconnecting
 
+  // I due posti per le condivisioni altrui. La propria non passa di qui: e'
+  // gia' sul computer, riceverla non costa niente.
+  const postiLiberi = sessione.quanteGuardate < MAX_CONDIVISIONI_GUARDATE
+  const daSbloccare = (r: DatiRiquadro): boolean => r.tipo === 'schermo' && !r.locale
+
+  // La combinazione richiesta per la vera superficie video: chiamata a tutta
+  // applicazione, un riquadro in primo piano e la striscia degli altri
+  // nascosta. In tutti gli altri casi restano i margini che separano le
+  // tessere e fanno posto alle barre dell'overlay.
+  const aTuttaSuperficie = schermoIntero.attivo && Boolean(grande) && soloGrande
+
   // `relative` sulla radice qui sotto e l ancora della barra dei comandi.
   // Senza, quella si aggrappava alla radice dell applicazione — che comprende
   // le due colonne di sinistra — e finiva centrata sulla finestra invece che
   // sulla schermata della chiamata.
   return (
     <div ref={radice} className="relative flex h-full min-h-0 flex-col bg-fondo">
-      {/* A tutto schermo l'intestazione se ne va: chi ci e' andato l'ha fatto
-          per vedere il video, e il nome del canale lo sa gia'. */}
-      {!schermoIntero.attivo && (
-        <header className="flex items-center justify-between border-b border-bordo px-5 py-3">
-          <div className="flex min-w-0 items-center gap-2">
-            <Altoparlante className="h-4 w-4 shrink-0 text-testo-3" />
-            <div className="min-w-0">
-              <h1 className="truncate font-medium">{ingresso.canale.nome}</h1>
-              <p className="flex items-center gap-1.5 text-xs text-testo-3">
-                {persone.length === 1 ? 'sei solo qui' : `${persone.length} persone`}
-                {ingresso.canale.soloAscolto && ' · palco'}
-                {!ingresso.permessi.puoTrasmettere && ' · puoi solo ascoltare'}
-                {/* Detto, e non nascosto: l'anello del riascolto tiene in
-                    memoria la voce di altre persone. Non esce da questo
-                    computer e muore uscendo dalla stanza, ma chi c'e' dentro
-                    ha diritto di vederlo scritto da qualche parte. */}
-                {sessione.riascoltoAttivo && (
-                  <span
-                    title={`Gli ultimi ${impostazioni.secondiRiascolto || 30} secondi di voce restano in memoria, qui, per poterli riascoltare. Non toccano il disco e spariscono uscendo.`}
-                    className="flex items-center gap-1 text-testo-3"
-                  >
-                    ·
-                    <Riavvolgi className="h-3 w-3" />
-                    {impostazioni.secondiRiascolto || 30}s
-                  </span>
-                )}
-              </p>
-            </div>
-          </div>
-          <div className="flex shrink-0 items-center gap-3">
-            {collegando && (
-              <span className="respiro text-xs text-attenzione">riprendo la linea…</span>
-            )}
-            {canaleVocale && (
-              <button
-                onClick={() => setMostraChat((v) => !v)}
-                title={mostraChat ? 'Chiudi la chat del canale' : 'Apri la chat del canale'}
-                aria-label={mostraChat ? 'Chiudi la chat del canale' : 'Apri la chat del canale'}
-                className={`transition-colors ${
-                  mostraChat ? 'text-vivo' : 'text-testo-3 hover:text-testo'
-                }`}
-              >
-                <Fumetto className="h-5 w-5" />
-              </button>
-            )}
-          </div>
-        </header>
+      {canaleVocale && (
+        <AutoWriter
+          api={api}
+          canale={canaleVocale.id}
+          sessioneVoce={sessione}
+          io={utente}
+          profili={profili}
+          moderatore={moderatore}
+        />
       )}
-
+      {/* L'intestazione non e' piu' una fascia fissa: nome del canale,
+          riascolto e chat sono passati nella barra alta dell'overlay, che
+          compare e sparisce col cursore insieme ai comandi in basso. Una
+          striscia sempre accesa in cima costava una riga di riquadri per dire
+          il nome di una stanza in cui si e' appena entrati. */}
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
-        <main className="group/sala relative flex min-h-0 min-w-0 flex-1 flex-col gap-2 overflow-hidden px-3 pt-10 pb-20">
+        {/* Lo spazio sopra e sotto e' la stanza che le due barre dell'overlay
+            si prendono quando compaiono. Sotto era gia' giusto; sopra
+            l'intestazione era una fascia che spingeva i riquadri, mentre
+            adesso ci galleggia sopra — e con `pt-10` finiva addosso al primo
+            riquadro. Uguale a `pb-20` perche' le due barre sono alte uguali. */}
+        <main
+          className={`group/sala relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden ${
+            aTuttaSuperficie ? 'gap-0 p-0' : 'gap-2 px-3 pt-20 pb-20'
+          }`}
+        >
           {sessione.audioBloccato && (
             <Avviso tono="attenzione">
               Il browser non lascia partire il suono finche' non tocchi la pagina.{' '}
@@ -417,6 +492,27 @@ export default function Sala({
             </Avviso>
           )}
           {(sessione.errore || erroreLocale) && <Avviso>{sessione.errore ?? erroreLocale}</Avviso>}
+
+          {youtube && media && youtubeAFuoco && (
+            <div className="mx-auto flex min-h-[200px] w-full max-w-6xl flex-1 overflow-hidden">
+              <RiquadroYouTube
+                key={youtube.id}
+                sessione={youtube}
+                media={media}
+                puoComandare={media.puoComandare && ingresso.permessi.puoCondividere !== false}
+                aFuoco
+                quandoScelto={() => setYoutubeAFuoco(false)}
+                volume={volumeYoutube}
+                muto={youtubeMuto}
+                cambiaVolume={(volume) => {
+                  setVolumeYoutube(volume)
+                  if (volume > 0) setYoutubeMuto(false)
+                }}
+                alternaMuto={() => setYoutubeMuto((muto) => !muto)}
+                schermoIntero={schermoIntero}
+              />
+            </div>
+          )}
 
           {/* Detto una volta e piccolo: due gesti che non si scoprono da soli,
               e che dopo averli letti una volta non si dimenticano piu'. */}
@@ -442,12 +538,17 @@ export default function Sala({
           ) : (
             <>
               {grande && (
-                <div className={`flex min-h-0 flex-1 gap-2 overflow-hidden ${VERSO[aggancio]}`}>
+                <div
+                  className={`flex min-h-0 flex-1 overflow-hidden ${
+                    aTuttaSuperficie ? 'gap-0' : 'gap-2'
+                  } ${VERSO[aggancio]}`}
+                >
                   <div className="min-h-0 min-w-0 flex-1">
                     <Riquadro
                       dati={grande}
                       foto={fotoDi(grande.identita)}
                       mostraStatistiche={impostazioni.mostraStatistiche}
+                      specchiaCamera={impostazioni.specchiaCamera ?? true}
                       aFuoco
                       volumi={vociDi(grande)}
                       puntatori={puntatoriDi(grande)}
@@ -464,10 +565,16 @@ export default function Sala({
                       quandoLascia={() => sessione.lascia(grande.id)}
                       quandoMenu={(x, y) => setMenu({ x, y, id: grande.id })}
                       quandoScelto={togli}
+                      guarda={daSbloccare(grande) ? () => sessione.guarda(grande.id) : undefined}
+                      nonGuardare={
+                        daSbloccare(grande) ? () => sessione.nonGuardare(grande.id) : undefined
+                      }
+                      puoiGuardare={postiLiberi}
+                      senzaCornice={aTuttaSuperficie}
                     />
                   </div>
 
-                  {striscia.length > 0 && (
+                  {striscia.length > 0 && !soloGrande && (
                     <div className={`flex shrink-0 gap-2 p-px ${STRISCIA[aggancio]}`}>
                       {striscia.map((riquadro) => {
                         const { className, ...trascina } = trascinamento(riquadro.id)
@@ -483,6 +590,7 @@ export default function Sala({
                               dati={riquadro}
                               foto={fotoDi(riquadro.identita)}
                               mostraStatistiche={impostazioni.mostraStatistiche}
+                              specchiaCamera={impostazioni.specchiaCamera ?? true}
                               aFuoco={false}
                               volumi={vociDi(riquadro)}
                               puntatori={puntatoriDi(riquadro)}
@@ -504,6 +612,17 @@ export default function Sala({
                               quandoLascia={() => sessione.lascia(riquadro.id)}
                               quandoMenu={(x, y) => setMenu({ x, y, id: riquadro.id })}
                               quandoScelto={() => metti(riquadro)}
+                              guarda={
+                                daSbloccare(riquadro)
+                                  ? () => sessione.guarda(riquadro.id)
+                                  : undefined
+                              }
+                              nonGuardare={
+                                daSbloccare(riquadro)
+                                  ? () => sessione.nonGuardare(riquadro.id)
+                                  : undefined
+                              }
+                              puoiGuardare={postiLiberi}
                             />
                           </div>
                         )
@@ -513,10 +632,12 @@ export default function Sala({
                 </div>
               )}
 
-              {griglia.length > 0 && (
+              {(griglia.length > 0 || (youtube && !youtubeAFuoco)) && (
                 <div
                   ref={contenitore}
-                  className="flex min-h-0 flex-1 justify-center overflow-y-auto"
+                  className={`flex justify-center overflow-y-auto ${
+                    youtubeAFuoco ? 'h-28 shrink-0' : 'min-h-0 flex-1'
+                  }`}
                 >
                   {/* `m-auto` sul figlio invece di `items-center` sul padre.
 
@@ -537,6 +658,35 @@ export default function Sala({
                     className="m-auto flex flex-wrap content-center justify-center gap-2"
                     style={{ maxWidth: tessera.colonne * (tessera.larghezza + SPAZIO) - SPAZIO }}
                   >
+                    {youtube && media && !youtubeAFuoco && (
+                      <div
+                        className="overflow-hidden"
+                        style={{ width: tessera.larghezza, height: tessera.altezza }}
+                      >
+                        <RiquadroYouTube
+                          key={youtube.id}
+                          sessione={youtube}
+                          media={media}
+                          puoComandare={
+                            media.puoComandare && ingresso.permessi.puoCondividere !== false
+                          }
+                          aFuoco={false}
+                          quandoScelto={() => {
+                            setAFuoco(null)
+                            setSenzaFuoco(true)
+                            setYoutubeAFuoco(true)
+                          }}
+                          volume={volumeYoutube}
+                          muto={youtubeMuto}
+                          cambiaVolume={(volume) => {
+                            setVolumeYoutube(volume)
+                            if (volume > 0) setYoutubeMuto(false)
+                          }}
+                          alternaMuto={() => setYoutubeMuto((muto) => !muto)}
+                          schermoIntero={schermoIntero}
+                        />
+                      </div>
+                    )}
                     {griglia.map((riquadro) => {
                       const { className, ...trascina } = trascinamento(riquadro.id)
                       return (
@@ -550,6 +700,7 @@ export default function Sala({
                             dati={riquadro}
                             foto={fotoDi(riquadro.identita)}
                             mostraStatistiche={impostazioni.mostraStatistiche}
+                            specchiaCamera={impostazioni.specchiaCamera ?? true}
                             aFuoco={false}
                             volumi={vociDi(riquadro)}
                             puntatori={puntatoriDi(riquadro)}
@@ -566,6 +717,15 @@ export default function Sala({
                             quandoLascia={() => sessione.lascia(riquadro.id)}
                             quandoMenu={(x, y) => setMenu({ x, y, id: riquadro.id })}
                             quandoScelto={() => metti(riquadro)}
+                            guarda={
+                              daSbloccare(riquadro) ? () => sessione.guarda(riquadro.id) : undefined
+                            }
+                            nonGuardare={
+                              daSbloccare(riquadro)
+                                ? () => sessione.nonGuardare(riquadro.id)
+                                : undefined
+                            }
+                            puoiGuardare={postiLiberi}
                           />
                         </div>
                       )
@@ -578,10 +738,20 @@ export default function Sala({
 
           {scegliSorgente && (
             <SceltaSorgente
-              presetIniziale={impostazioni.presetSchermo}
+              presetIniziale={
+                (scegliSorgente.modifica && sessione.presetDiCondivisione(scegliSorgente.modifica)) ||
+                impostazioni.presetSchermo
+              }
               audioIniziale={impostazioni.audioSistema}
+              modalita={
+                !scegliSorgente.modifica
+                  ? 'nuova'
+                  : scegliSorgente.soloAudio
+                    ? 'cambia-audio'
+                    : 'cambia-video'
+              }
               conferma={(s, p, a, solo, bit, inter) => void condividi(s, p, a, solo, bit, inter)}
-              chiudi={() => setScegliSorgente(false)}
+              chiudi={() => setScegliSorgente(null)}
             />
           )}
         </main>
@@ -596,7 +766,20 @@ export default function Sala({
               chat={chatVocale}
               io={utente}
               profili={profili}
-              amministra={moderatore}
+              mostraAnteprimeLink={impostazioni.mostraAnteprimeLink ?? true}
+            />
+          </aside>
+        )}
+
+        {mostraInsieme && media && (
+          <aside className="flex w-[clamp(18rem,34vw,26rem)] min-w-0 shrink-0 flex-col border-l border-bordo bg-fondo-2">
+            <PannelloInsieme
+              api={api}
+              media={media}
+              impostazioni={impostazioni}
+              salva={salvaImpostazioni}
+              puoCondividere={ingresso.permessi.puoCondividere !== false}
+              chiudi={() => setMostraInsieme(false)}
             />
           </aside>
         )}
@@ -621,14 +804,43 @@ export default function Sala({
         mutoAudioRemoto={sessione.alternaMutoAudioRemoto}
         riascoltoAttivo={sessione.riascoltoAttivo}
         secondiRiascolto={impostazioni.secondiRiascolto || 30}
+        nomeCanale={ingresso.canale.nome}
+        quantePersone={persone.length}
+        soloAscolto={ingresso.canale.soloAscolto}
+        collegando={collegando}
+        chat={
+          canaleVocale
+            ? {
+                aperta: mostraChat,
+                alterna: () => {
+                  setMostraChat((v) => !v)
+                  setMostraInsieme(false)
+                }
+              }
+            : undefined
+        }
+        insieme={
+          media
+            ? {
+                aperta: mostraInsieme,
+                attiva: media.sessioni.length > 0,
+                alterna: () => {
+                  setMostraInsieme((v) => !v)
+                  setMostraChat(false)
+                }
+              }
+            : undefined
+        }
+        soloGrande={
+          grande ? { attivo: soloGrande, alterna: () => setSoloGrande((v) => !v) } : undefined
+        }
         impostazioni={impostazioni}
         schermoIntero={schermoIntero}
         alternaMicrofono={() => void sessione.alternaMicrofono()}
         alternaCamera={() => void sessione.alternaCamera()}
-        apriCondivisione={() => setScegliSorgente(true)}
+        apriCondivisione={() => setScegliSorgente({ modifica: null, soloAudio: false })}
+        modificaCondivisione={(id, soloAudio) => setScegliSorgente({ modifica: id, soloAudio })}
         smettiDiCondividere={(id) => void sessione.smettiDiCondividere(id)}
-        cambiaQualita={(id, presetId) => void sessione.cambiaQualitaCondivisione(id, presetId)}
-        presetDi={sessione.presetDiCondivisione}
         riascolta={sessione.riascolta}
         salva={(modifiche) => void salvaImpostazioni(modifiche)}
         apriImpostazioni={apriImpostazioni}
@@ -681,6 +893,188 @@ export default function Sala({
         )
       })()}
     </div>
+  )
+}
+
+function AutoWriter({
+  api,
+  canale,
+  sessioneVoce,
+  io,
+  profili,
+  moderatore
+}: {
+  api: Api
+  canale: number
+  sessioneVoce: Sessione
+  io: Utente
+  profili: Map<number, { nome: string; avatar: string | null }>
+  moderatore: boolean
+}): React.JSX.Element | null {
+  const [disponibile, setDisponibile] = useState<boolean | null>(null)
+  const [stato, setStato] = useState<SessioneAutoWriter | null>(null)
+  const [errore, setErrore] = useState<string | null>(null)
+  const [riassunto, setRiassunto] = useState<Record<string, string[]> | null>(null)
+  const [motivoIndisponibile, setMotivoIndisponibile] = useState<'server' | 'provider' | null>(null)
+
+  useEffect(() => {
+    let vivo = true
+    let supportato = true
+    const carica = (): void => {
+      void api.autoWriter(canale).then((r) => {
+        if (!vivo) return
+        setDisponibile(r.disponibile)
+        setStato(r.sessione)
+        setMotivoIndisponibile(r.disponibile ? null : 'provider')
+        setErrore(null)
+      }).catch((e) => {
+        if (!vivo) return
+        if (e instanceof ErroreApi && e.stato === 404) {
+          // Un client nuovo puo' parlare per qualche minuto con il container
+          // precedente durante un aggiornamento. Non ha senso ripetere la
+          // stessa richiesta ogni tre secondi ne' coprire la chiamata con un
+          // errore enorme: la funzione e' semplicemente indisponibile finche'
+          // il server non viene ricostruito.
+          supportato = false
+          setDisponibile(false)
+          setMotivoIndisponibile('server')
+          setErrore(null)
+          return
+        }
+        setErrore((e as Error).message)
+      })
+    }
+    carica()
+    const giro = window.setInterval(() => supportato && carica(), 3000)
+    return () => {
+      vivo = false
+      window.clearInterval(giro)
+    }
+  }, [api, canale])
+
+  const mioConsenso = stato?.consensi.find((c) => c.utente === io.id)?.consenso ?? null
+
+  useEffect(() => {
+    if (stato?.stato !== 'attiva' || mioConsenso !== true || !sessioneVoce.stanza) return
+    const pubblicazione = sessioneVoce.stanza.localParticipant.getTrackPublication(Track.Source.Microphone)
+    const originale = pubblicazione?.track?.mediaStreamTrack
+    if (!originale || typeof MediaRecorder === 'undefined') return
+    const copia = originale.clone()
+    const flusso = new MediaStream([copia])
+    let registratore: MediaRecorder
+    try {
+      registratore = new MediaRecorder(flusso, { mimeType: 'audio/webm;codecs=opus' })
+    } catch {
+      registratore = new MediaRecorder(flusso)
+    }
+    registratore.ondataavailable = (evento) => {
+      if (!evento.data.size) return
+      void evento.data.arrayBuffer().then((buffer) => {
+        const byte = new Uint8Array(buffer)
+        let binario = ''
+        for (let i = 0; i < byte.length; i += 0x8000) {
+          binario += String.fromCharCode(...byte.subarray(i, i + 0x8000))
+        }
+        return api.segmentoAutoWriter(canale, btoa(binario), evento.data.type || 'audio/webm')
+      }).catch((e) => setErrore((e as Error).message))
+    }
+    registratore.start(8000)
+    return () => {
+      if (registratore.state !== 'inactive') registratore.stop()
+      copia.stop()
+    }
+  }, [api, canale, mioConsenso, sessioneVoce.stanza, stato?.stato])
+
+  /**
+   * Si avvisa quando qualcosa e' rotto, non quando non e' acceso.
+   *
+   * Un provider di trascrizione mancante non e' un guasto: e' una funzione
+   * facoltativa che nessuno ha configurato, e ricordarlo a ogni ingresso in
+   * una chiamata e' un promemoria rivolto a chi amministra il NAS — che quasi
+   * sempre non e' la persona davanti allo schermo. Vale la stessa regola dei
+   * pulsanti AI nel compositore: cio' che non funziona non si mostra, invece
+   * di mostrarsi spento e spiegare perche'.
+   *
+   * Il server piu' vecchio dell'applicazione, invece, resta un avviso. Li' due
+   * pezzi che dovrebbero andare insieme non vanno insieme, e non si sistema da
+   * solo: qualcuno deve accorgersene.
+   */
+  usaProblema(
+    disponibile === false && motivoIndisponibile === 'server'
+      ? {
+          chiave: 'autowriter',
+          gravita: 'attenzione',
+          titolo: 'Auto Writer non è disponibile',
+          dettaglio:
+            'Il server è più vecchio dell\'applicazione e non conosce Auto Writer. Va aggiornato il server.'
+        }
+      : null
+  )
+
+  const azione = async (fn: () => Promise<unknown>): Promise<void> => {
+    setErrore(null)
+    try {
+      await fn()
+      const nuovo = await api.autoWriter(canale)
+      setStato(nuovo.sessione)
+    } catch (e) {
+      setErrore((e as Error).message)
+    }
+  }
+
+  // Niente sessione e niente provider: non c'e' nulla da dire qui, e il motivo
+  // per cui non si puo' usare sta fra i problemi, che e' il posto giusto — e'
+  // una cosa da sistemare sul server, non una scritta da leggere ogni volta che
+  // si entra in una chiamata.
+  if (!stato && !disponibile) return null
+
+  return (
+    <aside className="absolute top-3 left-1/2 z-40 w-[min(34rem,calc(100%-2rem))] -translate-x-1/2 rounded-xl border border-bordo bg-fondo-2/95 p-2.5 shadow-xl backdrop-blur">
+      <div className="flex items-center gap-2 text-xs">
+        <span className={stato?.stato === 'attiva' ? 'text-male' : 'text-testo-2'}>
+          ● Auto Writer {stato?.stato === 'attiva' ? 'sta trascrivendo' : stato ? 'attende il consenso' : ''}
+        </span>
+        {!stato && disponibile && (
+          <button className="ml-auto text-vivo underline" onClick={() => void azione(() => api.avviaAutoWriter(canale))}>
+            Richiedi attivazione
+          </button>
+        )}
+        {stato && mioConsenso === null && (
+          <span className="ml-auto flex gap-2">
+            <button className="text-ok underline" onClick={() => void azione(() => api.consensoAutoWriter(canale, true))}>Acconsento</button>
+            <button className="text-male underline" onClick={() => void azione(() => api.consensoAutoWriter(canale, false))}>Rifiuto</button>
+          </span>
+        )}
+        {stato && (stato.richiestoDa === io.id || moderatore) && (
+          <button className="ml-auto text-male underline" onClick={() => void azione(() => api.fermaAutoWriter(canale))}>Ferma</button>
+        )}
+      </div>
+      {stato?.stato === 'consenso' && (
+        <p className="mt-1 text-[11px] text-testo-3">
+          Richiesto da {profili.get(stato.richiestoDa)?.nome ?? 'un partecipante'} tramite {stato.provider}. Ognuno decide per sé: chi accetta viene trascritto, chi rifiuta no, e la stanza va avanti comunque.
+        </p>
+      )}
+      {stato?.segmenti.length ? (
+        <div className="mt-2 max-h-28 overflow-y-auto rounded-lg bg-fondo p-2 text-xs">
+          {stato.segmenti.slice(-6).map((s) => (
+            <p key={s.id}><span className="text-vivo">{s.parlante ? profili.get(s.parlante)?.nome ?? 'Partecipante' : 'Non identificato'}:</span> {s.testo}</p>
+          ))}
+          <button
+            className="mt-1 text-vivo underline"
+            onClick={() => void api.riassumiAutoWriter(canale).then((r) => setRiassunto(r.riassunto)).catch((e) => setErrore((e as Error).message))}
+          >
+            Riassumi conversazione
+          </button>
+        </div>
+      ) : null}
+      {riassunto && (
+        <div className="mt-2 rounded-lg border border-vivo/30 p-2 text-[11px] text-testo-2">
+          <p className="font-medium text-vivo">Riassunto generato dall’AI</p>
+          {Object.entries(riassunto).map(([titolo, voci]) => voci.length ? <p key={titolo}><b>{titolo}:</b> {voci.join(' · ')}</p> : null)}
+        </div>
+      )}
+      {errore && <p className="mt-1 text-[11px] text-male">{errore}</p>}
+    </aside>
   )
 }
 

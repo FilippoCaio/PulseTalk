@@ -288,6 +288,38 @@ export function Lente(props: Props): React.JSX.Element {
   )
 }
 
+/** Le funzioni AI: una scintilla, non un marchio di un provider specifico. */
+export function Scintille(props: Props): React.JSX.Element {
+  return (
+    <Base {...props}>
+      <path d="M12 2.8c.7 4.3 2.9 6.5 7.2 7.2-4.3.7-6.5 2.9-7.2 7.2-.7-4.3-2.9-6.5-7.2-7.2 4.3-.7 6.5-2.9 7.2-7.2Z" />
+      <path d="M19 16.5c.25 1.4 1.1 2.25 2.5 2.5-1.4.25-2.25 1.1-2.5 2.5-.25-1.4-1.1-2.25-2.5-2.5 1.4-.25 2.25-1.1 2.5-2.5Z" />
+    </Base>
+  )
+}
+
+/** Un'immagine generata o trovata: il significato lo completa il pulsante. */
+export function Immagine(props: Props): React.JSX.Element {
+  return (
+    <Base {...props}>
+      <rect x="3" y="4" width="18" height="16" rx="2.5" />
+      <circle cx="8.5" cy="9" r="1.5" />
+      <path d="m4.5 17 4.8-4.8 3.2 3.2 2.2-2.2 4.8 4.8" />
+    </Base>
+  )
+}
+
+/** La ricerca web dell'assistente, distinta dalla ricerca di sole immagini. */
+export function Globo(props: Props): React.JSX.Element {
+  return (
+    <Base {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M3.5 12h17" />
+      <path d="M12 3c2.2 2.4 3.4 5.4 3.4 9S14.2 18.6 12 21c-2.2-2.4-3.4-5.4-3.4-9S9.8 5.4 12 3Z" />
+    </Base>
+  )
+}
+
 /** Il cancelletto dei canali di testo. */
 export function Cancelletto(props: Props): React.JSX.Element {
   return (
@@ -458,10 +490,19 @@ export function Pile(props: Props): React.JSX.Element {
 }
 
 /** La chat del canale: un fumetto. */
+/**
+ * Il fumetto della chat.
+ *
+ * Rettangolo arrotondato con la codina in basso a sinistra, e non la goccia
+ * asimmetrica che c'era prima: quella, ruotata come stava, sembrava tutto
+ * fuorche' un fumetto. I tre puntini dentro servono a distinguerlo da un
+ * riquadro qualunque nelle misure piccole, dove la codina da sola si perde.
+ */
 export function Fumetto(props: Props): React.JSX.Element {
   return (
     <Base {...props}>
-      <path d="M20.5 12a7.5 7.5 0 0 1-7.5 7.5H8.2L4 22v-4.1A7.5 7.5 0 0 1 13 4.5a7.5 7.5 0 0 1 7.5 7.5Z" />
+      <path d="M4.5 4.5h15a2 2 0 0 1 2 2v7.5a2 2 0 0 1-2 2h-8.2L7 19.8V16H4.5a2 2 0 0 1-2-2V6.5a2 2 0 0 1 2-2Z" />
+      <path d="M7.6 10.3h.01M12 10.3h.01M16.4 10.3h.01" />
     </Base>
   )
 }
@@ -535,5 +576,174 @@ export function Onde({
         )
       })}
     </svg>
+  )
+}
+
+/** Il calendario degli eventi. */
+export function Calendario(props: Props): React.JSX.Element {
+  return (
+    <Base {...props}>
+      <rect x="3.5" y="5" width="17" height="15.5" rx="2.5" />
+      <path d="M3.5 10h17M8 2.5v4M16 2.5v4" />
+    </Base>
+  )
+}
+
+/** La cornetta: chiamare. */
+export function Telefono(props: Props): React.JSX.Element {
+  return (
+    <Base {...props}>
+      <path d="M7.5 3.5 9.8 8l-2 2a13 13 0 0 0 6.2 6.2l2-2 4.5 2.3v3a1.5 1.5 0 0 1-1.7 1.5C10.4 20 4 13.6 3 4.7A1.5 1.5 0 0 1 4.5 3h3Z" />
+    </Base>
+  )
+}
+
+/** La cornetta girata: riagganciare. La sbarra dice che si chiude. */
+export function TelefonoGiu(props: Props): React.JSX.Element {
+  return (
+    <Base {...props}>
+      <path d="M7.5 3.5 9.8 8l-2 2a13 13 0 0 0 6.2 6.2l2-2 4.5 2.3v3a1.5 1.5 0 0 1-1.7 1.5C10.4 20 4 13.6 3 4.7A1.5 1.5 0 0 1 4.5 3h3Z" />
+      <Sbarra />
+    </Base>
+  )
+}
+
+/** Il triangolo di chi riparte. */
+export function Play(props: Props): React.JSX.Element {
+  return (
+    <Base {...props}>
+      <path d="M7 4.5 19.5 12 7 19.5Z" />
+    </Base>
+  )
+}
+
+/** Le due barre di chi si ferma. */
+export function Pausa(props: Props): React.JSX.Element {
+  return (
+    <Base {...props}>
+      <path d="M8.5 4.5v15M15.5 4.5v15" />
+    </Base>
+  )
+}
+
+/** Al prossimo della coda. */
+export function Avanti(props: Props): React.JSX.Element {
+  return (
+    <Base {...props}>
+      <path d="M6 4.5 16 12 6 19.5Z" />
+      <path d="M18.5 4.5v15" />
+    </Base>
+  )
+}
+
+/** La nota: la sessione musicale. */
+export function Nota(props: Props): React.JSX.Element {
+  return (
+    <Base {...props}>
+      <path d="M9 18V5.5l11-2V16" />
+      <circle cx="6.5" cy="18" r="2.5" />
+      <circle cx="17.5" cy="16" r="2.5" />
+    </Base>
+  )
+}
+
+/** Lo schermo con il triangolo dentro: guardare un video insieme. */
+export function Video(props: Props): React.JSX.Element {
+  return (
+    <Base {...props}>
+      <rect x="2.5" y="4.5" width="19" height="15" rx="3" />
+      <path d="M10 9.5 15 12l-5 2.5Z" />
+    </Base>
+  )
+}
+
+/** Lo scudo dei ruoli. */
+export function Scudo(props: Props): React.JSX.Element {
+  return (
+    <Base {...props}>
+      <path d="M12 2.5 20 5.5v6c0 5-3.4 8.7-8 10-4.6-1.3-8-5-8-10v-6Z" />
+    </Base>
+  )
+}
+
+/** L'anello di catena: un invito da copiare. */
+export function Catena(props: Props): React.JSX.Element {
+  return (
+    <Base {...props}>
+      <path d="M10 13.5a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1.6 1.6" />
+      <path d="M14 10.5a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1.6-1.6" />
+    </Base>
+  )
+}
+
+/** Il chevron: apre e chiude un menu o una sezione. */
+export function Chevron(props: Props): React.JSX.Element {
+  return (
+    <Base {...props}>
+      <path d="M6.5 9.5 12 15l5.5-5.5" />
+    </Base>
+  )
+}
+
+/** Le tre righe di una cartella: le categorie. */
+export function Cartella(props: Props): React.JSX.Element {
+  return (
+    <Base {...props}>
+      <path d="M3 6.5A2 2 0 0 1 5 4.5h4l2 2.5h6a2 2 0 0 1 2 2v8.5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
+    </Base>
+  )
+}
+
+/** Il quadretto con la spunta: segna come letto. */
+export function Letto(props: Props): React.JSX.Element {
+  return (
+    <Base {...props}>
+      <path d="M2.5 12.5 7 17 14 8" />
+      <path d="M11 15.5 12.5 17 21.5 6" />
+    </Base>
+  )
+}
+
+/**
+ * Il triangolo dell'attenzione e il cerchio dell'errore.
+ *
+ * Due forme diverse e non due colori diversi della stessa: il colore da solo
+ * non basta a chi non lo distingue, e queste due icone stanno spesso una
+ * accanto all'altra con dentro un numero — se differissero solo per la tinta
+ * sarebbero due numeri senza etichetta.
+ */
+export function Attenzione(props: Props): React.JSX.Element {
+  return (
+    <Base {...props}>
+      <path d="M12 3.6 21.2 19.4a1 1 0 0 1-.87 1.5H3.67a1 1 0 0 1-.87-1.5Z" />
+      <path d="M12 9.6v4.2" />
+      <path d="M12 17.2h.01" />
+    </Base>
+  )
+}
+
+export function Errore(props: Props): React.JSX.Element {
+  return (
+    <Base {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7.4v5.2" />
+      <path d="M12 16.4h.01" />
+    </Base>
+  )
+}
+
+/**
+ * La spunta doppia delle ricevute.
+ *
+ * Due segni sfalsati e non due sovrapposti: sovrapposti, alla misura in cui
+ * stanno accanto a un orario, diventano una macchia indistinguibile dalla
+ * spunta singola — e distinguerle e' l'unica ragione per cui esistono.
+ */
+export function SpuntaDoppia(props: Props): React.JSX.Element {
+  return (
+    <Base {...props}>
+      <path d="M2 12.6 6.2 17 13.6 8" />
+      <path d="M9.6 13.2 11.4 15.2 19.2 6" />
+    </Base>
   )
 }

@@ -15,9 +15,12 @@ import {
 import {
   AltoparlanteMuto,
   Ingrandisci,
+  Lucchetto,
   MicrofonoSpento,
   Rimpicciolisci,
   Lente,
+  SchermoCondividi,
+  SchermoStop,
   Stella
 } from '../icone'
 import { BottoneVolume, type VoceVolume } from './Volume'
@@ -58,7 +61,12 @@ export default function Riquadro({
   quandoTiene,
   quandoLascia,
   quandoMenu,
-  quandoScelto
+  quandoScelto,
+  guarda,
+  nonGuardare,
+  puoiGuardare = true,
+  senzaCornice = false,
+  specchiaCamera = false
 }: {
   dati: Dati
   /** La foto profilo, se ne ha caricata una. Altrimenti restano le iniziali. */
@@ -83,11 +91,22 @@ export default function Riquadro({
   /** Tasto destro: apre il menu del riquadro alle coordinate del puntatore. */
   quandoMenu?: (x: number, y: number) => void
   quandoScelto: () => void
+  /** Comincia a ricevere questa condivisione. Solo su quelle altrui. */
+  guarda?: () => void
+  /** Smette di riceverla, e libera il posto per un'altra. */
+  nonGuardare?: () => void
+  /** Falso quando i posti sono gia' occupati: il pulsante lo dice invece di non fare niente. */
+  puoiGuardare?: boolean
+  /** Riempie la sala a filo: niente raggi e nessun bordo, nemmeno mentre parla. */
+  senzaCornice?: boolean
+  /** Solo anteprima locale della webcam; non modifica mai la traccia pubblicata. */
+  specchiaCamera?: boolean
 }): React.JSX.Element {
   const video = useRef<HTMLVideoElement>(null)
   const scatola = useRef<HTMLDivElement>(null)
   const [statistiche, setStatistiche] = useState<Statistiche | null>(null)
   const [zoom, setZoom] = useState<Zoom>(FERMO)
+  const [zoomVisibile, setZoomVisibile] = useState(false)
   const [misure, setMisure] = useState<Misure>({
     larghezza: 0,
     altezza: 0,
@@ -117,10 +136,16 @@ export default function Riquadro({
     lunga.current.da = null
   }
 
-  // Solo gli schermi si ingrandiscono: su un volto non serve, e un volto
-  // trascinabile per sbaglio e' solo un modo per spostare la faccia di
-  // qualcuno fuori dal riquadro.
-  const ingrandibile = dati.tipo === 'schermo'
+  // Si ingrandiscono schermi e webcam quando c'e' davvero una traccia video.
+  // L'avatar resta fermo: ingrandire delle iniziali non aggiunge informazione.
+  const ingrandibile = !!dati.traccia && !dati.bloccato
+
+  useEffect(() => {
+    if (!ingrandibile) return
+    setZoomVisibile(true)
+    const timer = window.setTimeout(() => setZoomVisibile(false), 1400)
+    return () => window.clearTimeout(timer)
+  }, [zoom.scala, ingrandibile])
 
   useEffect(() => {
     const elemento = video.current
@@ -337,14 +362,18 @@ export default function Riquadro({
       onPointerUp={lasciato}
       onPointerCancel={lasciato}
       onDoubleClick={() => !quandoPunta && ingrandibile && setZoom(FERMO)}
-      className={`group relative h-full w-full overflow-hidden rounded-xl bg-fondo-2 ${
+      className={`group relative h-full w-full overflow-hidden bg-fondo-2 ${
+        senzaCornice ? 'rounded-none' : 'rounded-xl'
+      } ${
         dati.tipo === 'schermo' ? 'bg-black' : ''
       } ${quandoPunta ? 'cursor-crosshair' : aFuoco ? 'cursor-zoom-out' : 'cursor-zoom-in'}`}
     >
       {/* Il bordo, sopra a tutto e senza rubare i clic. */}
-      <div
-        className={`pointer-events-none absolute inset-0 z-10 rounded-xl transition-colors duration-150 ${bordo}`}
-      />
+      {!senzaCornice && (
+        <div
+          className={`pointer-events-none absolute inset-0 z-10 rounded-xl transition-colors duration-150 ${bordo}`}
+        />
+      )}
       {dati.traccia ? (
         <video
           ref={video}
@@ -359,9 +388,11 @@ export default function Riquadro({
           // volto con le bande nere ai lati sta male e non si perde niente.
           className={`h-full w-full ${dati.tipo === 'schermo' ? 'object-contain' : 'object-cover'}`}
           style={
-            zoom.scala > 1
+            zoom.scala > 1 || (specchiaCamera && dati.tipo === 'persona' && dati.locale)
               ? {
-                  transform: `translate(${zoom.x}px, ${zoom.y}px) scale(${zoom.scala})`,
+                  transform: `translate(${zoom.x}px, ${zoom.y}px) scale(${zoom.scala})${
+                    specchiaCamera && dati.tipo === 'persona' && dati.locale ? ' scaleX(-1)' : ''
+                  }`,
                   // Niente transizione: durante il trascinamento l'immagine
                   // deve stare sotto al dito, non rincorrerlo.
                   transformOrigin: 'center',
@@ -380,6 +411,45 @@ export default function Riquadro({
         </div>
       )}
 
+      {/* La condivisione chiusa.
+          Il riquadro c'e' — si sa chi condivide, e quante ne ha aperte — ma il
+          video non lo si sta scaricando. In una stanza con dieci schermi
+          accesi, prenderli tutti vuol dire non vederne bene nessuno e non
+          sentire piu' nessuno parlare: si aprono quelli che servono. */}
+      {dati.bloccato && (
+        <div
+          onClick={(evento) => evento.stopPropagation()}
+          onPointerDown={(evento) => evento.stopPropagation()}
+          className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 bg-fondo/85 p-3 text-center"
+        >
+          <button
+            onClick={guarda}
+            disabled={!puoiGuardare || !guarda}
+            title={
+              puoiGuardare
+                ? `Comincia a ricevere la condivisione di ${dati.nome}`
+                : "Ne stai gia' guardando due: chiudine una per aprire questa"
+            }
+            className="flex items-center gap-2 rounded-lg bg-fondo-3 px-3 py-2 text-sm text-testo transition-colors hover:bg-bordo disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {puoiGuardare ? (
+              <SchermoCondividi className="h-4 w-4" />
+            ) : (
+              <Lucchetto className="h-4 w-4" />
+            )}
+            Guarda
+          </button>
+          {/* Di chi e', e quale delle sue. Sulle condivisioni la targhetta col
+              nome non c'e' piu', e da un rettangolo grigio non si capisce che
+              schermo si sta per aprire. */}
+          <p className="max-w-full truncate text-[11px] text-testo-3">
+            {puoiGuardare
+              ? `${dati.nome}${dati.etichetta ? ` · ${dati.etichetta}` : ''}`
+              : 'Ne stai guardando due: chiudine una'}
+          </p>
+        </div>
+      )}
+
       {/* I comandi, in alto a destra e solo passandoci sopra: un riquadro che
           mostra sempre tre pulsanti e' un riquadro che mostra meno video.
           `focus-within` li tiene visibili mentre il fumetto del volume e'
@@ -395,6 +465,20 @@ export default function Riquadro({
             verso="sotto"
             variante="riquadro"
           />
+        )}
+
+        {/* Solo su una condivisione altrui che si sta ricevendo: e' il modo di
+            liberare uno dei due posti senza aspettare che l'altro smetta. */}
+        {nonGuardare && !dati.bloccato && (
+          <Comando titolo="Smetti di guardare — libera un posto" premi={nonGuardare}>
+            <SchermoStop className="h-4 w-4" />
+          </Comando>
+        )}
+
+        {ingrandibile && zoom.scala > 1 && (
+          <Comando titolo="Reset zoom al 100%" premi={() => setZoom(FERMO)}>
+            <Lente className="h-4 w-4" />
+          </Comando>
         )}
 
         <Comando
@@ -444,51 +528,62 @@ export default function Riquadro({
         )
       })}
 
-      {zoom.scala > 1 && (
+      {zoomVisibile && ingrandibile && (
         <div
           onClick={(evento) => {
             evento.stopPropagation()
-            setZoom(FERMO)
+            if (zoom.scala > 1) setZoom(FERMO)
           }}
-          title="Torna a grandezza naturale (doppio clic)"
-          className="numeri absolute top-2 left-2 z-20 flex cursor-pointer items-center gap-1 rounded-lg bg-black/65 px-2 py-1 text-[11px] text-white/80 backdrop-blur-sm hover:bg-black/85"
+          title={zoom.scala > 1 ? 'Reset zoom al 100% (anche con doppio clic)' : 'Zoom 100%'}
+          className={`numeri pointer-events-auto absolute top-2 left-2 z-20 flex items-center gap-1 rounded-lg bg-black/65 px-2 py-1 text-[11px] text-white/80 backdrop-blur-sm ${
+            zoom.scala > 1 ? 'cursor-pointer hover:bg-black/85' : ''
+          }`}
         >
           <Lente className="h-3.5 w-3.5" />
-          {zoom.scala.toFixed(1).replace('.', ',')}×
+          Zoom {Math.round(zoom.scala * 100)}%
         </div>
       )}
 
-      {/* Il nome, sempre visibile ma discreto. */}
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent px-3 pt-8 pb-2">
-        <div className="flex items-center gap-1.5 text-xs">
-          {dati.moderatore && (
-            <span title="Modera questa stanza" className="shrink-0 text-attenzione">
-              <Stella className="h-3.5 w-3.5" />
-            </span>
-          )}
-          <span className="truncate font-medium text-white/90">
-            {dati.nome}
-            {dati.locale && <span className="font-normal text-white/50"> (tu)</span>}
-          </span>
-          {dati.etichetta && <span className="truncate text-white/50">· {dati.etichetta}</span>}
+      {/* Il nome, in una targhetta invece che sopra a un alone.
+          La sfumatura nera larga tutto il riquadro serviva a rendere leggibile
+          un testo appoggiato sul video, e per farlo scuriva la parte bassa di
+          ogni cosa — il fondo di una faccia, l'ultima riga di un terminale
+          condiviso. La targhetta porta il suo fondo con se': copre le parole e
+          basta.
 
-          <span className="ml-auto flex shrink-0 items-center gap-1.5">
+          Sulle condivisioni non c'e' niente. Il nome sta gia' nel menu del
+          tasto destro e nel pannello delle condivisioni, e su uno schermo
+          altrui e' esattamente il posto dove passa la barra delle
+          applicazioni. */}
+      {dati.tipo === 'persona' && (
+        <div className="pointer-events-none absolute bottom-2 left-2 max-w-[calc(100%-1rem)]">
+          <div className="flex items-center gap-1.5 rounded-lg bg-black/60 px-2 py-1 text-xs backdrop-blur-sm">
+            {dati.moderatore && (
+              <span title="Modera questa stanza" className="shrink-0 text-attenzione">
+                <Stella className="h-3.5 w-3.5" />
+              </span>
+            )}
+            <span className="truncate font-medium text-white/90">
+              {dati.nome}
+              {dati.locale && <span className="font-normal text-white/50"> (tu)</span>}
+            </span>
+
             {/* Chi ho zittito io e chi si e' zittito da solo sono due silenzi
                 diversi, e vanno distinti senza dover andare a cercare dove si
                 era lasciato il cursore. */}
             {zittito && (
-              <span title="L'hai zittito tu" className="text-male/90">
+              <span title="L'hai zittito tu" className="shrink-0 text-male/90">
                 <AltoparlanteMuto className="h-3.5 w-3.5" />
               </span>
             )}
-            {dati.tipo === 'persona' && !dati.microfonoAcceso && (
-              <span title="Microfono spento" className="text-white/45">
+            {!dati.microfonoAcceso && (
+              <span title="Microfono spento" className="shrink-0 text-white/45">
                 <MicrofonoSpento className="h-3.5 w-3.5" />
               </span>
             )}
-          </span>
+          </div>
         </div>
-      </div>
+      )}
 
       {mostraStatistiche && statistiche && <Numeri statistiche={statistiche} locale={dati.locale} />}
     </div>

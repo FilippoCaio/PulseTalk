@@ -16,6 +16,7 @@ import { TokenVerifier } from 'livekit-server-sdk';
 import { leggiConfig } from '../src/config.mjs';
 import { chiaveDa } from '../src/db.mjs';
 import { creaTalk } from '../src/server.mjs';
+import { ascoltaSuPortaBuona } from './porta.mjs';
 
 const SEGRETO = 'p'.repeat(40);
 const PASSWORD = 'una-password-lunga';
@@ -37,8 +38,10 @@ async function conServer(t, extra = {}) {
   });
 
   const talk = await creaTalk(config);
-  await talk.app.listen({ host: '127.0.0.1', port: 0 });
-  const base = `http://127.0.0.1:${talk.app.server.address().port}`;
+  // Non `port: 0`: il sistema puo' scegliere una porta che `fetch` rifiuta.
+  // Vedi porta.mjs.
+  const porta = await ascoltaSuPortaBuona(talk.app);
+  const base = `http://127.0.0.1:${porta}`;
 
   t.after(async () => {
     await talk.app.close();
@@ -81,7 +84,10 @@ async function accesso(talk, base, { nome, ruolo, utente, password = PASSWORD })
 
 /** Uno spazio con dentro un canale di testo e uno vocale, gia' pronti. */
 async function conSpazio(chiama, nome = 'Casa') {
-  const r = await chiama('/api/spazi', { method: 'POST', body: JSON.stringify({ nome }) });
+  const r = await chiama('/api/spazi', {
+    method: 'POST',
+    body: JSON.stringify({ nome, impostazioni: { apertoATutti: true } }),
+  });
   assert.equal(r.status, 201, 'creazione dello spazio fallita');
   const { spazio } = await r.json();
 
@@ -797,7 +803,7 @@ describe('messaggi', () => {
     assert.equal((await r.json()).messaggio.testo, 'corretto');
   });
 
-  it('elimina i propri sempre, gli altrui solo da admin', async (t) => {
+  it('elimina solo i propri, e nemmeno il proprietario tocca gli altrui', async (t) => {
     const { admin, marco, testo } = await conCanale(t);
     const { messaggio: suo } = await (await marco.chiama(`/api/canali/${testo.id}/messaggi`, {
       method: 'POST',
@@ -806,7 +812,12 @@ describe('messaggi', () => {
     const { messaggio: mio } = await (await scrivi(admin, testo, { testo: 'anche questo' })).json();
 
     assert.equal((await marco.chiama(`/api/messaggi/${mio.id}`, { method: 'DELETE' })).status, 403);
-    assert.equal((await admin.chiama(`/api/messaggi/${suo.id}`, { method: 'DELETE' })).status, 200);
+    assert.equal(
+      (await admin.chiama(`/api/messaggi/${suo.id}`, { method: 'DELETE' })).status,
+      403,
+      'chi ha scritto il messaggio e\' l\'unico che puo\' toglierlo',
+    );
+    assert.equal((await marco.chiama(`/api/messaggi/${suo.id}`, { method: 'DELETE' })).status, 200);
 
     // Il posto resta vuoto invece di sparire: se la riga sparisse,
     // sparirebbero anche le risposte che la citano.
@@ -814,6 +825,24 @@ describe('messaggi', () => {
     assert.equal(messaggi.length, 2);
     assert.equal(messaggi[0].eliminato, true);
     assert.equal(messaggi[0].testo, '');
+  });
+
+  // Un messaggio dell'AI ha per autore il bot, e il bot non fa login: se a
+  // cancellare fosse solo l'autore, quella riga non la toglierebbe piu'
+  // nessuno. La toglie chi se l'e' fatta scrivere.
+  it('la risposta dell\'AI la toglie chi l\'ha chiesta, e nessun altro', async (t) => {
+    const { talk, admin, marco, spazio, testo } = await conCanale(t);
+    const bot = talk.db.botInterno(spazio.id, marco.utente.id);
+    const id = talk.db.scriviMessaggio({
+      canale: testo.id,
+      autore: bot.id,
+      testo: 'risposta generata',
+      origine: 'ai',
+      richiestoDa: marco.utente.id,
+    });
+
+    assert.equal((await admin.chiama(`/api/messaggi/${id}`, { method: 'DELETE' })).status, 403);
+    assert.equal((await marco.chiama(`/api/messaggi/${id}`, { method: 'DELETE' })).status, 200);
   });
 
   it('conta i non letti, e non conta i propri', async (t) => {
@@ -1036,6 +1065,193 @@ describe('allegati', () => {
   });
 });
 
+describe('allegati a pezzi', () => {
+  // La misura del pezzo la decide il client: il server dice solo qual e' il
+  // massimo che regge in una richiesta. Qui sono da quattro byte, cosi' un
+  // file da undici ne fa tre e i casi limite si scrivono a mano.
+  const inizia = (base, token, nome, dimensione, tipo = 'text/plain') =>
+    fetch(`${base}/api/allegati/inizio`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${token}`,
+        'content-type': 'application/octet-stream',
+        'x-nome': nome,
+        'x-tipo': tipo,
+        'x-dimensione': String(dimensione),
+      },
+    });
+
+  const pezzo = (base, token, id, offset, contenuto) =>
+    fetch(`${base}/api/allegati/${id}/pezzo`, {
+      method: 'PUT',
+      headers: {
+        authorization: `Bearer ${token}`,
+        'content-type': 'application/octet-stream',
+        'x-offset': String(offset),
+      },
+      body: contenuto,
+    });
+
+  const fine = (base, token, id) =>
+    fetch(`${base}/api/allegati/${id}/fine`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/octet-stream' },
+    });
+
+  it('carica in tre pezzi, lega a un messaggio e riscarica identico', async (t) => {
+    const { talk, base } = await conServer(t);
+    const admin = await accesso(talk, base, { nome: 'Capo', ruolo: 'admin' });
+    const { testo } = await conSpazio(admin.chiama, 'Casa');
+
+    const contenuto = 'ciao mondo!';
+    const aperto = await inizia(base, admin.token, 'lungo.txt', contenuto.length);
+    assert.equal(aperto.status, 201);
+    const { id, pezzo: quanto } = await aperto.json();
+    assert.ok(quanto > 0, 'il server dice quanto puo\' essere grosso un pezzo');
+
+    for (let offset = 0; offset < contenuto.length; offset += 4) {
+      const r = await pezzo(base, admin.token, id, offset, contenuto.slice(offset, offset + 4));
+      assert.equal(r.status, 200);
+      const { ricevuti } = await r.json();
+      assert.equal(ricevuti, Math.min(offset + 4, contenuto.length));
+    }
+
+    const chiuso = await fine(base, admin.token, id);
+    assert.equal(chiuso.status, 201);
+    const allegato = await chiuso.json();
+    assert.equal(allegato.dimensione, contenuto.length);
+    assert.equal(allegato.nome, 'lungo.txt');
+
+    const { messaggio } = await (
+      await admin.chiama(`/api/canali/${testo.id}/messaggi`, {
+        method: 'POST',
+        body: JSON.stringify({ testo: 'eccolo', allegati: [allegato.id] }),
+      })
+    ).json();
+    assert.equal(messaggio.allegati.length, 1);
+
+    const giu = await admin.chiama(`/api/allegati/${allegato.id}`);
+    assert.equal(await giu.text(), contenuto, 'i pezzi si sono rimessi insieme nell\'ordine giusto');
+  });
+
+  it('riprende da dove era arrivato', async (t) => {
+    const { talk, base } = await conServer(t);
+    const admin = await accesso(talk, base, { nome: 'Capo', ruolo: 'admin' });
+    await conSpazio(admin.chiama, 'Casa');
+
+    const contenuto = 'meta e meta';
+    const { id } = await (await inizia(base, admin.token, 'ripreso.txt', contenuto.length)).json();
+    await pezzo(base, admin.token, id, 0, contenuto.slice(0, 5));
+
+    // Qui il client "cade". Alla ripresa chiede dove era rimasto invece di
+    // ricominciare: e' tutto il motivo per cui i pezzi esistono.
+    const stato = await admin.chiama(`/api/allegati/${id}/stato`);
+    assert.equal(stato.status, 200);
+    const { ricevuti, dimensione } = await stato.json();
+    assert.equal(ricevuti, 5);
+    assert.equal(dimensione, contenuto.length);
+
+    await pezzo(base, admin.token, id, ricevuti, contenuto.slice(ricevuti));
+    const allegato = await (await fine(base, admin.token, id)).json();
+    const giu = await admin.chiama(`/api/allegati/${allegato.id}`);
+    assert.equal(await giu.text(), contenuto);
+  });
+
+  it('rifiuta un pezzo fuori posto e dice dov\'e\' la coda', async (t) => {
+    const { talk, base } = await conServer(t);
+    const admin = await accesso(talk, base, { nome: 'Capo', ruolo: 'admin' });
+    await conSpazio(admin.chiama, 'Casa');
+
+    const { id } = await (await inizia(base, admin.token, 'storto.txt', 10)).json();
+    await pezzo(base, admin.token, id, 0, 'abcd');
+
+    // Lo stesso pezzo due volte: appeso di nuovo darebbe un file della
+    // dimensione giusta e del contenuto sbagliato.
+    const ripetuto = await pezzo(base, admin.token, id, 0, 'abcd');
+    assert.equal(ripetuto.status, 409);
+    assert.equal((await ripetuto.json()).ricevuti, 4);
+
+    const saltato = await pezzo(base, admin.token, id, 8, 'ef');
+    assert.equal(saltato.status, 409);
+  });
+
+  it('non chiude un caricamento incompleto', async (t) => {
+    const { talk, base } = await conServer(t);
+    const admin = await accesso(talk, base, { nome: 'Capo', ruolo: 'admin' });
+    await conSpazio(admin.chiama, 'Casa');
+
+    const { id } = await (await inizia(base, admin.token, 'monco.txt', 10)).json();
+    await pezzo(base, admin.token, id, 0, 'abcd');
+
+    const chiuso = await fine(base, admin.token, id);
+    assert.equal(chiuso.status, 409);
+    const corpo = await chiuso.json();
+    assert.equal(corpo.ricevuti, 4);
+    assert.equal(corpo.dimensione, 10);
+  });
+
+  it('non accetta piu\' byte di quanti ne erano stati promessi', async (t) => {
+    const { talk, base } = await conServer(t);
+    const admin = await accesso(talk, base, { nome: 'Capo', ruolo: 'admin' });
+    await conSpazio(admin.chiama, 'Casa');
+
+    const { id } = await (await inizia(base, admin.token, 'gonfio.txt', 4)).json();
+    const troppo = await pezzo(base, admin.token, id, 0, 'abcdefgh');
+    assert.equal(troppo.status, 413);
+
+    // E il troncone e' tornato come prima, non e' rimasto a meta'.
+    assert.equal((await (await admin.chiama(`/api/allegati/${id}/stato`)).json()).ricevuti, 0);
+  });
+
+  it('rifiuta subito un file oltre il tetto, senza mandare niente', async (t) => {
+    // Il tetto piu' basso che la configurazione accetta, per non dover
+    // fabbricare quattro giga di prova.
+    const tetto = 64 * 1024;
+    const { talk, base } = await conServer(t, { TALK_MAX_ALLEGATO: String(tetto) });
+    const admin = await accesso(talk, base, { nome: 'Capo', ruolo: 'admin' });
+    await conSpazio(admin.chiama, 'Casa');
+
+    const troppo = await inizia(base, admin.token, 'enorme.bin', tetto * 2);
+    assert.equal(troppo.status, 413);
+    assert.equal((await troppo.json()).massimo, tetto);
+  });
+
+  it('il caricamento di un altro non si tocca', async (t) => {
+    const { talk, base } = await conServer(t);
+    const admin = await accesso(talk, base, { nome: 'Capo', ruolo: 'admin' });
+    const marco = await accesso(talk, base, { nome: 'Marco', ruolo: 'membro' });
+    await conSpazio(admin.chiama, 'Casa');
+
+    const { id } = await (await inizia(base, admin.token, 'mio.txt', 10)).json();
+
+    assert.equal((await pezzo(base, marco.token, id, 0, 'abcd')).status, 404);
+    assert.equal((await marco.chiama(`/api/allegati/${id}/stato`)).status, 404);
+    assert.equal((await fine(base, marco.token, id)).status, 404);
+  });
+
+  it('due file identici mandati a pezzi occupano lo spazio di uno', async (t) => {
+    const { talk, base } = await conServer(t);
+    const admin = await accesso(talk, base, { nome: 'Capo', ruolo: 'admin' });
+    await conSpazio(admin.chiama, 'Casa');
+
+    const contenuto = 'stesso contenuto';
+    const mandato = async (nome) => {
+      const { id } = await (await inizia(base, admin.token, nome, contenuto.length)).json();
+      await pezzo(base, admin.token, id, 0, contenuto);
+      return (await fine(base, admin.token, id)).json();
+    };
+
+    const primo = await mandato('a.txt');
+    const secondo = await mandato('b.txt');
+    assert.notEqual(primo.id, secondo.id);
+
+    const righe = talk.db.sql
+      .prepare('SELECT DISTINCT impronta FROM allegati WHERE id IN (?, ?)')
+      .all(primo.id, secondo.id);
+    assert.equal(righe.length, 1, 'la deduplica vale anche per i pezzi');
+  });
+});
+
 describe('il flusso degli eventi', () => {
   it('porta i messaggi a chi sta nello spazio, nell\'istante in cui arrivano', async (t) => {
     const { talk, base } = await conServer(t);
@@ -1049,8 +1265,15 @@ describe('il flusso degli eventi', () => {
 
     const lettore = flusso.body.getReader();
     const decoder = new TextDecoder();
-    const prossimo = async () => {
-      let buffer = '';
+    // Si aspetta *quel* tipo di evento, non il primo che passa.
+    //
+    // Dal flusso arriva anche la presenza: aprendolo si diventa online, e
+    // l'annuncio parte subito — a chi si collega compreso. Pretendere che il
+    // primo blocco sia un messaggio vorrebbe dire un test che fallisce ogni
+    // volta che qualcuno aggiunge un evento di servizio, cioe' un test che
+    // misura l'ordine invece del comportamento.
+    let buffer = '';
+    const prossimo = async (tipo) => {
       for (;;) {
         const { value, done } = await lettore.read();
         if (done) throw new Error('flusso chiuso troppo presto');
@@ -1060,7 +1283,9 @@ describe('il flusso degli eventi', () => {
         for (const blocco of blocchi) {
           // I commenti di battito (`: .`) non sono eventi.
           const riga = blocco.split('\n').find((l) => l.startsWith('data: '));
-          if (riga) return JSON.parse(riga.slice(6));
+          if (!riga) continue;
+          const evento = JSON.parse(riga.slice(6));
+          if (!tipo || evento.tipo === tipo) return evento;
         }
       }
     };
@@ -1070,7 +1295,7 @@ describe('il flusso degli eventi', () => {
       body: JSON.stringify({ testo: 'arrivo' }),
     });
 
-    const evento = await prossimo();
+    const evento = await prossimo('messaggio');
     assert.equal(evento.tipo, 'messaggio');
     assert.equal(evento.canale, testo.id);
     assert.equal(evento.messaggio.testo, 'arrivo');
@@ -1230,6 +1455,33 @@ describe('webhook della SFU', () => {
 });
 
 describe('migrazione dalle stanze', () => {
+  it('aggiunge la scadenza a un database che ha gia canali senza quella colonna', async (t) => {
+    const dir = mkdtempSync(join(tmpdir(), 'pulsetalk-mig-canali-'));
+    const percorso = join(dir, 'talk.db');
+    const { default: Database } = await import('better-sqlite3');
+    const grezzo = new Database(percorso);
+    grezzo.exec(`
+      CREATE TABLE canali (
+        id INTEGER PRIMARY KEY, spazio INTEGER NOT NULL, categoria INTEGER,
+        chiave TEXT NOT NULL, nome TEXT NOT NULL, tipo TEXT NOT NULL,
+        argomento TEXT NOT NULL DEFAULT '', posizione INTEGER NOT NULL DEFAULT 0,
+        soloAscolto INTEGER NOT NULL DEFAULT 0, creato INTEGER NOT NULL
+      );
+    `);
+    grezzo.close();
+
+    const { TalkDb } = await import('../src/db.mjs');
+    const db = new TalkDb(percorso);
+    assert.ok(db.sql.prepare('PRAGMA table_info(canali)').all().some((c) => c.name === 'scade'));
+    assert.ok(
+      db.sql.prepare("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'idx_canali_scadenza'").get(),
+    );
+    db.close();
+    t.after(() => {
+      try { rmSync(dir, { recursive: true, force: true }); } catch { /* niente */ }
+    });
+  });
+
   it('trasforma le stanze della prima versione in canali vocali', async (t) => {
     const dir = mkdtempSync(join(tmpdir(), 'pulsetalk-mig-'));
     const percorso = join(dir, 'talk.db');

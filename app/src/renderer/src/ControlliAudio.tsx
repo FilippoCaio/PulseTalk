@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import type { Impostazioni } from '@shared/tipi'
 import { Ingranaggio } from './icone'
 import { livelloMicrofono } from './lib/pubblica'
-import { usaDispositivi } from './lib/usaDispositivi'
+import { scegli, usaDispositivi, vociTendina } from './lib/usaDispositivi'
 
 const CLASSI_SELECT =
   'w-full rounded-lg border border-bordo bg-fondo px-2 py-1.5 text-xs text-testo focus:border-vivo focus:outline-none'
@@ -21,7 +21,7 @@ export default function ControlliAudio({
   salva: (modifiche: Partial<Impostazioni>) => void
   apriImpostazioni: () => void
 }): React.JSX.Element {
-  const { per } = usaDispositivi()
+  const { tutti } = usaDispositivi()
   const [livello, setLivello] = useState(0)
 
   useEffect(() => {
@@ -50,12 +50,12 @@ export default function ControlliAudio({
         <select
           className={CLASSI_SELECT}
           value={impostazioni.microfonoId ?? ''}
-          onChange={(e) => salva({ microfonoId: e.target.value || null })}
+          onChange={(e) => salva(scegli('microfono', tutti, e.target.value))}
         >
           <option value="">Predefinito di Windows</option>
-          {per('audioinput').map((dispositivo) => (
-            <option key={dispositivo.deviceId} value={dispositivo.deviceId}>
-              {dispositivo.label || 'Microfono senza nome'}
+          {vociTendina('microfono', tutti, impostazioni).map((voce) => (
+            <option key={voce.id} value={voce.id} disabled={voce.assente}>
+              {voce.nome}
             </option>
           ))}
         </select>
@@ -73,12 +73,12 @@ export default function ControlliAudio({
         <select
           className={CLASSI_SELECT}
           value={impostazioni.altoparlanteId ?? ''}
-          onChange={(e) => salva({ altoparlanteId: e.target.value || null })}
+          onChange={(e) => salva(scegli('altoparlante', tutti, e.target.value))}
         >
           <option value="">Predefinito di Windows</option>
-          {per('audiooutput').map((dispositivo) => (
-            <option key={dispositivo.deviceId} value={dispositivo.deviceId}>
-              {dispositivo.label || 'Uscita senza nome'}
+          {vociTendina('altoparlante', tutti, impostazioni).map((voce) => (
+            <option key={voce.id} value={voce.id} disabled={voce.assente}>
+              {voce.nome}
             </option>
           ))}
         </select>

@@ -182,6 +182,84 @@ con:
 node ../server/src/cli.mjs segreto
 ```
 
+**Spotify e' facoltativo.** La coda musicale condivisa di PulseTalk funziona
+anche senza credenziali. Per comandare il player personale di ogni partecipante
+servono `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET` e
+`SPOTIFY_REDIRECT_URI`; quest'ultimo va registrato identico nel dashboard
+Spotify. I comandi di riproduzione richiedono Spotify Premium e non sono una
+Jam: l'API pubblica consente di controllare il player autorizzato di ciascuna
+persona, non di creare o ritrasmettere una sessione Spotify multiutente. Le app
+Spotify in Development Mode sono inoltre limitate agli utenti ammessi nel
+dashboard (cinque per le nuove app, secondo le regole 2026); per un pubblico
+piu' ampio serve l'Extended Quota Mode. Riferimenti ufficiali:
+[Player API](https://developer.spotify.com/documentation/web-api/reference/start-a-users-playback)
+e [quota modes](https://developer.spotify.com/documentation/web-api/concepts/quota-modes).
+
+**L'AI e' facoltativa.** PulseTalk funziona senza. Con una chiave si accendono
+AI Chat nel composer, la generazione di immagini, Auto Writer (la trascrizione
+di una chiamata) e il riassunto di quella trascrizione. Ogni riga accende una
+cosa diversa, e si possono mettere anche solo alcune:
+
+| Variabile | Cosa accende |
+|---|---|
+| `TALK_AI_API_KEY` | niente da sola: e' la condizione di tutto il resto |
+| `TALK_AI_CHAT_MODEL` | AI Chat, e il riassunto di Auto Writer |
+| `TALK_AI_WEB_SEARCH=true` | la ricerca web con le fonti in fondo alla risposta |
+| `TALK_AI_IMAGE_MODEL` | AI Image |
+| `TALK_AI_STT_MODEL` | Auto Writer |
+
+**Non serve OpenAI.** `TALK_AI_BASE_URL` accetta qualunque servizio che parli
+il formato compatibile: un Ollama sulla stessa macchina, LM Studio, vLLM, Groq,
+OpenRouter. Il dialetto lo sceglie `TALK_AI_FORMATO=auto` guardando
+l'indirizzo — l'API Responses sul dominio di OpenAI, `/chat/completions` ovunque
+altro — e si forza a mano solo nei casi in mezzo, come un proxy verso OpenAI su
+un dominio proprio. Un Ollama in casa costa zero e non manda niente fuori:
+
+```
+TALK_AI_BASE_URL=http://192.168.1.10:11434/v1
+TALK_AI_API_KEY=ollama
+TALK_AI_CHAT_MODEL=llama3.1
+```
+
+L'unica cosa che resta solo su OpenAI e' la **ricerca web**: lo strumento vive
+dentro all'API Responses e non esiste in `/chat/completions`. Con un modello
+locale quell'interruttore resta spento invece di promettere un pulsante che
+risponde sempre "non configurato".
+
+Per sapere cosa e' acceso davvero, `GET /api/servizi` risponde con le capacita'
+e con il formato scelto — ed e' la prima cosa da guardare quando un modello
+risponde 404 invece che con una frase.
+
+**Chi genera le immagini si sceglie a parte.** `TALK_AI_IMAGE_MODEL` accende
+quello di OpenAI, che si paga. In alternativa c'e' una Stable Diffusion WebUI in
+casa: gratis, e i prompt non escono dalla rete.
+
+```
+TALK_IMMAGINI_URL=http://192.168.1.10:7860
+```
+
+La WebUI va avviata con `--api`, o risponde 404 e PulseTalk lo dice. Con
+`TALK_IMMAGINI_PROVIDER=auto` si preferisce sempre quella locale quando c'e'.
+
+**Perchance non si puo' usare**, e vale la pena scriverlo perche' la domanda
+torna. I suoi generatori di immagini sono finanziati dalla pubblicita' mostrata
+sulla loro pagina, non c'e' un'API pubblica, e il loro autore ha dichiarato che
+non e' possibile usarli da un'API proprio perche' cosi' quella pubblicita' non
+verrebbe mostrata. Le loro pagine rispondono 403 anche a un semplice recupero
+automatico. Arrivarci lo stesso vorrebbe dire un endpoint interno non
+documentato, usato per aggirare il modo in cui quel servizio si paga: resta
+nell'elenco dei provider, dichiarato e spento, con questa spiegazione.
+
+**GIF e ricerca immagini** hanno chiavi gratuite e indipendenti. Per le GIF ce
+ne sono due e si usa la prima che c'e': `TALK_TENOR_API_KEY` (Tenor, dalla
+console di Google Cloud — ma Google non abilita nuovi client Tenor da gennaio
+2026, quindi su un'installazione nuova questa strada e' chiusa) oppure
+`TALK_GIPHY_API_KEY`, che si chiede a developers.giphy.com. Li' vanno scelte
+**API** e non SDK: l'SDK e' una libreria che gira nel client con la chiave
+dentro, mentre qui la ricerca la fa il server e la chiave non esce dal NAS. Per
+le immagini serve `TALK_UNSPLASH_ACCESS_KEY` (unsplash.com/developers). Senza,
+i pannelli dicono che non sono configurati invece di fallire premendo.
+
 **5. I due nomi sul proxy.** Due Proxy Host, uno per `talk.*` e uno per `sfu.*`,
 con il certificato, il supporto WebSocket e i buffer disattivati: il dettaglio
 sta in [`deploy/proxy.md`](deploy/proxy.md).
@@ -367,6 +445,11 @@ GET    /api/spazi/:id/cerca              ?q=&canale=                 ospite
 POST   /api/allegati                     corpo grezzo, x-nome        membro
 GET    /api/allegati/:id
 
+POST   /api/allegati/inizio               x-nome, x-tipo, x-dimensione membro
+PUT    /api/allegati/:id/pezzo            corpo grezzo, x-offset      membro
+GET    /api/allegati/:id/stato            dove riprendere             membro
+POST   /api/allegati/:id/fine             chiude e crea l'allegato    membro
+
 POST   /webhook/sfu                      da LiveKit, firmato
 GET    /salute
 ```
@@ -410,9 +493,41 @@ file si carica *prima* del messaggio — si trascina un'immagine, il caricamento
 parte, e intanto si finisce la frase — e quelli che non vengono mai mandati li
 spazza via un giro ogni sei ore.
 
+**Sopra agli otto mega il file sale a pezzi.** Il tetto e' 4 GB
+(`TALK_MAX_ALLEGATO`), il pezzo 8 MB (`TALK_PEZZO_ALLEGATO`), e i pezzi servono
+a tre cose che una richiesta sola non sa fare: riprendere da dove si era
+arrivati quando la linea cade, dire a che punto e', e **fermarsi in mezzo** —
+perche' fra un pezzo e l'altro c'e' un istante in cui non si sta mandando
+niente, ed e' li' che il client rallenta da solo mentre c'e' una chiamata
+aperta. I byte pero' restano quelli: quattro giga passano per lo stesso cavo,
+spezzati o interi. I tronconi mai finiti li butta via lo stesso giro che spazza
+gli allegati orfani, dopo un giorno.
+
 **Eliminare un messaggio lascia il posto vuoto**, non fa sparire la riga. Se la
 riga sparisse, sparirebbero anche le risposte che la citano, e chi legge si
 troverebbe una conversazione con dei buchi che non tornano.
+
+**Le due spunte dicono due cose diverse.** Una spunta: il messaggio e' sul
+server. Due grigie: e' arrivato all'apparecchio dell'altra persona. Due
+colorate: l'ha aperto. La seconda spunta la mette il server guardando se il
+flusso di quella persona e' aperto, non chiedendolo alla sua applicazione — se
+lo chiedesse, il destinatario deciderebbe da solo se risultare raggiungibile, e
+quella spunta smetterebbe di voler dire qualcosa. Vale solo per le
+conversazioni dirette: in un canale con quaranta persone "gli e' arrivato" non
+e' una domanda con una risposta sola.
+
+**A toglierlo, pero', e' solo chi lo ha scritto.**
+ Non esiste un permesso per
+cancellare i messaggi degli altri, e nemmeno il proprietario dello spazio ce
+l'ha: chi amministra modera le persone e i canali — allontana, toglie
+l'accesso, chiude un canale — non il testo altrui. Modificare, a maggior
+ragione: un messaggio riscritto da qualcun altro sarebbe una cosa che uno non
+ha detto, con sopra il suo nome.
+
+L'unica riga senza un padrone umano e' la risposta dell'AI, che ha per autore
+il bot dello spazio. Il bot non fa login, quindi quella riga non la
+cancellerebbe piu' nessuno: se la riprende chi se l'e' fatta scrivere, ed e'
+per questo che il messaggio si porta dietro `richiestoDa`.
 
 ---
 
@@ -502,3 +617,61 @@ interfaccia nel browser sulla porta 5174.
   standard. Coprire anche quel caso vorrebbe dire un TURN su TLS sulla 443, con
   il suo certificato: si puo' fare, e in `livekit.yaml` c'e' il blocco pronto e
   commentato con scritto perche' oggi e' spento.
+
+## Chi c'e', e chi non c'e'
+
+Lo stato di una persona nasce da due cose che si incontrano: quella che ha
+scelto lei, e quella che sa il server.
+
+Il server ne sa una sola, e non ha bisogno che nessuno gliela dica: **il flusso
+degli eventi e' aperto oppure no**. Chiudere l'applicazione lo chiude, e la
+persona sparisce senza che qualcuno debba ricordarsi di annunciarlo. Prima non
+era cosi': lo stato era solo una parola salvata sull'utente, e chi si era messo
+"online" restava online per sempre — a computer spento, dopo tre giorni.
+L'unico modo per sapere se valeva la pena scrivere a qualcuno era scrivergli.
+
+Le tre regole che decidono cosa vedono gli altri:
+
+**Invisibile non si dice mai.** Da fuori e' indistinguibile da offline, ed e'
+l'unico modo perche' invisibile serva a qualcosa. Per un pezzo non ha
+funzionato affatto, e per una ragione stupida: l'elenco dei profili leggeva
+tutte le colonne tranne `stato`, non lo trovava, e ripiegava su "online" per
+chiunque — compreso chi si era appena messo invisibile proprio per non
+comparire. Il valore di ripiego era quello giusto per quasi tutte le righe, ed
+e' per questo che non se n'era accorto nessuno.
+
+**Non disturbare resta anche da spenti.** E' l'unico stato che sopravvive alla
+chiusura: chi lo mette la sera lo mette proprio perche' non vuole essere
+cercato, e vederlo diventare "offline" alle due di notte non cambierebbe niente
+per lui, ma toglierebbe la risposta a chi guarda. "Non c'e'" e "non vuole" sono
+due cose diverse. Anche qui c'era un pezzo che mancava: la sessione non
+rileggeva `stato`, quindi chi si metteva "non disturbare" la sera riapriva il
+giorno dopo trovandosi online — il valore era salvato correttamente sul disco,
+e' che nessuno andava a riprenderlo.
+
+**Inattivo non si sceglie.** Lo mette l'applicazione dopo dieci minuti con il
+microfono spento o sempre sotto la soglia dell'automute. Sceglierlo a mano non
+aveva senso — dire "non sono davanti allo schermo" premendo un pulsante e' una
+contraddizione — ed era anche una bugia comoda, perche' restava li' anche
+mentre si parlava.
+
+## Gli identificativi dei dispositivi cambiano sotto i piedi
+
+`deviceId` non e' l'identificativo di un microfono: e' un'impronta calcolata su
+un sale che dipende dall'**origine della pagina**. Cambia l'origine, cambiano
+tutti gli id in blocco — stesso microfono, stringa diversa.
+
+All'applicazione installata succedeva a ogni avvio. L'interfaccia si serve da
+`http://127.0.0.1` (vedi `main/sito.ts`) e la porta la sceglieva il sistema:
+porta diversa ogni volta, origine diversa ogni volta, e quindi la camera scelta
+ieri non corrispondeva a niente stamattina. Si vedeva in due modi — un avviso
+"il dispositivo scelto non risponde" a ogni partenza, e la stessa camera
+elencata due volte nella tendina, una vera e una fantasma.
+
+Adesso la porta e' fissa, con nove alternative se qualcuno l'ha occupata. E
+siccome il sale puo' cambiare comunque — basta ripulire i dati del sito — la
+scelta salvata si ritrova anche per nome: se c'e' un dispositivo di quel tipo
+che si chiama esattamente come quello scelto, e' quello, e l'id nuovo diventa
+il suo. Uno solo con quel nome, pero': con due webcam identiche il nome non
+distingue piu' niente, e tirare a indovinare fra le due sarebbe peggio che
+ammettere di non sapere.

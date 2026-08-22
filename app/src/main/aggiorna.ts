@@ -13,9 +13,10 @@ const { autoUpdater } = electronUpdater
  *
  * Regole di questa implementazione:
  *
- *  - **il server sceglie il feed e il vincolo.** Non si consulta il segnaposto
- *    compilato nell'app: prima si interroga il server scelto dall'utente e poi
- *    si configura electron-updater con la sua risposta pubblica.
+ *  - **l'installer conosce gia' il feed pubblico.** Il controllo manuale deve
+ *    quindi funzionare anche prima dell'accesso o quando il server non e'
+ *    raggiungibile. Quando il server comunica un vincolo piu' preciso, quel
+ *    vincolo e il suo feed sostituiscono la configurazione incorporata.
  *  - **un aggiornamento obbligatorio si scarica da solo.** In quel momento
  *    l'interfaccia e' bloccata prima del login, quindi non c'e' una chiamata da
  *    disturbare. Quelli facoltativi continuano ad aspettare il pulsante.
@@ -33,7 +34,6 @@ export function preparaAggiornamenti(): void {
 
   let stato: StatoAggiornamento = { fase: 'fermo', versione: app.getVersion() }
   let vincolo: PreparazioneAggiornamento | null = null
-  let feedConfigurato = false
   let operazione: Promise<StatoAggiornamento> | null = null
 
   const avvisa = (nuovo: Partial<StatoAggiornamento>): void => {
@@ -118,13 +118,6 @@ export function preparaAggiornamenti(): void {
       })
       return stato
     }
-    if (!feedConfigurato || !vincolo) {
-      avvisa({
-        fase: 'errore',
-        errore: 'Prima di cercare aggiornamenti bisogna collegarsi a un server PulseTalk compatibile.'
-      })
-      return stato
-    }
     avvisa({ fase: 'controllo', errore: undefined })
     try {
       const esito = await autoUpdater.checkForUpdates()
@@ -133,7 +126,7 @@ export function preparaAggiornamenti(): void {
       if (stato.fase === 'controllo' && esito?.updateInfo?.version) {
         disponibile(esito.updateInfo.version, esito.updateInfo.releaseNotes)
       }
-      if (scaricaSeObbligatorio && vincolo.obbligatorio && stato.fase === 'disponibile') {
+      if (scaricaSeObbligatorio && vincolo?.obbligatorio && stato.fase === 'disponibile') {
         avvisa({ fase: 'scarico', percento: 0 })
         await autoUpdater.downloadUpdate()
       }
@@ -147,7 +140,6 @@ export function preparaAggiornamenti(): void {
     try {
       vincolo = validaPreparazione(dati)
       autoUpdater.setFeedURL({ provider: 'generic', url: vincolo.feedUrl })
-      feedConfigurato = true
       avvisa({
         fase: 'fermo',
         obbligatorio: vincolo.obbligatorio,
@@ -158,7 +150,6 @@ export function preparaAggiornamenti(): void {
         errore: undefined
       })
     } catch (e) {
-      feedConfigurato = false
       vincolo = null
       avvisa({ fase: 'errore', errore: (e as Error).message })
       return stato

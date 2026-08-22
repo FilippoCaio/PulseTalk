@@ -120,8 +120,13 @@ export default function SceltaSorgente({
   const elenco = diCategoria(categoria)
 
   return (
+    // `fixed` e non `absolute`: la scelta di cosa condividere copre tutta
+    // l'applicazione, non solo il riquadro della chiamata. Ancorata al primo
+    // antenato posizionato — che e' la superficie dei riquadri — restava
+    // schiacciata fra le colonne, con le anteprime grandi come francobolli
+    // proprio nel momento in cui bisogna riconoscere una finestra fra venti.
     <div
-      className="absolute inset-0 z-[60] flex items-center justify-center bg-black/70 p-6 backdrop-blur-sm"
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-6 backdrop-blur-sm"
       onClick={chiudi}
     >
       <div
