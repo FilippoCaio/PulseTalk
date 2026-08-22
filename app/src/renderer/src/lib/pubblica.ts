@@ -21,6 +21,7 @@ import {
 } from '@shared/qualita'
 import type { ModoAudioSistema, Sorgente } from '@shared/tipi'
 import { ponte } from '../ponte'
+import { apriMicrofonoScelto, idDaAprire } from './usaDispositivi'
 
 /**
  * Dove i tetti vengono tolti davvero.
@@ -703,14 +704,19 @@ export async function accendiCamera(
   stanza: Room,
   presetGrezzo: PresetCamera,
   limiti: Limiti,
-  dispositivoId: string | null
+  dispositivoId: string | null,
+  dispositivoNome: string | null = null
 ): Promise<void> {
   const preset = entroILimitiCamera(presetGrezzo, limiti)
+
+  // Come per il microfono: l'id salvato puo' essere scaduto, e in quel caso
+  // Chromium aprirebbe un'altra camera senza dirlo.
+  const scelto = await idDaAprire('camera', dispositivoId, dispositivoNome)
 
   await stanza.localParticipant.setCameraEnabled(
     true,
     {
-      deviceId: dispositivoId ?? undefined,
+      deviceId: scelto,
       resolution: {
         width: Math.round((preset.altezza * 16) / 9),
         height: preset.altezza,
@@ -802,6 +808,18 @@ export function livelloMicrofono(): number {
   return catena ? livello : 0
 }
 
+/**
+ * C'e' un microfono gia' aperto?
+ *
+ * Serve al misuratore delle impostazioni per decidere da dove leggere. Con una
+ * catena viva legge questa, e non apre un secondo getUserMedia sullo stesso
+ * dispositivo — che su Windows puo' tornare con impostazioni diverse e mostrare
+ * un livello che non e' quello che sta uscendo davvero.
+ */
+export function catenaViva(): boolean {
+  return catena !== null
+}
+
 /** Vero se il cancello sta lasciando passare: il misuratore lo mostra. */
 export function microfonoPassa(): boolean {
   if (!catena) return false
@@ -852,12 +870,12 @@ export async function accendiMicrofono(
   limiti: Limiti,
   dispositivoId: string | null,
   partiMuto = false,
-  guadagno = 1
+  guadagno = 1,
+  dispositivoNome: string | null = null
 ): Promise<void> {
   const profilo = entroILimitiAudio(PROFILI_AUDIO[modo], limiti)
 
   const cattura: AudioCaptureOptions = {
-    deviceId: dispositivoId ?? undefined,
     echoCancellation: profilo.cancellazioneEco,
     noiseSuppression: profilo.soppressioneRumore,
     autoGainControl: profilo.guadagnoAutomatico,
@@ -878,7 +896,20 @@ export async function accendiMicrofono(
 
   await chiudiCatenaMicrofono()
 
-  const grezzo = await navigator.mediaDevices.getUserMedia({ audio: cattura })
+  // Il dispositivo si risolve e si apre qui, non si passa l'id com'e' stato
+  // salvato: vedi `apriMicrofonoScelto`, che e' anche la stessa porta da cui
+  // passa la prova nelle impostazioni.
+  const { flusso: grezzo, ripiegato } = await apriMicrofonoScelto(
+    cattura,
+    dispositivoId,
+    dispositivoNome
+  )
+  if (ripiegato) {
+    ponte.diagnosticaAudio(
+      'microfono scelto non apribile: ripiegato sul predefinito di sistema'
+    )
+  }
+
   const contesto = new AudioContext()
   if (contesto.state === 'suspended') await contesto.resume().catch(() => {})
 

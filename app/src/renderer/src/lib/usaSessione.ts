@@ -13,6 +13,7 @@ import {
   type RemoteTrack,
   type RemoteParticipant,
   type RemoteAudioTrack,
+  type RemoteTrackPublication,
   type TrackPublication,
   type VideoTrack
 } from 'livekit-client'
@@ -37,9 +38,11 @@ import {
 import { configuraSuoni, suona } from './suoni'
 import { coloreDi } from './avatar'
 import { ponte } from '../ponte'
+import { idDaAprire } from './usaDispositivi'
 import { creaRilevatoreVoci, type RilevatoreVoci } from './vociAttive'
 import { creaRiascolto, type Riascolto } from './riascolto'
 import { osservaDiagnosticaAudio } from './diagnosticaAudio'
+import { segnalaChiamata } from './banda'
 
 /**
  * La chiamata, vista da React.
@@ -71,10 +74,33 @@ export interface Riquadro {
   moderatore: boolean
   /** La traccia c'e' ma non e' ancora arrivato niente da mostrare. */
   inArrivo: boolean
+  /**
+   * Condivisione altrui che non stiamo ricevendo: c'e', ma nessuno la scarica.
+   *
+   * Il riquadro esiste lo stesso — si sa chi condivide e quante ne ha aperte —
+   * ma al posto del video c'e' il pulsante per aprirla. Vedi
+   * `MAX_CONDIVISIONI_GUARDATE`.
+   */
+  bloccato: boolean
   /** Sta parlando adesso: e' il bordo verde. */
   parla: boolean
   microfonoAcceso: boolean
 }
+
+/**
+ * Quante condivisioni altrui si possono ricevere insieme.
+ *
+ * Non e' un limite di quante ne possono esistere: in una stanza da dieci
+ * persone con tre monitor a testa i riquadri restano trenta. E' un limite a
+ * quante se ne **scaricano**, perche' quelle sono trenta flussi video che
+ * arrivano tutti insieme sulla stessa linea, e a quel punto non si vede bene
+ * nessuna delle trenta — ne' si sente piu' nessuno parlare.
+ *
+ * Due, e non uno, perche' guardare il codice di qualcuno accanto al suo
+ * terminale e' il caso che capita davvero. L'audio delle condivisioni non
+ * conta qui: pesa poco e non ha senso doverlo sbloccare per sentirlo.
+ */
+export const MAX_CONDIVISIONI_GUARDATE = 2
 
 export interface Persona {
   identita: string
@@ -214,6 +240,10 @@ function riquadriDi(
     if (pubblicazione.source !== Track.Source.ScreenShare) return
 
     contatoreSchermi += 1
+    // La propria condivisione non si sblocca: e' gia' qui, mostrarla non
+    // costa banda in entrata, e chiedere di aprire il proprio schermo sarebbe
+    // una domanda senza senso.
+    const bloccato = !locale && !(pubblicazione as RemoteTrackPublication).isSubscribed
     fuori.push({
       id: pubblicazione.trackSid,
       identita: partecipante.identity,
@@ -223,7 +253,10 @@ function riquadriDi(
       traccia: (pubblicazione.track as VideoTrack | undefined) ?? null,
       locale,
       moderatore,
-      inArrivo: !pubblicazione.track,
+      bloccato,
+      // Bloccato non e' "sta arrivando": non arriva niente, ed e' voluto. La
+      // rotellina dell'attesa qui direbbe una bugia.
+      inArrivo: !bloccato && !pubblicazione.track,
       // Uno schermo non parla mai.
       //
       // Il bordo verde risponde a una domanda sola — "chi sta parlando?" — e la
@@ -249,6 +282,7 @@ function riquadriDi(
     traccia: (camera as TrackPublication | null)?.track as VideoTrack | undefined ?? null,
     locale,
     moderatore,
+    bloccato: false,
     inArrivo: !!camera && !(camera as TrackPublication).track,
     parla,
     microfonoAcceso
@@ -351,6 +385,17 @@ export interface Sessione {
   /** Lascia la presa sul puntatore tenuto: sparisce per tutti. */
   lascia(schermo: string): void
 
+  /**
+   * Le condivisioni altrui si aprono a mano, due alla volta.
+   *
+   * Vedi `MAX_CONDIVISIONI_GUARDATE`. `guarda` non fa niente se i posti sono
+   * pieni: e' l'interfaccia a spegnere il pulsante e a dire perche', invece di
+   * lasciar premere qualcosa che non succede.
+   */
+  guarda(idTraccia: string): void
+  nonGuardare(idTraccia: string): void
+  quanteGuardate: number
+
   entra(ingresso: Ingresso, impostazioni: Impostazioni): Promise<void>
   esci(): Promise<void>
 
@@ -418,6 +463,66 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
   // e' cambiata, riguardala".
   const [giro, avanza] = useState(0)
   const ridisegna = useCallback(() => avanza((n) => n + 1), [])
+
+  /**
+   * Le condivisioni altrui che si e' scelto di ricevere, per trackSid.
+   *
+   * Un ref e non uno stato: ci si legge dentro da dentro ai gestori degli
+   * eventi della stanza, che sono agganciati una volta sola e vedrebbero per
+   * sempre il primo valore. Il ridisegno lo chiediamo a mano.
+   */
+  const guardateRef = useRef<Set<string>>(new Set())
+  const [quanteGuardate, setQuanteGuardate] = useState(0)
+
+  /**
+   * Taglia la ricezione di tutte le condivisioni che non si sta guardando.
+   *
+   * Passa da qui ogni condivisione altrui: quelle appena pubblicate, quelle
+   * gia' in corso di chi entra dopo di noi, e quelle che c'erano gia' quando
+   * siamo entrati noi. `autoSubscribe` resta acceso — spegnerlo per tutti
+   * vorrebbe dire gestire a mano anche le voci, che invece devono arrivare
+   * sempre — e qui si disdice subito cio' che non serve.
+   */
+  const potaCondivisioni = useCallback((stanza: Room) => {
+    stanza.remoteParticipants.forEach((partecipante) => {
+      partecipante.trackPublications.forEach((pubblicazione) => {
+        if (pubblicazione.kind !== Track.Kind.Video) return
+        if (pubblicazione.source !== Track.Source.ScreenShare) return
+
+        const voluta = guardateRef.current.has(pubblicazione.trackSid)
+        if (pubblicazione.isSubscribed !== voluta) pubblicazione.setSubscribed(voluta)
+      })
+    })
+  }, [])
+
+  /** Apre una condivisione altrui, se non se ne stanno gia' guardando due. */
+  const guarda = useCallback(
+    (id: string) => {
+      const stanza = stanzaRef.current
+      if (!stanza) return
+      if (guardateRef.current.has(id)) return
+      if (guardateRef.current.size >= MAX_CONDIVISIONI_GUARDATE) return
+
+      guardateRef.current.add(id)
+      setQuanteGuardate(guardateRef.current.size)
+      potaCondivisioni(stanza)
+      ridisegna()
+    },
+    [potaCondivisioni, ridisegna]
+  )
+
+  /** Chiude una condivisione: smette di scaricarla e libera uno dei due posti. */
+  const nonGuardare = useCallback(
+    (id: string) => {
+      const stanza = stanzaRef.current
+      if (!guardateRef.current.delete(id)) return
+
+      setQuanteGuardate(guardateRef.current.size)
+      if (stanza) potaCondivisioni(stanza)
+      ridisegna()
+    },
+    [potaCondivisioni, ridisegna]
+  )
 
   const [stato, setStato] = useState<ConnectionState>(ConnectionState.Disconnected)
   const [errore, setErrore] = useState<string | null>(null)
@@ -713,12 +818,32 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
       // Chi entra adesso non sa niente di come lo avevamo regolato prima.
       stanza.on(RoomEvent.ParticipantConnected, () => {
         applicaAudio()
+        potaCondivisioni(stanza)
         suona('altroEntrato')
       })
       stanza.on(RoomEvent.ParticipantDisconnected, () => suona('altroUscito'))
 
+      // Una condivisione appena aperta da qualcun altro non si scarica finche'
+      // non la si apre. Qui e' il primo momento in cui la si vede esistere, ed
+      // e' anche il momento in cui `autoSubscribe` la prenderebbe.
+      stanza.on(RoomEvent.TrackPublished, () => potaCondivisioni(stanza))
+
+      // Chi smette di condividere libera il posto che teneva occupato: senza
+      // questo, due condivisioni chiuse lasciavano il tetto pieno e nessuna da
+      // guardare.
+      stanza.on(RoomEvent.TrackUnpublished, (pubblicazione) => {
+        if (guardateRef.current.delete(pubblicazione.trackSid)) {
+          setQuanteGuardate(guardateRef.current.size)
+        }
+      })
+
       stanza.on(RoomEvent.ConnectionStateChanged, (nuovo) => {
         setStato(nuovo)
+        // Rientrando dopo una caduta la SFU rifa' le sottoscrizioni da capo,
+        // e senza questo si tornerebbe dentro scaricando tutti gli schermi
+        // della stanza — proprio nel momento in cui la linea ha gia' dato
+        // segno di non farcela.
+        if (nuovo === ConnectionState.Connected) potaCondivisioni(stanza)
         ridisegna()
       })
 
@@ -831,6 +956,12 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
       })
 
       stanza.on(RoomEvent.Disconnected, (motivo?: DisconnectReason) => {
+        // Comunque sia finita — usciti, cacciati, linea caduta — la chiamata
+        // non c'e' piu', e un allegato che stava salendo al rallentatore puo'
+        // riprendere a pieno ritmo. Non basta dirlo in `esci`: da li' non
+        // passa chi viene buttato fuori.
+        segnalaChiamata(false)
+
         // Essere cacciati non e' come cadere la linea, e dirlo cambia cosa fa
         // l'utente dopo: uno riprova, l'altro no.
         if (motivo === DisconnectReason.CLIENT_INITIATED) {
@@ -944,6 +1075,7 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
       avviaDiagnosticaAudio,
       fermaDiagnosticaAudio,
       fermaTuttoAudio,
+      potaCondivisioni,
       rimuoviRiproduzioneAudio,
       ridisegna
     ]
@@ -955,6 +1087,14 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
       setMotivoUscita(null)
       setMessaggi([])
       volumiAudioRemotiRef.current.clear()
+      // Le condivisioni aperte valgono per la stanza da cui si esce, non per
+      // quella in cui si entra: entrando altrove si riparte da nessuna, e i
+      // due posti sono di nuovo liberi.
+      guardateRef.current.clear()
+      setQuanteGuardate(0)
+      // Da adesso un allegato che sale deve farsi da parte: la linea serve
+      // prima alle voci.
+      segnalaChiamata(true)
       limitiRef.current = ingresso.limiti
 
       const stanza = new Room({
@@ -983,6 +1123,12 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
 
       await stanza.connect(ingresso.sfuUrl, ingresso.gettone)
 
+      // Chi condivideva gia' prima che arrivassimo: `autoSubscribe` se le
+      // prenderebbe tutte all'ingresso, ed entrare in una stanza con sei
+      // schermi accesi vorrebbe dire sei flussi addosso prima ancora di aver
+      // detto "ciao".
+      potaCondivisioni(stanza)
+
       // Il microfono si prepara solo se si puo' trasmettere: in una stanza da
       // palco un ospite che vede il pulsante acceso e non viene sentito da
       // nessuno e' peggio che non vederlo affatto.
@@ -1000,7 +1146,8 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
             ingresso.limiti,
             config.microfonoId,
             config.microfonoAllIngresso === false,
-            config.volumeMicrofono ?? 1
+            config.volumeMicrofono ?? 1,
+            config.microfonoNome
           )
         } catch (e) {
           setErrore(`Il microfono non parte: ${(e as Error).message}`)
@@ -1026,7 +1173,7 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
       suona('entrato')
       ridisegna()
     },
-    [aggancia, applicaAudio, ridisegna]
+    [aggancia, applicaAudio, potaCondivisioni, ridisegna]
   )
 
   const esci = useCallback(async () => {
@@ -1036,6 +1183,9 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
     }
     schermiRef.current.clear()
     volumiAudioRemotiRef.current.clear()
+    guardateRef.current.clear()
+    setQuanteGuardate(0)
+    segnalaChiamata(false)
     await stanzaRef.current?.disconnect()
     await chiudiCatenaMicrofono()
     spegniRiascolto()
@@ -1058,12 +1208,30 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
   //
   // Prima valevano solo dal rientro successivo: si cambiava microfono nelle
   // impostazioni, si continuava a parlare in quello vecchio, e non lo diceva
-  // nessuno. Sono due strade diverse perche' sono due cose diverse:
+  // nessuno.
   //
-  //  - il dispositivo si scambia sotto alla traccia gia' pubblicata, senza
-  //    rinegoziare niente e senza che gli altri sentano un buco;
-  //  - il modo (voce o musica) cambia i vincoli di cattura e il bitrate, che
-  //    su una traccia viva non si toccano: quella va ripubblicata.
+  // Cambiare dispositivo e cambiare modo sembrano due cose diverse, e per un
+  // po' hanno avuto due strade diverse: il modo ripubblicava la traccia, il
+  // dispositivo si limitava a `switchActiveDevice`, che pareva la mossa
+  // elegante — nessuna rinegoziazione, nessun buco di suono per gli altri.
+  //
+  // Non lo era, perche' la traccia che pubblichiamo NON e' quella del
+  // microfono: e' l'uscita della catena audio (vedi `accendiMicrofono`), con
+  // dentro il guadagno e il cancello del rumore. `switchActiveDevice` non lo
+  // sa: apre il dispositivo per conto suo e sostituisce la traccia pubblicata
+  // con quella grezza. Da li' in poi il cursore del volume non muoveva piu'
+  // niente, il cancello non tagliava piu' niente, il misuratore leggeva il
+  // dispositivo vecchio — rimasto aperto, con la sua spia accesa — e i vincoli
+  // del profilo (stereo, bitrate, eco) sparivano.
+  //
+  // E soprattutto: livekit chiede il dispositivo con `exact`, quindi quando
+  // l'id salvato non si risolveva noi gli passavamo `'default'` — il
+  // predefinito di Windows, imposto di proposito, mentre le impostazioni
+  // continuavano a mostrare il microfono scelto. E' *questo* il microfono
+  // sbagliato che si sentiva.
+  //
+  // Una strada sola, allora: si rifa' la catena da capo, che e' l'unica cosa
+  // che sa mettere insieme dispositivo, profilo e guadagno.
   //
   // Il primo giro non fa niente: la traccia e' appena stata creata con questi
   // stessi valori, e ripubblicarla subito sarebbe un secondo di silenzio
@@ -1081,36 +1249,40 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
 
     void (async () => {
       try {
-        if (prima.modo !== adesso.modo) {
-          const locale = stanza.localParticipant
-          const eraAcceso = locale.isMicrophoneEnabled
+        const locale = stanza.localParticipant
+        const vecchia = locale.getTrackPublication(Track.Source.Microphone)
 
-          // Si TOGLIE la traccia vecchia, non la si mette in muto.
-          //
-          // setMicrophoneEnabled(false) la lascia pubblicata e silenziosa: la
-          // nuova si aggiungeva accanto, e chi cambiava modo si sentiva due
-          // volte. In muto se ne sentiva una sola, che e' il sintomo da cui si
-          // capisce che le tracce vive erano due.
-          const vecchia = locale.getTrackPublication(Track.Source.Microphone)
-          if (vecchia?.track) {
-            await locale.unpublishTrack(vecchia.track, true)
-          } else {
-            await locale.setMicrophoneEnabled(false)
-          }
+        // Nessuna traccia pubblicata: il microfono in questa chiamata non e'
+        // mai stato acceso, e all'accensione leggera' da se' l'impostazione
+        // nuova. Non c'e' niente da rifare.
+        if (!vecchia) return
 
-          if (eraAcceso) {
-            await accendiMicrofono(
-              stanza,
-              adesso.modo,
-              limitiRef.current!,
-              adesso.microfono,
-              false,
-              impostazioni.volumeMicrofono ?? 1
-            )
-          }
-        } else if (prima.microfono !== adesso.microfono) {
-          await stanza.switchActiveDevice('audioinput', adesso.microfono ?? 'default')
+        // Zittito resta zittito. Rifare la catena e ritrovarsi accesi senza
+        // aver premuto niente vorrebbe dire mandare fuori una stanza intera
+        // solo perche' si e' cambiato microfono nelle impostazioni.
+        const eraMuto = vecchia.track?.isMuted ?? !locale.isMicrophoneEnabled
+
+        // Si TOGLIE la traccia vecchia, non la si mette in muto.
+        //
+        // setMicrophoneEnabled(false) la lascia pubblicata e silenziosa: la
+        // nuova si aggiungeva accanto, e chi cambiava modo si sentiva due
+        // volte. In muto se ne sentiva una sola, che e' il sintomo da cui si
+        // capisce che le tracce vive erano due.
+        if (vecchia.track) {
+          await locale.unpublishTrack(vecchia.track, true)
+        } else {
+          await locale.setMicrophoneEnabled(false)
         }
+
+        await accendiMicrofono(
+          stanza,
+          adesso.modo,
+          limitiRef.current!,
+          adesso.microfono,
+          eraMuto,
+          impostazioni.volumeMicrofono ?? 1,
+          impostazioni.microfonoNome
+        )
         ridisegna()
       } catch (e) {
         setErrore(`Non sono riuscito a cambiare microfono: ${(e as Error).message}`)
@@ -1123,13 +1295,13 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
   useEffect(() => {
     const stanza = stanzaRef.current
     if (!stanza || stato !== ConnectionState.Connected) return
-    void stanza
-      .switchActiveDevice('audiooutput', impostazioni.altoparlanteId ?? 'default')
+    void idDaAprire('altoparlante', impostazioni.altoparlanteId, impostazioni.altoparlanteNome)
+      .then((vero) => stanza.switchActiveDevice('audiooutput', vero ?? 'default'))
       .catch(() => {
         // Non tutti i sistemi lasciano scegliere l'uscita: se non si puo', si
         // resta su quella di Windows senza dire niente. Non e' un guasto.
       })
-  }, [impostazioni.altoparlanteId, stato])
+  }, [impostazioni.altoparlanteId, impostazioni.altoparlanteNome, stato])
 
   // E la camera, ma solo se e' accesa: se e' spenta se ne riparla
   // all'accensione, che gia' legge l'impostazione giusta.
@@ -1137,10 +1309,10 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
     const stanza = stanzaRef.current
     if (!stanza || stato !== ConnectionState.Connected) return
     if (!stanza.localParticipant.isCameraEnabled) return
-    void stanza
-      .switchActiveDevice('videoinput', impostazioni.cameraId ?? 'default')
+    void idDaAprire('camera', impostazioni.cameraId, impostazioni.cameraNome)
+      .then((vera) => stanza.switchActiveDevice('videoinput', vera ?? 'default'))
       .catch(() => {})
-  }, [impostazioni.cameraId, stato])
+  }, [impostazioni.cameraId, impostazioni.cameraNome, stato])
 
   // -- Le azioni --------------------------------------------------------------
 
@@ -1157,7 +1329,8 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
         limitiRef.current!,
         impostazioni.microfonoId,
         false,
-        impostazioni.volumeMicrofono ?? 1
+        impostazioni.volumeMicrofono ?? 1,
+        impostazioni.microfonoNome
       )
     } else {
       await locale.setMicrophoneEnabled(!locale.isMicrophoneEnabled)
@@ -1179,7 +1352,7 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
     } else {
       const preset =
         PRESET_CAMERA.find((p) => p.id === impostazioni.presetCamera) ?? PRESET_CAMERA[0]
-      await accendiCamera(stanza, preset, limitiRef.current!, impostazioni.cameraId)
+      await accendiCamera(stanza, preset, limitiRef.current!, impostazioni.cameraId, impostazioni.cameraNome)
     }
     suona(stanza.localParticipant.isCameraEnabled ? 'cameraAccesa' : 'cameraSpenta')
     ridisegna()
@@ -1946,6 +2119,10 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
     puntatori,
     punta,
     lascia,
+    guarda,
+    nonGuardare,
+    /** Quante condivisioni altrui si stanno ricevendo adesso, su due. */
+    quanteGuardate,
     entra,
     esci,
     alternaMicrofono,

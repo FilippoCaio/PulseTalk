@@ -10,6 +10,8 @@
  * innesca un fischio in due secondi, ed e' il primo modo in cui una prova del
  * microfono fa scappare chi la stava provando.
  */
+import { apriMicrofonoScelto } from './usaDispositivi'
+
 export interface Prova {
   /** Il livello adesso, da 0 a 1. Va letto a ogni fotogramma da chi disegna. */
   livello(): number
@@ -18,18 +20,25 @@ export interface Prova {
   chiudi(): Promise<void>
 }
 
-export async function avviaProva(dispositivoId: string | null): Promise<Prova> {
-  const grezzo = await navigator.mediaDevices.getUserMedia({
-    audio: {
-      deviceId: dispositivoId ?? undefined,
+export async function avviaProva(
+  dispositivoId: string | null,
+  dispositivoNome: string | null = null
+): Promise<Prova> {
+  // Dalla stessa porta da cui passa la chiamata, e non e' un dettaglio: qui si
+  // regola la soglia guardando una barra, e se questa apre un dispositivo
+  // diverso da quello che poi parlera' si sta tarando la cosa sbagliata.
+  const { flusso: grezzo } = await apriMicrofonoScelto(
+    {
       // Nessuna elaborazione: si sta provando il microfono, non la catena
       // della chiamata. Con la soppressione del rumore accesa, un microfono
       // che prende male sembra perfetto finche' non si parla davvero.
       echoCancellation: false,
       noiseSuppression: false,
       autoGainControl: false
-    }
-  })
+    },
+    dispositivoId,
+    dispositivoNome
+  )
 
   const contesto = new AudioContext()
   if (contesto.state === 'suspended') await contesto.resume().catch(() => {})

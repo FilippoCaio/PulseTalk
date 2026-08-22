@@ -19,7 +19,9 @@ import { coloreDi, inizialiDi } from './lib/avatar'
 import { ponte } from './ponte'
 import { STATI } from './PopupProfilo'
 import { avviaProva, type Prova } from './lib/provaMicrofono'
-import { Avviso, Bottone, BottoneIcona, Campo, classiInput } from './ui'
+import { usaMisuratore } from './lib/misuratoreMicrofono'
+import { scegli, usaDispositivi, vociTendina } from './lib/usaDispositivi'
+import { Avviso, Bottone, BottoneIcona, Campo, classiInput, Interruttore, Sezione } from './ui'
 import { Altoparlante, Camera, Chiudi, Esci, Ingranaggio, Persona } from './icone'
 import { configuraSuoni, suona } from './lib/suoni'
 
@@ -54,32 +56,11 @@ export default function PannelloImpostazioni({
   /** Con quale sezione aprirsi. Senza, quella di sempre. */
   paginaIniziale?: Pagina
 }): React.JSX.Element {
-  const [dispositivi, setDispositivi] = useState<MediaDeviceInfo[]>([])
+  // L'elenco arriva dall'hook, che ne teneva gia' una copia identica per la
+  // barra della chiamata — con in piu' l'ascolto di `devicechange`, che qui
+  // mancava: le cuffie attaccate a pannello aperto adesso compaiono da sole.
+  const { tutti } = usaDispositivi()
   const [confermaUscita, setConfermaUscita] = useState(false)
-
-  useEffect(() => {
-    const carica = async (): Promise<void> => {
-      let elenco = await navigator.mediaDevices.enumerateDevices()
-      // Senza un permesso gia' concesso, i nomi dei dispositivi arrivano vuoti
-      // e la tendina diventa "Dispositivo 1, Dispositivo 2". Si chiede una
-      // traccia qualunque, si legge l'elenco vero, e la si chiude subito.
-      if (elenco.some((d) => d.kind !== 'videoinput' && !d.label)) {
-        try {
-          const prova = await navigator.mediaDevices.getUserMedia({ audio: true })
-          for (const t of prova.getTracks()) t.stop()
-          elenco = await navigator.mediaDevices.enumerateDevices()
-        } catch {
-          // Permesso negato: i nomi restano vuoti, ma le tendine funzionano
-          // lo stesso e si sceglie per posizione.
-        }
-      }
-      setDispositivi(elenco)
-    }
-    void carica()
-  }, [])
-
-  const per = (tipo: MediaDeviceKind): MediaDeviceInfo[] =>
-    dispositivi.filter((d) => d.kind === tipo)
 
   // Chi arriva da "Il tuo profilo" nel pannellino in basso a sinistra deve
   // trovarsi gia' sulla sua pagina: farlo atterrare sull'audio e poi cercare
@@ -138,12 +119,12 @@ export default function PannelloImpostazioni({
                     <select
                       className={classiInput}
                       value={impostazioni.microfonoId ?? ''}
-                      onChange={(e) => void salva({ microfonoId: e.target.value || null })}
+                      onChange={(e) => void salva(scegli('microfono', tutti, e.target.value))}
                     >
                       <option value="">Predefinito di Windows</option>
-                      {per('audioinput').map((d) => (
-                        <option key={d.deviceId} value={d.deviceId}>
-                          {d.label || 'Microfono senza nome'}
+                      {vociTendina('microfono', tutti, impostazioni).map((voce) => (
+                        <option key={voce.id} value={voce.id} disabled={voce.assente}>
+                          {voce.nome}
                         </option>
                       ))}
                     </select>
@@ -163,8 +144,10 @@ export default function PannelloImpostazioni({
 
                   <ProvaMicrofono
                     dispositivoId={impostazioni.microfonoId ?? null}
+                    dispositivoNome={impostazioni.microfonoNome ?? null}
                     soglia={impostazioni.sogliaMicrofono ?? 0}
                     cambiaSoglia={(v) => void salva({ sogliaMicrofono: v })}
+                    inChiamata={inChiamata}
                   />
 
                   <Interruttore
@@ -175,6 +158,22 @@ export default function PannelloImpostazioni({
                       resta zittito: fuori non esce niente, e al primo clic si parla senza aspettare che
                       Windows apra il dispositivo."
                   />
+
+                  <Interruttore
+                    acceso={impostazioni.disattivaMediaCambioCanale ?? false}
+                    cambia={(v) => void salva({ disattivaMediaCambioCanale: v })}
+                    titolo="Spegni audio e video quando cambio canale"
+                    sotto="Nel passaggio diretto fra due canali vocali, il nuovo canale parte sempre con
+                      microfono e videocamera spenti. Non cambia i dispositivi scelti ne' la semplice
+                      navigazione fra canali testuali."
+                  />
+
+                  <Interruttore
+                    acceso={impostazioni.mostraAnteprimeLink ?? true}
+                    cambia={(v) => void salva({ mostraAnteprimeLink: v })}
+                    titolo="Carica automaticamente le anteprime dei link"
+                    sotto="Il server legge titolo e immagine con protezione dalla rete privata. Se spento, il link resta semplice e l'anteprima viene richiesta solo passandoci sopra."
+                  />
                 </Sezione>
 
                 <Sezione titolo="Uscita" sotto="Quello che arriva dagli altri, e da dove esce.">
@@ -182,12 +181,12 @@ export default function PannelloImpostazioni({
                     <select
                       className={classiInput}
                       value={impostazioni.altoparlanteId ?? ''}
-                      onChange={(e) => void salva({ altoparlanteId: e.target.value || null })}
+                      onChange={(e) => void salva(scegli('altoparlante', tutti, e.target.value))}
                     >
                       <option value="">Predefiniti di Windows</option>
-                      {per('audiooutput').map((d) => (
-                        <option key={d.deviceId} value={d.deviceId}>
-                          {d.label || 'Uscita senza nome'}
+                      {vociTendina('altoparlante', tutti, impostazioni).map((voce) => (
+                        <option key={voce.id} value={voce.id} disabled={voce.assente}>
+                          {voce.nome}
                         </option>
                       ))}
                     </select>
@@ -318,12 +317,12 @@ export default function PannelloImpostazioni({
                     <select
                       className={classiInput}
                       value={impostazioni.cameraId ?? ''}
-                      onChange={(e) => void salva({ cameraId: e.target.value || null })}
+                      onChange={(e) => void salva(scegli('camera', tutti, e.target.value))}
                     >
                       <option value="">Predefinita</option>
-                      {per('videoinput').map((d) => (
-                        <option key={d.deviceId} value={d.deviceId}>
-                          {d.label || 'Camera senza nome'}
+                      {vociTendina('camera', tutti, impostazioni).map((voce) => (
+                        <option key={voce.id} value={voce.id} disabled={voce.assente}>
+                          {voce.nome}
                         </option>
                       ))}
                     </select>
@@ -405,6 +404,14 @@ export default function PannelloImpostazioni({
                     sotto="Risoluzione, fotogrammi, bitrate e codec misurati sulla connessione, passando
                       il puntatore sopra a un riquadro. E' l'unico modo per sapere se stai davvero
                       mandando quello che hai chiesto."
+                  />
+
+                  <Interruttore
+                    acceso={impostazioni.specchiaCamera ?? true}
+                    cambia={(v) => void salva({ specchiaCamera: v })}
+                    titolo="Specchia la mia anteprima video"
+                    sotto="Cambia soltanto come vedi la tua webcam su questo dispositivo. Gli altri
+                      ricevono sempre la traccia originale."
                   />
                 </Sezione>
               </>
@@ -914,53 +921,6 @@ function Sessioni({ api }: { api: Api }): React.JSX.Element {
   )
 }
 
-function Sezione({
-  titolo,
-  sotto,
-  children
-}: {
-  titolo: string
-  sotto?: string
-  children: React.ReactNode
-}): React.JSX.Element {
-  return (
-    <section className="space-y-3">
-      <div>
-        <h3 className="text-sm font-semibold">{titolo}</h3>
-        {sotto && <p className="mt-0.5 text-xs text-testo-3">{sotto}</p>}
-      </div>
-      {children}
-    </section>
-  )
-}
-
-function Interruttore({
-  acceso,
-  cambia,
-  titolo,
-  sotto
-}: {
-  acceso: boolean
-  cambia: (valore: boolean) => void
-  titolo: string
-  sotto: string
-}): React.JSX.Element {
-  return (
-    <label className="flex cursor-pointer items-start gap-2.5">
-      <input
-        type="checkbox"
-        className="mt-0.5 accent-vivo"
-        checked={acceso}
-        onChange={(e) => cambia(e.target.checked)}
-      />
-      <span className="text-sm">
-        {titolo}
-        <span className="mt-0.5 block text-xs leading-relaxed text-testo-3">{sotto}</span>
-      </span>
-    </label>
-  )
-}
-
 /**
  * Gli aggiornamenti.
  *
@@ -1050,102 +1010,151 @@ function SezioneAggiornamenti(): React.JSX.Element | null {
 
 /** Le note di rilascio in una riga: nel pannello non c'e' spazio per di piu'. */
 function primaRiga(note: string): string {
-  const pulite = note.replace(/<[^>]*>/g, ' ').replace(/s+/g, ' ').trim()
+  const pulite = note.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
   return pulite.length > 120 ? pulite.slice(0, 117) + '…' : pulite
 }
 
 /**
- * Prova del microfono e soglia dell'automute, insieme.
+ * Il microfono, la soglia, e il punto esatto in cui smetti di essere sentito.
  *
- * Stanno insieme perche' separati non servono a niente: una soglia si regola
- * guardando dove arriva la propria voce e dove arriva il proprio silenzio, e
- * un misuratore senza soglia dice solo che il microfono e' vivo. Qui si parla,
- * si guarda la barra, e si mette il segno in mezzo.
+ * Le due cose stanno insieme perche' separate non servono a niente: una soglia
+ * si regola guardando dove arriva la propria voce e dove arriva il proprio
+ * silenzio, e un misuratore senza soglia dice solo che il microfono e' vivo.
  *
- * La prova apre un microfono suo: cosi' funziona anche fuori da una chiamata,
- * che e' poi il momento in cui uno controlla se ha scelto il dispositivo
- * giusto.
+ * Tre segni sulla stessa barra, e ognuno risponde a una domanda diversa:
+ *
+ *   la barra piena     quanto forte stai parlando adesso
+ *   il segno giallo    dove hai messo la soglia
+ *   il colore          se in questo istante la voce esce o viene tagliata
+ *
+ * Il livello NON passa da uno stato React. Si legge a ogni fotogramma e si
+ * scrive direttamente nello stile della barra: con un `setState` sessanta volte
+ * al secondo si ridisegnerebbe tutto il pannello — cursori, tendine, sezioni —
+ * per far allungare un rettangolo.
+ *
+ * Durante una chiamata non si apre nessun microfono nuovo: si legge quello che
+ * sta gia' trasmettendo. Vedi lib/misuratoreMicrofono.ts.
  */
 function ProvaMicrofono({
   dispositivoId,
+  dispositivoNome,
   soglia,
-  cambiaSoglia
+  cambiaSoglia,
+  inChiamata = false
 }: {
   dispositivoId: string | null
+  dispositivoNome: string | null
   soglia: number
   cambiaSoglia: (valore: number) => void
+  /** Con una chiamata aperta il misuratore parte da solo e non chiede niente. */
+  inChiamata?: boolean
 }): React.JSX.Element {
-  const [prova, setProva] = useState<Prova | null>(null)
-  const [livello, setLivello] = useState(0)
+  const [acceso, setAcceso] = useState(inChiamata)
   const [ritorno, setRitorno] = useState(false)
-  const [errore, setErrore] = useState<string | null>(null)
+  const barra = useRef<HTMLDivElement | null>(null)
+  const spia = useRef<HTMLSpanElement | null>(null)
+  const prova = useRef<Prova | null>(null)
 
-  // Il livello si legge a ogni fotogramma, non con un timer: e' l'unica cadenza
-  // in cui la barra sembra seguire la voce invece di inseguirla.
+  const { misuratore, errore } = usaMisuratore(acceso, dispositivoId, dispositivoNome, soglia)
+
+  // In chiamata il misuratore e' sempre acceso: il microfono e' gia' aperto,
+  // e chiedere di premere "prova" per guardare una barra che potrebbe gia'
+  // muoversi sarebbe un passaggio inventato.
   useEffect(() => {
-    if (!prova) return
+    if (inChiamata) setAcceso(true)
+  }, [inChiamata])
+
+  /**
+   * Il ritorno in cuffia, solo fuori dalla chiamata.
+   *
+   * Dentro una chiamata mandarsi il proprio microfono in cuffia vorrebbe dire
+   * sentirsi due volte — e con le casse accese, fischiare.
+   */
+  useEffect(() => {
+    if (inChiamata || !acceso) return
     let vivo = true
-    const giro = (): void => {
-      if (!vivo) return
-      setLivello(prova.livello())
-      requestAnimationFrame(giro)
-    }
-    requestAnimationFrame(giro)
+    void avviaProva(dispositivoId, dispositivoNome)
+      .then((nuova) => {
+        if (!vivo) return void nuova.chiudi()
+        prova.current = nuova
+        nuova.sentiti(ritorno)
+      })
+      .catch(() => {
+        // Il misuratore ha gia' detto cosa non va: qui si perde solo il ritorno.
+      })
     return () => {
       vivo = false
+      void prova.current?.chiudi()
+      prova.current = null
     }
-  }, [prova])
+    // Volutamente senza `ritorno`: accenderlo non deve riaprire il dispositivo.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [acceso, dispositivoId, dispositivoNome, inChiamata])
 
-  // Chiudendo il pannello a prova accesa, il microfono resterebbe aperto e la
-  // spia accesa: qui si spegne comunque.
   useEffect(() => {
-    return () => {
-      void prova?.chiudi()
-    }
-  }, [prova])
-
-  const avvia = async (): Promise<void> => {
-    setErrore(null)
-    try {
-      const nuova = await avviaProva(dispositivoId)
-      nuova.sentiti(ritorno)
-      setProva(nuova)
-    } catch (e) {
-      setErrore((e as Error).message)
-    }
-  }
-
-  const ferma = async (): Promise<void> => {
-    const vecchia = prova
-    setProva(null)
-    setLivello(0)
-    await vecchia?.chiudi()
-  }
+    prova.current?.sentiti(ritorno)
+  }, [ritorno])
 
   // La barra e' logaritmica: la voce parlata sta fra 0.02 e 0.2 di valore
   // efficace, e su una scala lineare quei numeri stanno tutti schiacciati
   // contro il bordo sinistro, dove non si distingue niente.
   const perCento = (v: number): number => Math.min(100, Math.max(0, (Math.sqrt(v) / 0.6) * 100))
-  const passa = soglia <= 0 || livello >= soglia
+
+  useEffect(() => {
+    if (!misuratore) {
+      if (barra.current) barra.current.style.width = '0%'
+      return
+    }
+
+    let vivo = true
+    let ultimoColore = ''
+
+    const giro = (): void => {
+      if (!vivo) return
+      const elemento = barra.current
+      if (elemento) {
+        elemento.style.width = `${perCento(misuratore.livello())}%`
+
+        // Il colore cambia poche volte al secondo, la larghezza sessanta:
+        // toccare la classe solo quando serve evita di far ricalcolare lo stile
+        // a ogni fotogramma.
+        const colore = misuratore.passa() ? 'var(--color-ok)' : 'var(--color-testo-3)'
+        if (colore !== ultimoColore) {
+          elemento.style.background = colore
+          if (spia.current) spia.current.style.background = colore
+          ultimoColore = colore
+        }
+      }
+      requestAnimationFrame(giro)
+    }
+
+    requestAnimationFrame(giro)
+    return () => {
+      vivo = false
+    }
+  }, [misuratore])
 
   return (
     <Campo
-      etichetta="Prova e automute"
+      etichetta="Livello e automute"
       aiuto="Parla e guarda dove arriva la barra. Il segno e' la soglia: sotto, il microfono non
-        trasmette. Si alza finche' il silenzio resta a sinistra del segno e la voce lo supera."
+        trasmette e la barra diventa grigia. Si alza finche' il silenzio resta a sinistra del segno e
+        la voce lo supera."
     >
       <div className="space-y-2">
+        {/* La barra e la soglia sullo stesso righello: e' l'unico modo per
+            vedere il punto esatto in cui la voce smette di uscire. */}
         <div className="relative h-2.5 overflow-hidden rounded-full bg-fondo-3">
           <div
-            className={`h-full rounded-full transition-[width] duration-75 ${
-              passa ? 'bg-ok' : 'bg-testo-3'
-            }`}
-            style={{ width: `${perCento(livello)}%` }}
+            ref={barra}
+            className="h-full rounded-full"
+            style={{ width: '0%', background: 'var(--color-testo-3)' }}
           />
           {soglia > 0 && (
             <div
               className="absolute inset-y-0 w-0.5 bg-attenzione"
               style={{ left: `${perCento(soglia)}%` }}
+              title="Soglia dell'automute"
             />
           )}
         </div>
@@ -1161,27 +1170,33 @@ function ProvaMicrofono({
           aria-label="Soglia dell'automute"
         />
 
-        <div className="flex items-center gap-2">
-          <Bottone tono="fantasma" onClick={() => void (prova ? ferma() : avvia())}>
-            {prova ? 'Ferma la prova' : 'Prova il microfono'}
-          </Bottone>
+        <div className="flex flex-wrap items-center gap-2">
+          {!inChiamata && (
+            <Bottone tono="fantasma" onClick={() => setAcceso((v) => !v)}>
+              {acceso ? 'Ferma la prova' : 'Prova il microfono'}
+            </Bottone>
+          )}
 
-          {prova && (
-            <Bottone
-              tono="fantasma"
-              onClick={() => {
-                const nuovo = !ritorno
-                setRitorno(nuovo)
-                prova.sentiti(nuovo)
-              }}
-            >
+          {acceso && !inChiamata && (
+            <Bottone tono="fantasma" onClick={() => setRitorno((v) => !v)}>
               {ritorno ? 'Smetti di sentirti' : 'Sentiti'}
             </Bottone>
           )}
 
-          <span className="text-xs text-testo-3">
+          <span className="flex items-center gap-1.5 text-xs text-testo-3">
+            <span
+              ref={spia}
+              className="inline-block h-1.5 w-1.5 rounded-full"
+              style={{ background: 'var(--color-testo-3)' }}
+            />
             {soglia <= 0 ? 'automute spento' : `soglia ${Math.round(soglia * 100)}`}
           </span>
+
+          {misuratore?.daChiamata && (
+            <span className="text-xs text-testo-3">
+              — dal microfono della chiamata, senza riaprirlo
+            </span>
+          )}
         </div>
 
         {ritorno && (
@@ -1225,9 +1240,12 @@ function StatoDiProfilo({
   }
 
   return (
-    <Sezione titolo="Stato" sotto="Resta quello che scegli finche' non lo cambi.">
+    <Sezione
+      titolo="Stato"
+      sotto="Resta quello che scegli finche' non lo cambi. Inattivo non c'e' perche' non si sceglie: lo mette l'applicazione dopo dieci minuti senza parlare."
+    >
       <div className="grid grid-cols-2 gap-2">
-        {(['online', 'inattivo', 'occupato', 'invisibile'] as StatoUtente[]).map((quale) => (
+        {(['online', 'occupato', 'invisibile'] as StatoUtente[]).map((quale) => (
           <button
             key={quale}
             onClick={() => void scegli(quale)}
