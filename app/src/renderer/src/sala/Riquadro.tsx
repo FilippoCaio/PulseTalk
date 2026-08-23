@@ -16,6 +16,7 @@ import {
   AltoparlanteMuto,
   Ingrandisci,
   Lucchetto,
+  CuffieSpente,
   MicrofonoSpento,
   Rimpicciolisci,
   Lente,
@@ -610,8 +611,19 @@ export default function Riquadro({
               </span>
             )}
             {!dati.microfonoAcceso && (
-              <span title="Microfono spento" className="shrink-0 text-white/45">
+              <span
+                title={dati.sordina ? 'Non parla e non sente' : 'Microfono spento'}
+                className={`shrink-0 ${dati.sordina ? 'text-male/90' : 'text-white/45'}`}
+              >
                 <MicrofonoSpento className="h-3.5 w-3.5" />
+              </span>
+            )}
+            {/* Le cuffie barrate accanto al microfono barrato: le due insieme
+                dicono una terza cosa, cioe' che non e' il caso di parlargli.
+                Il microfono da solo e' uno che sta ascoltando in silenzio. */}
+            {dati.sordina && (
+              <span title="Non parla e non sente" className="shrink-0 text-male/90">
+                <CuffieSpente className="h-3.5 w-3.5" />
               </span>
             )}
           </div>

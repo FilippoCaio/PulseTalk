@@ -13,6 +13,7 @@ import {
   Ingranaggio,
   Microfono,
   MicrofonoSpento,
+  Sottotitoli,
   Onde,
   Pile,
   Riavvolgi,
@@ -58,6 +59,7 @@ export default function OverlayChiamata({
   collegando,
   chat,
   insieme,
+  trascrizione,
   soloGrande,
   invita,
   impostazioni,
@@ -101,6 +103,20 @@ export default function OverlayChiamata({
    * uno chiude l'altro, ed e' cio' che ci si aspetta da due schede.
    */
   insieme?: { aperta: boolean; alterna: () => void; attiva: boolean }
+  /**
+   * Auto Writer: il pannello che trasforma le voci in testo.
+   *
+   * Ha un pulsante suo, accanto alla chat, perche' prima non ne aveva
+   * nessuno: il pannello compariva da solo in cima alla stanza quando il
+   * server era configurato, e non compariva affatto quando non lo era. Nei
+   * due casi la domanda "da dove si attiva?" non aveva risposta — nel primo
+   * perche' non c'era niente da attivare, nel secondo perche' non c'era
+   * niente.
+   *
+   * `attiva` accende il pallino: sta trascrivendo adesso, e chi entra a meta'
+   * ha diritto di saperlo senza aprire niente.
+   */
+  trascrizione?: { aperta: boolean; alterna: () => void; attiva: boolean }
   /** Assente quando non c'e' niente in sovraimpressione: niente da nascondere. */
   soloGrande?: { attivo: boolean; alterna: () => void }
   /**
@@ -277,6 +293,27 @@ export default function OverlayChiamata({
                   guardando qualcosa. */}
               {insieme.attiva && !insieme.aperta && (
                 <span className="absolute top-1.5 right-1.5 h-1.5 w-1.5 rounded-full bg-ok" />
+              )}
+            </button>
+          )}
+          {trascrizione && (
+            <button
+              onClick={trascrizione.alterna}
+              title={
+                trascrizione.aperta
+                  ? 'Chiudi Auto Writer'
+                  : 'Auto Writer: metti per iscritto quello che si dice'
+              }
+              aria-label={trascrizione.aperta ? 'Chiudi Auto Writer' : 'Auto Writer'}
+              className={`relative flex h-10 w-10 items-center justify-center rounded-2xl border border-bordo bg-fondo-2/95 shadow-xl shadow-black/40 backdrop-blur transition-colors ${
+                trascrizione.aperta ? 'text-vivo' : 'text-testo-3 hover:text-testo'
+              }`}
+            >
+              <Sottotitoli className="h-5 w-5" />
+              {/* Rosso e non verde: qui il pallino non dice "c'e' una cosa
+                  bella in corso", dice "ti stanno registrando". */}
+              {trascrizione.attiva && (
+                <span className="absolute top-1.5 right-1.5 h-1.5 w-1.5 rounded-full bg-male" />
               )}
             </button>
           )}

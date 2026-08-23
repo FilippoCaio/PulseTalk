@@ -85,6 +85,8 @@ export interface Riquadro {
   /** Sta parlando adesso: e' il bordo verde. */
   parla: boolean
   microfonoAcceso: boolean
+  /** Ha spento tutto: non sente e non parla. Vedi `Persona.sordina`. */
+  sordina: boolean
 }
 
 /**
@@ -102,6 +104,16 @@ export interface Riquadro {
  */
 export const MAX_CONDIVISIONI_GUARDATE = 2
 
+/**
+ * L'attributo con cui si dice agli altri di avere la sordina.
+ *
+ * Sta scritto qui una volta sola perche' e' un accordo fra due lati che non si
+ * parlano: chi lo scrive e chi lo legge sono lo stesso file oggi, ma la
+ * stringa e' un protocollo, e i protocolli scritti a mano in due punti
+ * divergono.
+ */
+const ATTRIBUTO_SORDINA = 'sordina'
+
 export interface Persona {
   identita: string
   nome: string
@@ -109,6 +121,15 @@ export interface Persona {
   moderatore: boolean
   parla: boolean
   microfonoAcceso: boolean
+  /**
+   * Ha spento tutto: non sente e non parla.
+   *
+   * Diversa da `microfonoAcceso: false`, e la differenza si vede solo
+   * dicendola. Un microfono spento e' qualcuno che sta ascoltando e in questo
+   * momento non parla; la sordina e' qualcuno che non c'e': gli si puo'
+   * scrivere, ma parlargli e' fiato sprecato.
+   */
+  sordina: boolean
   camera: boolean
   schermi: number
   qualita: ConnectionQuality
@@ -219,12 +240,21 @@ function moderatoreDi(partecipante: Participant): boolean {
 function riquadriDi(
   partecipante: Participant,
   locale: boolean,
-  cheParla: Set<string>
+  cheParla: Set<string>,
+  /**
+   * La propria sordina, che non passa dal server.
+   *
+   * L'attributo ci mette un giro di rete ad andare e tornare, e in quel giro
+   * chi ha appena premuto le cuffie non si vedrebbe cambiare niente addosso.
+   * Per se stessi lo stato vero e' gia' qui.
+   */
+  sordinaPropria = false
 ): Riquadro[] {
   const moderatore = moderatoreDi(partecipante)
   const nome = partecipante.name || partecipante.identity
   const parla = cheParla.has(partecipante.identity)
   const microfonoAcceso = partecipante.isMicrophoneEnabled
+  const sordina = locale ? sordinaPropria : partecipante.attributes?.[ATTRIBUTO_SORDINA] === '1'
 
   const fuori: Riquadro[] = []
   let camera: TrackPublication | null = null
@@ -265,7 +295,8 @@ function riquadriDi(
       // lampeggiava tutta insieme e l'unica informazione che quel colore
       // portava, cioe' dove guardare, si perdeva.
       parla: false,
-      microfonoAcceso
+      microfonoAcceso,
+      sordina
     })
   })
 
@@ -285,13 +316,20 @@ function riquadriDi(
     bloccato: false,
     inArrivo: !!camera && !(camera as TrackPublication).track,
     parla,
-    microfonoAcceso
+    microfonoAcceso,
+    sordina
   })
 
   return fuori
 }
 
-function personaDa(partecipante: Participant, locale: boolean, cheParla: Set<string>): Persona {
+function personaDa(
+  partecipante: Participant,
+  locale: boolean,
+  cheParla: Set<string>,
+  /** Vedi `riquadriDi`: per se stessi la sordina non passa dal server. */
+  sordinaPropria = false
+): Persona {
   let schermi = 0
   let camera = false
   partecipante.trackPublications.forEach((p) => {
@@ -307,6 +345,7 @@ function personaDa(partecipante: Participant, locale: boolean, cheParla: Set<str
     moderatore: moderatoreDi(partecipante),
     parla: cheParla.has(partecipante.identity),
     microfonoAcceso: partecipante.isMicrophoneEnabled,
+    sordina: locale ? sordinaPropria : partecipante.attributes?.[ATTRIBUTO_SORDINA] === '1',
     camera,
     schermi,
     qualita: partecipante.connectionQuality
@@ -345,6 +384,8 @@ export interface Sessione {
   audioRemoti: AudioRemoto[]
   /** Chi ha il microfono spento, dal vivo. Vale solo per il canale in cui si e'. */
   microfoniSpenti: Set<string>
+  /** Chi ha spento tutto: non sente e non parla. */
+  sordine: Set<string>
   /** Andata e ritorno verso la SFU in millisecondi. Null: non ancora misurabile. */
   latenza: number | null
   /** Dice quale schermo si sta guardando: gli altri scendono di qualita'. */
@@ -811,6 +852,10 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
         RoomEvent.LocalTrackPublished,
         RoomEvent.LocalTrackUnpublished,
         RoomEvent.ParticipantMetadataChanged,
+        // La sordina altrui viaggia negli attributi: senza questo evento il
+        // simbolo delle cuffie barrate comparirebbe solo alla prossima cosa
+        // che fa ridisegnare la stanza, cioe' quando capita.
+        RoomEvent.ParticipantAttributesChanged,
         RoomEvent.ConnectionQualityChanged
       ]
       for (const evento of eventi) stanza.on(evento, ridisegna)
@@ -1129,6 +1174,16 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
       // detto "ciao".
       potaCondivisioni(stanza)
 
+      // La sordina attraversa le stanze: chi cambia canale senza riaccendere
+      // niente resta sordo anche di la', e di la' bisogna che si veda. La
+      // stanza e' nuova, gli attributi ripartono vuoti, e l'unico che sa come
+      // stanno le cose e' questo lato.
+      if (sordinaRef.current) {
+        await stanza.localParticipant
+          .setAttributes({ [ATTRIBUTO_SORDINA]: '1' })
+          .catch(() => {})
+      }
+
       // Il microfono si prepara solo se si puo' trasmettere: in una stanza da
       // palco un ospite che vede il pulsante acceso e non viene sentito da
       // nessuno e' peggio che non vederlo affatto.
@@ -1385,6 +1440,23 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
         void locale.setMicrophoneEnabled(true).then(ridisegna)
       }
     }
+
+    // E lo devono sapere anche gli altri.
+    //
+    // Il microfono spento si vede da solo — e' una traccia che smette di
+    // arrivare — ma la sordina no: dall'altra parte si vede una persona muta,
+    // che e' la stessa faccia di chi sta semplicemente ascoltando in silenzio.
+    // Sono due cose molto diverse da sapere prima di rivolgergli la parola.
+    //
+    // Va per attributi e non per messaggio dati: un attributo resta appeso al
+    // partecipante e arriva da solo a chi entra dopo, mentre un messaggio lo
+    // sente solo chi era gia' in stanza quando e' partito.
+    void stanza?.localParticipant
+      .setAttributes({ [ATTRIBUTO_SORDINA]: sordinaRef.current ? '1' : '' })
+      .catch(() => {
+        // Un server che non concede di scrivere i propri attributi non deve
+        // impedire la sordina: resta una cosa che gli altri non vedono.
+      })
 
     suona(sordinaRef.current ? 'sordinaAccesa' : 'sordinaSpenta')
   }, [applicaAudio, ridisegna])
@@ -2001,8 +2073,8 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
     const riquadri: Riquadro[] = []
     const persone: Persona[] = []
 
-    riquadri.push(...riquadriDi(stanza.localParticipant, true, cheParla))
-    persone.push(personaDa(stanza.localParticipant, true, cheParla))
+    riquadri.push(...riquadriDi(stanza.localParticipant, true, cheParla, sordina))
+    persone.push(personaDa(stanza.localParticipant, true, cheParla, sordina))
 
     stanza.remoteParticipants.forEach((p) => {
       riquadri.push(...riquadriDi(p, false, cheParla))
@@ -2063,7 +2135,7 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
     // `giro` non si usa nel corpo: e' li' per far ricalcolare quando la stanza
     // cambia sotto, cosa che React da solo non puo' vedere.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [giro, stato, cheParla])
+  }, [giro, stato, cheParla, sordina])
 
   /**
    * Chi ha il microfono spento adesso, per identita'.
@@ -2076,6 +2148,20 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
    */
   const microfoniSpenti = useMemo(
     () => new Set(persone.filter((p) => !p.microfonoAcceso).map((p) => p.identita)),
+    [persone]
+  )
+
+  /**
+   * Chi ha la sordina adesso, per identita'.
+   *
+   * Come i microfoni spenti, e per lo stesso motivo: la colonna dei canali va
+   * disegnata anche mentre si legge tutt'altro, e li' l'unica sorgente viva e'
+   * questa. Le presenze del server non portano la sordina — e non potrebbero:
+   * e' una scelta che sta sul computer di chi la fa, e arriva qui soltanto
+   * perche' la si dice.
+   */
+  const sordine = useMemo(
+    () => new Set(persone.filter((p) => p.sordina).map((p) => p.identita)),
     [persone]
   )
 
@@ -2106,6 +2192,7 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
     impostaVolumeAudioRemoto,
     alternaMutoAudioRemoto,
     microfoniSpenti,
+    sordine,
     latenza,
     applicaQualita,
     cambiaQualitaCondivisione,

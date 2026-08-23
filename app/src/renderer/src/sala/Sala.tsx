@@ -64,7 +64,9 @@ export default function Sala({
   chatVocale,
   canaleVocale,
   utente,
-  media
+  media,
+  condivisioneRichiesta = false,
+  condivisioneServita
 }: {
   api: Api
   ingresso: Ingresso
@@ -104,6 +106,17 @@ export default function Sala({
    * deve trovare la sessione chiusa quando torna.
    */
   media?: SessioniMedia
+  /**
+   * Qualcuno ha chiesto di condividere da fuori: dal pulsante nel pannello in
+   * basso a sinistra, che resta a portata anche leggendo un'altra pagina.
+   *
+   * Arriva vera anche al primo disegno — premere quel pulsante da una chat
+   * fa nascere questa schermata e alza la richiesta nello stesso istante — e
+   * per questo va spenta chiamando `condivisioneServita`, non confrontandola
+   * con il valore precedente: al primo disegno un valore precedente non c'e'.
+   */
+  condivisioneRichiesta?: boolean
+  condivisioneServita?: () => void
 }): React.JSX.Element {
   const [aFuoco, setAFuoco] = useState<string | null>(null)
   // Vero quando l'utente ha tolto lui il fuoco. Serve a non rimetterlo subito:
@@ -122,6 +135,15 @@ export default function Sala({
     modifica: string | null
     soloAudio: boolean
   } | null>(null)
+
+  /** La richiesta arrivata da fuori: apri la scelta di cosa condividere. */
+  useEffect(() => {
+    if (!condivisioneRichiesta) return
+    condivisioneServita?.()
+    if (ingresso.permessi.puoCondividere === false) return
+    setScegliSorgente({ modifica: null, soloAudio: false })
+  }, [condivisioneRichiesta, condivisioneServita, ingresso.permessi.puoCondividere])
+
   /**
    * La sovraimpressione da sola, senza la striscia delle persone.
    *
@@ -133,6 +155,17 @@ export default function Sala({
   const [soloGrande, setSoloGrande] = useState(false)
   /** L'elenco degli amici da chiamare dentro, quando e' aperto. */
   const [mostraInvito, setMostraInvito] = useState(false)
+  /**
+   * Auto Writer: se il pannello e' stato chiesto, e se sta trascrivendo.
+   *
+   * Il pannello non compare piu' da solo quando il server e' configurato:
+   * adesso ha un pulsante suo nella barra alta, accanto alla chat. Prima non
+   * ne aveva nessuno, e la funzione risultava una cosa che ogni tanto appariva
+   * in cima alla stanza — o che non esisteva affatto, se sul NAS mancava il
+   * modello. In nessuno dei due casi c'era un posto dove andarla a cercare.
+   */
+  const [trascrizioneAperta, setTrascrizioneAperta] = useState(false)
+  const [trascrizioneAttiva, setTrascrizioneAttiva] = useState(false)
   const [erroreLocale, setErroreLocale] = useState<string | null>(null)
   /**
    * L'ordine deciso a mano, per id di riquadro.
@@ -508,6 +541,9 @@ export default function Sala({
           io={utente}
           profili={profili}
           moderatore={moderatore}
+          aperto={trascrizioneAperta}
+          chiudi={() => setTrascrizioneAperta(false)}
+          quandoCambia={setTrascrizioneAttiva}
         />
       )}
       {/* L'intestazione non e' piu' una fascia fissa: nome del canale,
@@ -897,6 +933,15 @@ export default function Sala({
               }
             : undefined
         }
+        trascrizione={
+          canaleVocale
+            ? {
+                aperta: trascrizioneAperta,
+                attiva: trascrizioneAttiva,
+                alterna: () => setTrascrizioneAperta((v) => !v)
+              }
+            : undefined
+        }
         // Vale anche col video in primo piano: da li' in poi e' una
         // condivisione come le altre, e nascondere le persone e' la stessa
         // cosa che si vuole fare.
@@ -1041,7 +1086,10 @@ function AutoWriter({
   sessioneVoce,
   io,
   profili,
-  moderatore
+  moderatore,
+  aperto,
+  chiudi,
+  quandoCambia
 }: {
   api: Api
   canale: number
@@ -1049,6 +1097,19 @@ function AutoWriter({
   io: Utente
   profili: Map<number, { nome: string; avatar: string | null }>
   moderatore: boolean
+  /**
+   * Se il pannello e' stato chiesto dal pulsante nella barra alta.
+   *
+   * Chiuso, questo pannello resta comunque acceso quando una sessione esiste
+   * davvero: una richiesta di consenso — o una trascrizione in corso — deve
+   * vedersi da sola, senza che nessuno debba aprire niente. Auto Writer non
+   * deve mai poter diventare una registrazione di nascosto, e un pannello che
+   * si puo' chiudere sarebbe esattamente questo.
+   */
+  aperto: boolean
+  chiudi: () => void
+  /** Dice alla sala se sta trascrivendo, per il pallino sul pulsante. */
+  quandoCambia: (attiva: boolean) => void
 }): React.JSX.Element | null {
   const [disponibile, setDisponibile] = useState<boolean | null>(null)
   const [stato, setStato] = useState<SessioneAutoWriter | null>(null)
@@ -1161,17 +1222,19 @@ function AutoWriter({
     }
   }
 
-  // Niente sessione e niente provider: non c'e' nulla da dire qui, e il motivo
-  // per cui non si puo' usare sta fra i problemi, che e' il posto giusto — e'
-  // una cosa da sistemare sul server, non una scritta da leggere ogni volta che
-  // si entra in una chiamata.
-  if (!stato && !disponibile) return null
+  const attiva = stato?.stato === 'attiva'
+  useEffect(() => quandoCambia(attiva), [attiva, quandoCambia])
+
+  // Chiuso e senza sessione non c'e' niente da mostrare. Con una sessione
+  // aperta invece si mostra sempre, che il pannello sia stato chiesto o no:
+  // vedi `aperto`.
+  if (!aperto && !stato) return null
 
   return (
     <aside className="absolute top-3 left-1/2 z-40 w-[min(34rem,calc(100%-2rem))] -translate-x-1/2 rounded-xl border border-bordo bg-fondo-2/95 p-2.5 shadow-xl backdrop-blur">
       <div className="flex items-center gap-2 text-xs">
-        <span className={stato?.stato === 'attiva' ? 'text-male' : 'text-testo-2'}>
-          ● Auto Writer {stato?.stato === 'attiva' ? 'sta trascrivendo' : stato ? 'attende il consenso' : ''}
+        <span className={attiva ? 'text-male' : 'text-testo-2'}>
+          ● Auto Writer {attiva ? 'sta trascrivendo' : stato ? 'attende il consenso' : ''}
         </span>
         {!stato && disponibile && (
           <button className="ml-auto text-vivo underline" onClick={() => void azione(() => api.avviaAutoWriter(canale))}>
@@ -1187,7 +1250,47 @@ function AutoWriter({
         {stato && (stato.richiestoDa === io.id || moderatore) && (
           <button className="ml-auto text-male underline" onClick={() => void azione(() => api.fermaAutoWriter(canale))}>Ferma</button>
         )}
+        {/* La croce chiude il pannello, non la sessione. C'e' solo quando non
+            c'e' niente in ballo: con una richiesta di consenso in piedi
+            chiudere vorrebbe dire far sparire la domanda, e la domanda deve
+            restare sotto agli occhi di tutti finche' qualcuno non risponde. */}
+        {!stato && (
+          <button
+            onClick={chiudi}
+            title="Chiudi"
+            aria-label="Chiudi"
+            className="-my-1 ml-1 shrink-0 rounded-lg p-1 text-testo-3 transition-colors hover:bg-fondo-3 hover:text-testo"
+          >
+            <Chiudi className="h-3.5 w-3.5" />
+          </button>
+        )}
       </div>
+
+      {/* Come si attiva, detto per esteso e solo quando serve: aperto il
+          pannello e senza niente in corso. E' la domanda che si fa la prima
+          volta, e finora l'unica risposta era provare a premere. */}
+      {!stato && disponibile && (
+        <p className="mt-1 text-[11px] leading-snug text-testo-3">
+          Trasforma in testo quello che si dice qui dentro. Chiedendo
+          l&apos;attivazione la richiesta compare a tutti i presenti: ognuno
+          decide per sé, chi accetta viene trascritto e chi rifiuta no. Nessun
+          audio parte senza un sì.
+        </p>
+      )}
+
+      {/* Niente provider configurato. Prima qui non compariva niente — nessun
+          pannello, nessun pulsante, nessuna spiegazione — e la funzione
+          risultava semplicemente inesistente: e' la ragione per cui non si
+          capiva da dove si attivasse. Detto solo a chi apre apposta, che e'
+          la persona che se lo sta chiedendo. */}
+      {!stato && disponibile === false && (
+        <p className="mt-1 text-[11px] leading-snug text-testo-3">
+          {motivoIndisponibile === 'server'
+            ? "Il server è più vecchio dell'applicazione e non conosce Auto Writer: va aggiornato il server."
+            : "Su questo server non è configurato nessun modello di riconoscimento vocale, quindi non c'è niente da attivare. Si accende dal NAS, con le variabili TALK_AI_API_KEY e TALK_AI_STT_MODEL sul container di PulseTalk."}
+        </p>
+      )}
+
       {stato?.stato === 'consenso' && (
         <p className="mt-1 text-[11px] text-testo-3">
           Richiesto da {profili.get(stato.richiestoDa)?.nome ?? 'un partecipante'} tramite {stato.provider}. Ognuno decide per sé: chi accetta viene trascritto, chi rifiuta no, e la stanza va avanti comunque.

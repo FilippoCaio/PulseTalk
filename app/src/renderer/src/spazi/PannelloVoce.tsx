@@ -33,6 +33,7 @@ import {
 export default function PannelloVoce({
   utente,
   canale,
+  spazio,
   stato,
   latenza,
   microfonoAcceso,
@@ -56,6 +57,15 @@ export default function PannelloVoce({
 }: {
   utente: Utente
   canale: string
+  /**
+   * Dove sta quel canale: il nome dello spazio, o "Messaggi diretti".
+   *
+   * Il nome del canale da solo non basta a ritrovare la strada. Con quattro
+   * server aperti "Salotto" ce l'hanno in tre, e chi legge la riga verde
+   * sapeva di essere in chiamata ma non in quale casa: la riga diceva dove si
+   * sta parlando senza dire dove guardare per tornarci.
+   */
+  spazio: string
   stato: ConnectionState
   latenza: number | null
   microfonoAcceso: boolean
@@ -82,76 +92,53 @@ export default function PannelloVoce({
   const collegando = stato === ConnectionState.Reconnecting
 
   return (
-    <div className="border-t border-bordo bg-fondo-2/95 px-2 py-2 backdrop-blur">
-      {/* Riga uno: dove sei, quanto ci mette la voce ad arrivare, e come si esce. */}
-      <div className="flex items-center gap-2 px-1">
+    <div className="space-y-1.5 border-t border-bordo bg-fondo-2/95 p-1.5 backdrop-blur">
+      {/* Dove si sta parlando, e come si torna a guardarlo.
+
+          Due righe e non una: il canale in grande, lo spazio sotto in piccolo.
+          Tutto il blocco e' il pulsante che riporta dentro — non "dentro alla
+          chiamata", che non si e' mai usciti, ma alla pagina di quella
+          chiamata, nel server giusto. */}
+      <div className="flex items-center gap-1 rounded-2xl border border-ok/25 bg-ok/[0.06] p-1">
         <button
           onClick={torna}
           disabled={guardando}
-          title={guardando ? canale : `Torna in ${canale}`}
-          className="flex min-w-0 flex-1 items-center gap-1.5 text-left disabled:cursor-default"
+          title={guardando ? `${canale} — ${spazio}` : `Torna in ${canale} — ${spazio}`}
+          className="flex min-w-0 flex-1 items-center gap-2 rounded-xl px-2 py-1.5 text-left transition-colors disabled:cursor-default enabled:hover:bg-ok/10"
         >
-          <Altoparlante className="h-3.5 w-3.5 shrink-0 text-ok" />
-          <span className="min-w-0 flex-1 truncate text-xs font-medium text-ok">{canale}</span>
+          <Altoparlante className="h-4 w-4 shrink-0 text-ok" />
+          <span className="min-w-0 flex-1 leading-tight">
+            <span className="block truncate text-xs font-semibold text-ok">{canale}</span>
+            <span className="block truncate text-[10px] text-testo-3">{spazio}</span>
+          </span>
         </button>
 
         <Latenza valore={latenza} collegando={collegando} />
 
-        <button
-          onClick={esci}
-          title="Esci dalla chiamata"
-          aria-label="Esci dalla chiamata"
-          className="shrink-0 text-male hover:opacity-80"
-        >
-          <Esci className="h-4 w-4" />
-        </button>
+        <Scatola tono="male" titolo="Esci dalla chiamata" premi={esci}>
+          <Esci />
+        </Scatola>
       </div>
 
-      {/* Riga due: cosa mando. Qui i comandi non hanno sottomenu — le scelte
-          stanno nella barra dentro alla chiamata, dove si vede cosa cambia. */}
-      <div className="mt-2 flex items-center gap-1">
-        <Comando
-          acceso={cameraAccesa}
-          titolo={cameraAccesa ? 'Spegni la camera' : 'Accendi la camera'}
-          premi={alternaCamera}
-        >
-          {cameraAccesa ? <Camera /> : <CameraSpenta />}
-        </Comando>
+      {/* Chi sono, e tutto cio' che si comanda da qui.
 
-        <Comando
-          acceso={condivide}
-          titolo={condivide ? 'Stai condividendo' : 'Condividi lo schermo'}
-          premi={apriCondivisione}
-        >
-          <SchermoCondividi />
-        </Comando>
-
-        <Comando
-          titolo={
-            riascoltoAttivo
-              ? `Riascolta gli ultimi ${secondiRiascolto} secondi`
-              : 'Riascolto spento: si riaccende nelle impostazioni, sezione Audio'
-          }
-          premi={riascoltoAttivo ? riascolta : apriImpostazioni}
-          spento={!riascoltoAttivo}
-        >
-          <Riavvolgi />
-        </Comando>
-      </div>
-
-      {/* Riga tre: chi sono, e i due comandi che valgono ovunque. */}
-      <div className="mt-2 flex items-center gap-1 border-t border-bordo pt-2">
+          Una scatola sola, arrotondata e con un fondo suo: prima erano tre
+          righe separate da un filo, e l'occhio non trovava piu' il confine fra
+          "la chiamata" e "io". E ogni comando ha la sua scatola, perche' sei
+          icone appoggiate sullo stesso fondo si leggono come una striscia
+          unica: si mira quella accanto a quella che si voleva. */}
+      <div className="rounded-2xl border border-bordo bg-fondo-3/40 p-1.5">
         <button
           onClick={apriProfilo}
-          title={utente.nome}
-          className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-1 py-0.5 text-left hover:bg-fondo-3"
+          title={`${utente.nome} — apri il profilo`}
+          className="flex w-full min-w-0 items-center gap-2 rounded-xl px-1 py-1 text-left transition-colors hover:bg-fondo-3"
         >
           <span className="relative shrink-0">
             {utente.avatar ? (
-              <img src={utente.avatar} alt="" className="h-7 w-7 rounded-full object-cover" />
+              <img src={utente.avatar} alt="" className="h-8 w-8 rounded-full object-cover" />
             ) : (
               <span
-                className="flex h-7 w-7 items-center justify-center rounded-full text-[10px] font-semibold text-black/75"
+                className="flex h-8 w-8 items-center justify-center rounded-full text-[11px] font-semibold text-black/75"
                 style={{ background: coloreDi(`u${utente.id}`) }}
               >
                 {inizialiDi(utente.nome)}
@@ -162,46 +149,82 @@ export default function PannelloVoce({
               className="h-2.5 w-2.5"
             />
           </span>
-          <span className="min-w-0 flex-1 truncate text-xs text-testo">{utente.nome}</span>
+          <span className="min-w-0 flex-1 truncate text-xs font-medium text-testo">
+            {utente.nome}
+          </span>
         </button>
 
-        <div className="relative shrink-0">
-          <Comando
-            tono={microfonoAcceso ? 'normale' : 'male'}
-            titolo={microfonoAcceso ? 'Zittisci il microfono' : 'Riaccendi il microfono'}
-            premi={alternaMicrofono}
-            secondario={{
-              titolo: 'Impostazioni del microfono',
-              premi: () => setMenuMicrofono((v) => !v)
-            }}
-          >
-            {microfonoAcceso ? <Microfono /> : <MicrofonoSpento />}
-          </Comando>
-          {menuMicrofono && (
-            <MenuRapido
-              impostazioni={impostazioni}
-              salva={salva}
-              chiudi={() => setMenuMicrofono(false)}
-              apriImpostazioni={() => {
-                setMenuMicrofono(false)
-                apriImpostazioni()
+        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+          <div className="relative">
+            <Scatola
+              tono={microfonoAcceso ? 'normale' : 'male'}
+              titolo={microfonoAcceso ? 'Zittisci il microfono' : 'Riaccendi il microfono'}
+              premi={alternaMicrofono}
+              secondario={{
+                titolo: 'Impostazioni del microfono',
+                premi: () => setMenuMicrofono((v) => !v)
               }}
-            />
-          )}
+            >
+              {microfonoAcceso ? <Microfono /> : <MicrofonoSpento />}
+            </Scatola>
+            {menuMicrofono && (
+              <MenuRapido
+                impostazioni={impostazioni}
+                salva={salva}
+                chiudi={() => setMenuMicrofono(false)}
+                apriImpostazioni={() => {
+                  setMenuMicrofono(false)
+                  apriImpostazioni()
+                }}
+              />
+            )}
+          </div>
+
+          {/* L'unico posto in cui si spegne l'ascolto. */}
+          <Scatola
+            tono={sordina ? 'male' : 'normale'}
+            titolo={sordina ? 'Riattiva tutto' : 'Silenzia tutto: non senti e non ti sentono'}
+            premi={alternaSordina}
+          >
+            {sordina ? <CuffieSpente /> : <Cuffie />}
+          </Scatola>
+
+          <Scatola
+            acceso={cameraAccesa}
+            titolo={cameraAccesa ? 'Spegni la camera' : 'Accendi la camera'}
+            premi={alternaCamera}
+          >
+            {cameraAccesa ? <Camera /> : <CameraSpenta />}
+          </Scatola>
+
+          <Scatola
+            acceso={condivide}
+            titolo={
+              condivide
+                ? 'Stai condividendo: apri di nuovo la scelta di cosa mostrare'
+                : 'Condividi uno schermo, una finestra o un audio'
+            }
+            premi={apriCondivisione}
+          >
+            <SchermoCondividi />
+          </Scatola>
+
+          <Scatola
+            titolo={
+              riascoltoAttivo
+                ? `Riascolta gli ultimi ${secondiRiascolto} secondi`
+                : 'Riascolto spento: si riaccende nelle impostazioni, sezione Audio'
+            }
+            premi={riascoltoAttivo ? riascolta : apriImpostazioni}
+            spento={!riascoltoAttivo}
+          >
+            <Riavvolgi />
+          </Scatola>
+
+          <Scatola titolo="Impostazioni" premi={apriImpostazioni}>
+            <Ingranaggio />
+          </Scatola>
         </div>
-
-        {/* L'unico posto in cui si spegne l'ascolto. */}
-        <Comando
-          tono={sordina ? 'male' : 'normale'}
-          titolo={sordina ? 'Riattiva tutto' : 'Silenzia tutto: non senti e non ti sentono'}
-          premi={alternaSordina}
-        >
-          {sordina ? <CuffieSpente /> : <Cuffie />}
-        </Comando>
-
-        <Comando titolo="Impostazioni" premi={apriImpostazioni}>
-          <Ingranaggio />
-        </Comando>
       </div>
     </div>
   )
@@ -269,7 +292,19 @@ function tacche(ms: number): number {
   return 1
 }
 
-function Comando({
+/**
+ * Un comando dentro alla sua scatola.
+ *
+ * La scatola non e' decorazione: e' cio' che rende mirabile un pulsante da
+ * trentasei pixel in fondo a una colonna. Sei icone appoggiate sullo stesso
+ * fondo si leggono come una striscia unica — si vede il gruppo, non i singoli
+ * — e in una chiamata il pulsante che si sbaglia e' quello che spegne il
+ * microfono mentre si voleva la camera.
+ *
+ * Il colore dice lo stato prima del simbolo: rosso cio' che e' spento e non
+ * dovrebbe, verde cio' che sta uscendo da qui, neutro il resto.
+ */
+function Scatola({
   children,
   titolo,
   premi,
@@ -289,31 +324,34 @@ function Comando({
   secondario?: { titolo: string; premi: () => void }
 }): React.JSX.Element {
   const colore = spento
-    ? 'text-testo-3/60 hover:bg-fondo-3 hover:text-testo-3'
+    ? 'border-bordo/60 bg-fondo/40 text-testo-3/60 hover:border-bordo hover:text-testo-3'
     : tono === 'male'
-      ? 'text-male hover:bg-male/10'
+      ? 'border-male/40 bg-male/10 text-male hover:bg-male/20'
       : acceso
-        ? 'text-ok hover:bg-ok/10'
-        : 'text-testo-2 hover:bg-fondo-3 hover:text-testo'
+        ? 'border-ok/40 bg-ok/10 text-ok hover:bg-ok/20'
+        : 'border-bordo bg-fondo text-testo-2 hover:border-fondo-3 hover:bg-fondo-3 hover:text-testo'
 
   return (
-    <span className="flex items-center">
+    <span className="relative inline-flex shrink-0">
       <button
         onClick={premi}
         title={titolo}
         aria-label={titolo}
-        className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors ${colore} [&>svg]:h-[17px] [&>svg]:w-[17px]`}
+        className={`flex h-9 w-9 items-center justify-center rounded-xl border transition-colors ${colore} [&>svg]:h-[18px] [&>svg]:w-[18px]`}
       >
         {children}
       </button>
+      {/* Nell'angolo e non di fianco: una colonna a parte accanto al microfono
+          spezzava la fila di scatole tutte uguali, che e' proprio la cosa che
+          le rende leggibili di sfuggita. */}
       {secondario && (
         <button
           onClick={secondario.premi}
           title={secondario.titolo}
           aria-label={secondario.titolo}
-          className="-ml-1 flex h-8 w-3 items-center justify-center rounded-lg text-testo-3 hover:text-testo"
+          className="absolute -right-1 -bottom-1 flex h-4 w-4 items-center justify-center rounded-md border border-bordo bg-fondo-2 text-testo-3 transition-colors hover:border-fondo-3 hover:text-testo"
         >
-          <span className="text-[9px] leading-none">▾</span>
+          <span className="text-[8px] leading-none">▾</span>
         </button>
       )}
     </span>

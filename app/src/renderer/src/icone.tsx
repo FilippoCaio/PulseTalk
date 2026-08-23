@@ -677,6 +677,24 @@ export function Video(props: Props): React.JSX.Element {
 }
 
 /** Lo scudo dei ruoli. */
+/**
+ * La trascrizione: un riquadro con dentro due righe di parole.
+ *
+ * E' la forma dei sottotitoli, che e' la cosa piu' vicina a "quello che
+ * dite diventa testo" che si possa disegnare in ventiquattro pixel. Un
+ * microfono avrebbe detto "audio", una matita "scrivi tu".
+ */
+export function Sottotitoli(props: Props): React.JSX.Element {
+  return (
+    <Base {...props}>
+      <rect x="2.5" y="4.5" width="19" height="15" rx="2.5" />
+      <path d="M6 11h5" />
+      <path d="M13 11h5" />
+      <path d="M6 15h8" />
+    </Base>
+  )
+}
+
 export function Scudo(props: Props): React.JSX.Element {
   return (
     <Base {...props}>

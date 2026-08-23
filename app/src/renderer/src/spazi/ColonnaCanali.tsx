@@ -14,6 +14,7 @@ import {
   Lente,
   Lucchetto,
   Matita,
+  CuffieSpente,
   MicrofonoSpento,
   Piu,
   SchermoCondividi,
@@ -43,6 +44,7 @@ export default function ColonnaCanali({
   gestisciIscritti,
   profili,
   microfoniSpenti,
+  sordine,
   parlanti,
   menu,
   menuAperto = false,
@@ -87,6 +89,16 @@ export default function ColonnaCanali({
    * simbolo sulla persona sbagliata e' peggio che non mostrarlo.
    */
   microfoniSpenti?: Set<string>
+  /**
+   * Chi ha spento tutto: non sente e non parla.
+   *
+   * Separata dai microfoni spenti perche' le due cose insieme dicono una terza
+   * cosa. Il microfono barrato da solo e' "adesso non parla"; le cuffie barrate
+   * accanto sono "non e' qui": puo' restarci mezz'ora senza accorgersi di
+   * niente, e chi glielo sta chiedendo dall'altra parte deve poterlo vedere
+   * prima di ripetere la domanda tre volte.
+   */
+  sordine?: Set<string>
   /**
    * Chi sta parlando adesso, per identita'.
    *
@@ -192,6 +204,7 @@ export default function ColonnaCanali({
                   modifica={(m) => modificaCanale(canale, m)}
                   profili={profili}
                   microfoniSpenti={canale.id === inVoce ? microfoniSpenti : undefined}
+                  sordine={canale.id === inVoce ? sordine : undefined}
                   parlanti={canale.id === inVoce ? parlanti : undefined}
                   elimina={async () => {
                     try {
@@ -264,6 +277,7 @@ function RigaCanale({
   modifica,
   profili,
   microfoniSpenti,
+  sordine,
   parlanti
 }: {
   canale: Canale
@@ -277,6 +291,8 @@ function RigaCanale({
   modifica: (m: { nome: string; icona: string; argomento: string; durataMinuti?: number | null }) => Promise<void>
   profili?: Map<number, { nome: string; avatar: string | null }>
   microfoniSpenti?: Set<string>
+  /** Valorizzata solo per il canale in cui si sta parlando adesso. */
+  sordine?: Set<string>
   /** Valorizzato solo per il canale in cui si sta parlando adesso. */
   parlanti?: Set<string>
 }): React.JSX.Element {
@@ -412,6 +428,7 @@ function RigaCanale({
             // presenza e un profilo combaciano.
             const foto = profili?.get(Number(persona.identita.slice(1)))?.avatar ?? null
             const parla = parlanti?.has(persona.identita) ?? false
+            const sordo = sordine?.has(persona.identita) ?? false
 
             return (
             <div key={persona.identita} className="flex items-center gap-2 text-xs text-testo-2">
@@ -449,8 +466,21 @@ function RigaCanale({
               </span>
               <span className="min-w-0 flex-1 truncate">{persona.nome}</span>
               {(microfoniSpenti ? microfoniSpenti.has(persona.identita) : !persona.microfono) && (
-                <span className="shrink-0 text-testo-3" title="Microfono spento">
+                <span
+                  className={`shrink-0 ${sordo ? 'text-male/70' : 'text-testo-3'}`}
+                  title={sordo ? 'Non parla e non sente' : 'Microfono spento'}
+                >
                   <MicrofonoSpento className="h-3.5 w-3.5" />
+                </span>
+              )}
+              {/* Le due insieme, e in quest'ordine: prima cio' che non esce,
+                  poi cio' che non entra. Una sola delle due si legge male —
+                  il microfono barrato da solo e' uno che sta ascoltando — e
+                  sono proprio le due insieme a dire l'unica cosa che serve
+                  sapere: che non e' il caso di parlargli. */}
+              {sordo && (
+                <span className="shrink-0 text-male/70" title="Non parla e non sente">
+                  <CuffieSpente className="h-3.5 w-3.5" />
                 </span>
               )}
               {persona.schermi > 0 && (

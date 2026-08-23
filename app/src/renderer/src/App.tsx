@@ -591,6 +591,55 @@ export default function App(): React.JSX.Element {
     : inVoce
   const media = usaSessioniMedia(api, canaleMedia, mondo.iscrivi)
 
+  /**
+   * Dove sta la chiamata: il nome dello spazio, e come ci si torna.
+   *
+   * Il nome serve al pannello in basso a sinistra, che con il solo nome del
+   * canale diceva di essere in chiamata senza dire in casa di chi: con
+   * quattro server aperti "Salotto" ce l'hanno in tre.
+   *
+   * Tornare, invece, vuol dire rimettere a posto tutte e tre le cose che si
+   * sono spostate mentre si parlava: quale colonna si guarda, quale spazio e'
+   * aperto, e quale canale dentro a quello spazio. Rimettere solo l'ultima
+   * lasciava selezionato il canale della chiamata dentro a un server che non
+   * si stava guardando, e il pulsante sembrava non fare niente.
+   */
+  const spazioDellaChiamata = ingresso?.diretta
+    ? 'Messaggi diretti'
+    : (spazi.find((s) => s.id === ingresso?.canale.spazio)?.nome ?? 'Questo server')
+
+  /** Vero se sotto agli occhi c'e' gia' la stanza in cui si sta parlando. */
+  const guardaLaChiamata = ingresso?.diretta
+    ? vista === 'diretti' && conversazioneApertaId === ingresso.diretta.conversazione
+    : vista === 'spazi' && spazioAperto?.id === ingresso?.canale.spazio && canaleApertoId === inVoce
+
+  const tornaAllaChiamata = useCallback((): void => {
+    if (!ingresso) return
+    setMenuSpazioAperto(false)
+    if (ingresso.diretta) {
+      setVista('diretti')
+      setConversazioneApertaId(ingresso.diretta.conversazione)
+      return
+    }
+    setVista('spazi')
+    setSpazioApertoId(ingresso.canale.spazio)
+    setCanaleApertoId(ingresso.canale.id)
+  }, [ingresso])
+
+  /**
+   * La richiesta di condividere arrivata da fuori dalla sala.
+   *
+   * Sta qui e non nella sala perche' la sala spesso non c'e' ancora: si preme
+   * il pulsante stando a leggere una chat, e il pannello delle sorgenti vive
+   * dentro alla schermata della chiamata, che viene montata da quello stesso
+   * clic. La richiesta resta appesa qui finche' qualcuno la raccoglie, e chi
+   * la raccoglie la spegne — un contatore da confrontare col precedente non
+   * avrebbe funzionato proprio nel caso che conta, perche' una sala appena
+   * nata non ha nessun precedente da confrontare.
+   */
+  const [richiestaCondivisione, setRichiestaCondivisione] = useState(false)
+  const condivisioneServita = useCallback(() => setRichiestaCondivisione(false), [])
+
   /** La chiamata diretta di adesso, se e' quella su cui si sta parlando. */
   const chiamataAperta =
     diretti.chiamata && conversazioneAperta && diretti.chiamata.conversazione === conversazioneAperta.id
@@ -808,6 +857,7 @@ export default function App(): React.JSX.Element {
           <PannelloVoce
             utente={utente}
             canale={ingresso!.canale.nome}
+            spazio={spazioDellaChiamata}
             stato={sessione.stato}
             latenza={sessione.latenza}
             microfonoAcceso={sessione.microfonoAcceso}
@@ -816,13 +866,22 @@ export default function App(): React.JSX.Element {
             condivide={sessione.schermiAttivi.length > 0}
             riascoltoAttivo={sessione.riascoltoAttivo}
             secondiRiascolto={impostazioni.secondiRiascolto || 30}
-            guardando={canaleAperto?.id === inVoce}
+            guardando={guardaLaChiamata}
             alternaMicrofono={() => void sessione.alternaMicrofono()}
             alternaCamera={() => void sessione.alternaCamera()}
             alternaSordina={sessione.alternaSordina}
-            apriCondivisione={() => setCanaleApertoId(inVoce)}
+            apriCondivisione={() => {
+              // Prima si torna a guardare la stanza, poi si chiede il
+              // pannello: il selettore delle sorgenti vive dentro alla sala, e
+              // chiederlo restando su una chat vorrebbe dire aprirlo dietro a
+              // cio' che si sta leggendo. Prima questo pulsante faceva solo il
+              // primo dei due passi, e da dentro alla chiamata — dove il primo
+              // passo non cambia niente — sembrava rotto.
+              tornaAllaChiamata()
+              setRichiestaCondivisione(true)
+            }}
             riascolta={sessione.riascolta}
-            torna={() => setCanaleApertoId(inVoce)}
+            torna={tornaAllaChiamata}
             esci={() => void esciDallaVoce()}
             apriProfilo={() => setMostraProfilo(true)}
             impostazioni={impostazioni}
@@ -924,6 +983,8 @@ export default function App(): React.JSX.Element {
                   attivo: chiamataPiena,
                   alterna: () => setChiamataPiena((v) => !v)
                 }}
+                condivisioneRichiesta={richiestaCondivisione}
+                condivisioneServita={condivisioneServita}
                 esci={esciDallaVoce}
                 apriImpostazioni={() => setMostraImpostazioni(true)}
               />
@@ -985,6 +1046,7 @@ export default function App(): React.JSX.Element {
               }}
               profili={profili}
               microfoniSpenti={sessione.microfoniSpenti}
+              sordine={sessione.sordine}
               menuAperto={menuSpazioAperto}
               alternaMenu={() => setMenuSpazioAperto((v) => !v)}
               menu={
@@ -1052,6 +1114,8 @@ export default function App(): React.JSX.Element {
                   attivo: chiamataPiena,
                   alterna: () => setChiamataPiena((v) => !v)
                 }}
+                condivisioneRichiesta={richiestaCondivisione}
+                condivisioneServita={condivisioneServita}
                 esci={esciDallaVoce}
                 apriImpostazioni={() => setMostraImpostazioni(true)}
               />
