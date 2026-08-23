@@ -394,6 +394,78 @@ export class TalkDb {
     return this.sql.prepare('DELETE FROM inviti WHERE id = ?').run(id).changes;
   }
 
+  // -- La chiave AI di una persona ------------------------------------------
+
+  /** La riga di questa persona, o null. Il valore in chiaro: serve a chiamare il modello. */
+  chiaveAi(utenteId) {
+    return this.sql.prepare('SELECT * FROM chiavi_ai WHERE utente = ?').get(utenteId) ?? null;
+  }
+
+  scriviChiaveAi(utenteId, { baseUrl = null, apiKey, chatModel = null, sttModel = null, imageModel = null }) {
+    const vuoto = (v) => {
+      const t = String(v ?? '').trim();
+      return t || null;
+    };
+    return this.sql
+      .prepare(
+        `INSERT INTO chiavi_ai (utente, baseUrl, apiKey, chatModel, sttModel, imageModel, aggiornato)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(utente) DO UPDATE SET baseUrl = excluded.baseUrl,
+                                           apiKey = excluded.apiKey,
+                                           chatModel = excluded.chatModel,
+                                           sttModel = excluded.sttModel,
+                                           imageModel = excluded.imageModel,
+                                           aggiornato = excluded.aggiornato`,
+      )
+      .run(utenteId, vuoto(baseUrl), String(apiKey).trim(), vuoto(chatModel), vuoto(sttModel), vuoto(imageModel), ora())
+      .changes;
+  }
+
+  cancellaChiaveAi(utenteId) {
+    return this.sql.prepare('DELETE FROM chiavi_ai WHERE utente = ?').run(utenteId).changes;
+  }
+
+  // -- Le impostazioni dell'istanza -----------------------------------------
+
+  /** Tutte, come un oggetto ambiente: chiave -> valore. */
+  impostazioniIstanza() {
+    const fuori = {};
+    for (const riga of this.sql.prepare('SELECT chiave, valore FROM impostazioni_istanza').all()) {
+      fuori[riga.chiave] = riga.valore;
+    }
+    return fuori;
+  }
+
+  /** Chi ha scritto cosa e quando, per il pannello. Senza i valori. */
+  provenienzaImpostazioni() {
+    return this.sql
+      .prepare('SELECT chiave, aggiornato, da FROM impostazioni_istanza')
+      .all();
+  }
+
+  /**
+   * Scrive o cancella una impostazione.
+   *
+   * Il vuoto cancella invece di salvare una stringa vuota, e non e' la stessa
+   * cosa: una riga vuota vincerebbe sull'ambiente e spegnerebbe una funzione
+   * che il container aveva acceso, senza che nessuno lo abbia chiesto.
+   * Cancellandola torna a valere quello che c'e' fuori.
+   */
+  scriviImpostazione(chiave, valore, da = null) {
+    const pulito = String(valore ?? '').trim();
+    if (!pulito) {
+      return this.sql.prepare('DELETE FROM impostazioni_istanza WHERE chiave = ?').run(chiave).changes;
+    }
+    return this.sql
+      .prepare(
+        `INSERT INTO impostazioni_istanza (chiave, valore, aggiornato, da) VALUES (?, ?, ?, ?)
+         ON CONFLICT(chiave) DO UPDATE SET valore = excluded.valore,
+                                           aggiornato = excluded.aggiornato,
+                                           da = excluded.da`,
+      )
+      .run(chiave, pulito, ora(), da).changes;
+  }
+
   /** Cosa dice l'invito, senza consumarlo. Serve a mostrare il ruolo prima di registrarsi. */
   guardaInvito(codice) {
     const riga = this.sql.prepare('SELECT * FROM inviti WHERE impronta = ?').get(impronta(codice));

@@ -22,7 +22,8 @@ import { avviaProva, type Prova } from './lib/provaMicrofono'
 import { usaMisuratore } from './lib/misuratoreMicrofono'
 import { scegli, usaDispositivi, vociTendina } from './lib/usaDispositivi'
 import { Avviso, Bottone, BottoneIcona, Campo, classiInput, Interruttore, Sezione } from './ui'
-import { Altoparlante, Camera, Chiudi, Esci, Ingranaggio, Persona } from './icone'
+import { Altoparlante, Camera, Chiudi, Esci, Ingranaggio, Persona, Scintille, Scudo } from './icone'
+import { ImpostazioniServer, MiaAi } from './ChiaviAi'
 import { configuraSuoni, suona } from './lib/suoni'
 
 /**
@@ -84,7 +85,7 @@ export default function PannelloImpostazioni({
             icone si impara a memoria, e le impostazioni si aprono una volta al
             mese — il tempo esatto per dimenticarsele. */}
         <nav className="w-52 shrink-0 space-y-0.5 overflow-y-auto border-r border-bordo bg-fondo p-2">
-          {PAGINE.map(({ id, nome, Icona }) => (
+          {PAGINE.filter((p) => !p.soloAdmin || utente.ruolo === 'admin').map(({ id, nome, Icona }) => (
             <button
               key={id}
               onClick={() => setPagina(id)}
@@ -472,6 +473,10 @@ export default function PannelloImpostazioni({
               </>
             )}
 
+            {pagina === 'ai' && <MiaAi api={api} />}
+
+            {pagina === 'server' && utente.ruolo === 'admin' && <ImpostazioniServer api={api} />}
+
             {pagina === 'account' && (
               <>
                 <Sessioni api={api} />
@@ -551,18 +556,25 @@ function memoria(secondi: number): string {
   return mb < 10 ? `${mb.toFixed(1).replace('.', ',')} MB` : `${Math.round(mb)} MB`
 }
 
-type Pagina = 'audio' | 'video' | 'profilo' | 'app' | 'account'
+type Pagina = 'audio' | 'video' | 'profilo' | 'app' | 'account' | 'ai' | 'server'
 
 const PAGINE: {
   id: Pagina
   nome: string
   Icona: (p: { className?: string }) => React.JSX.Element
+  /** Non compare a chi non amministra l'istanza. */
+  soloAdmin?: boolean
 }[] = [
   { id: 'audio', nome: 'Audio', Icona: Altoparlante },
   { id: 'video', nome: 'Video', Icona: Camera },
   { id: 'profilo', nome: 'Profilo', Icona: Persona },
   { id: 'app', nome: 'Applicazione', Icona: Ingranaggio },
-  { id: 'account', nome: 'Account', Icona: Esci }
+  { id: 'ai', nome: 'La mia AI', Icona: Scintille },
+  { id: 'account', nome: 'Account', Icona: Esci },
+  // Ultima, e solo per chi amministra: e' la pagina da cui si spegne un
+  // servizio per tutti, e non deve stare a un pixel da quelle di tutti i
+  // giorni.
+  { id: 'server', nome: 'Server', Icona: Scudo, soloAdmin: true }
 ]
 
 /**

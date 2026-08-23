@@ -387,6 +387,45 @@ CREATE TABLE IF NOT EXISTS collegamenti (
   collegato INTEGER NOT NULL,
   PRIMARY KEY (utente, provider)
 );
+
+-- Le impostazioni dell'istanza -----------------------------------------------
+--
+-- Le chiavi dei servizi esterni, scritte dal pannello di amministrazione invece
+-- che dall'ambiente del container. La chiave e' il nome della variabile
+-- d'ambiente corrispondente, cosi' il pannello e il docker-compose parlano la
+-- stessa lingua; il valore vince su quello dell'ambiente, e cancellare la riga
+-- fa riemergere quello del container.
+--
+-- Non c'e' nessuna cifratura, ed e' una posizione: chi legge questo file legge
+-- anche i gettoni di sessione e le impronte degli inviti, e una chiave cifrata
+-- con una chiave custodita nello stesso file non e' protetta, e' solo scomoda.
+-- Cio' che protegge questa tabella e' il disco su cui sta.
+-- La chiave AI di una singola persona.
+--
+-- Esiste solo quando l'amministratore ha scelto che ognuno porti la propria
+-- (vedi TALK_AI_CHIAVI). Sta sul server e non sul computer di chi la scrive
+-- perche' e' il server a chiamare il modello: la trascrizione arriva qui dentro
+-- come audio e riparte come richiesta, e un client che parlasse da solo con
+-- OpenAI dovrebbe mandarci l'audio due volte.
+--
+-- Una riga per persona: chi la cancella torna a non avere l'AI, o a ricadere
+-- sulla chiave di casa se la modalita' e' «mista».
+CREATE TABLE IF NOT EXISTS chiavi_ai (
+  utente     INTEGER PRIMARY KEY REFERENCES utenti(id) ON DELETE CASCADE,
+  baseUrl    TEXT,
+  apiKey     TEXT    NOT NULL,
+  chatModel  TEXT,
+  sttModel   TEXT,
+  imageModel TEXT,
+  aggiornato INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS impostazioni_istanza (
+  chiave     TEXT PRIMARY KEY,
+  valore     TEXT    NOT NULL,
+  aggiornato INTEGER NOT NULL,
+  da         INTEGER REFERENCES utenti(id) ON DELETE SET NULL
+);
 `;
 
 /**

@@ -64,6 +64,24 @@ function providerImmagini(env) {
   return grezzo;
 }
 
+/**
+ * Chi paga l'AI: l'istanza, o ciascuno per se'.
+ *
+ * `istanza` e' la chiave dell'amministratore, e vale per tutti: e' il modello
+ * dell'azienda che mette a disposizione uno strumento. `utente` la ribalta —
+ * ognuno collega la propria, e ognuno consuma il proprio credito — ed e' il
+ * modello del gruppo di amici, dove nessuno vuole pagare per gli altri.
+ * `mista` tiene la chiave dell'istanza come rete: chi ne ha una propria usa
+ * quella, chi non ce l'ha ricade su quella di casa.
+ */
+function chiaviAi(env) {
+  const grezzo = (env.TALK_AI_CHIAVI ?? 'istanza').trim().toLowerCase();
+  if (!['istanza', 'utente', 'mista'].includes(grezzo)) {
+    throw new Error(`TALK_AI_CHIAVI deve essere istanza, utente o mista, non "${grezzo}"`);
+  }
+  return grezzo;
+}
+
 /** Il dialetto con cui parlare al modello. Vedi provider/ai-dialetti.mjs. */
 function formatoAi(env) {
   const grezzo = (env.TALK_AI_FORMATO ?? 'auto').trim().toLowerCase();
@@ -250,6 +268,8 @@ export function leggiConfig(env = process.env) {
       // compatibile. Si forza a mano solo nei casi in mezzo: un proxy verso
       // OpenAI su un dominio proprio, o un servizio che espone Responses.
       formato: formatoAi(env),
+      /** 'istanza' | 'utente' | 'mista'. Vedi `chiaviAi`. */
+      chiavi: chiaviAi(env),
       chatModel: env.TALK_AI_CHAT_MODEL ?? '',
       imageModel: env.TALK_AI_IMAGE_MODEL ?? '',
       sttModel: env.TALK_AI_STT_MODEL ?? '',

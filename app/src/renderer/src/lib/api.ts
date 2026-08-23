@@ -99,6 +99,57 @@ export interface AnteprimaLink {
   faviconId: string | null
 }
 
+/** Un campo del pannello di amministrazione, con la sua storia. */
+export interface CampoIstanza {
+  chiave: string
+  gruppo: string
+  etichetta: string
+  aiuto: string
+  tipo: 'testo' | 'url' | 'scelta' | 'interruttore'
+  valori: string[] | null
+  esempio: string | null
+  /** Non torna mai indietro in chiaro: al suo posto c'e' `coda`. */
+  segreta: boolean
+  impostata: boolean
+  /** `pannello` vince su `container`; `niente` vuol dire che non c'e' da nessuna parte. */
+  origine: 'pannello' | 'container' | 'niente'
+  valore: string
+  /** Le ultime quattro cifre di una chiave segreta, per riconoscerla. */
+  coda: string | null
+  aggiornato: number | null
+  da: number | null
+}
+
+export interface StatoIstanza {
+  gruppi: { id: string; nome: string; sotto: string }[]
+  campi: CampoIstanza[]
+  capacita: Record<string, unknown>
+}
+
+export interface Prova {
+  ok: boolean
+  cosa: string
+  risposta?: string
+  errore?: string
+}
+
+export interface MiaChiaveAi {
+  /** Chi paga l'AI su questo server. */
+  modo: 'istanza' | 'utente' | 'mista'
+  /** Falso quando la chiave la mette l'amministratore: qui non c'e' niente da fare. */
+  serve: boolean
+  collegata: boolean
+  coda: string | null
+  baseUrl: string
+  chatModel: string
+  sttModel: string
+  imageModel: string
+  aggiornato: number | null
+  capacita: Record<string, boolean>
+  /** Cosa si eredita lasciando un campo vuoto. */
+  predefiniti: { baseUrl: string; chatModel: string; sttModel: string; imageModel: string }
+}
+
 export interface SessioneAutoWriter {
   id: number
   canale: number
@@ -639,6 +690,52 @@ export class Api {
     })
     if (!risposta.ok) throw new ErroreApi('allegato non disponibile', risposta.status)
     return URL.createObjectURL(await risposta.blob())
+  }
+
+  // -- Le chiavi dei servizi esterni -----------------------------------------
+
+  /** Il pannello di amministrazione: cosa e' configurato, e da dove. Solo admin. */
+  impostazioniIstanza(): Promise<StatoIstanza> {
+    return this.chiama('/api/admin/impostazioni')
+  }
+
+  /** Scrive. Un campo vuoto cancella e fa riemergere il valore del container. */
+  salvaImpostazioniIstanza(impostazioni: Record<string, string>): Promise<StatoIstanza> {
+    return this.chiama('/api/admin/impostazioni', {
+      method: 'PUT',
+      body: JSON.stringify({ impostazioni })
+    })
+  }
+
+  /** Chiede davvero qualcosa al servizio, invece di dire che la chiave sembra a posto. */
+  provaImpostazioniIstanza(cosa: 'chat' | 'trascrizione'): Promise<Prova> {
+    return this.chiama('/api/admin/impostazioni/prova', {
+      method: 'POST',
+      body: JSON.stringify({ cosa })
+    })
+  }
+
+  /** La propria chiave AI, quando l'amministratore ha scelto che ognuno porti la sua. */
+  miaChiaveAi(): Promise<MiaChiaveAi> {
+    return this.chiama('/api/io/ai')
+  }
+
+  salvaMiaChiaveAi(dati: {
+    apiKey: string
+    baseUrl?: string
+    chatModel?: string
+    sttModel?: string
+    imageModel?: string
+  }): Promise<MiaChiaveAi> {
+    return this.chiama('/api/io/ai', { method: 'PUT', body: JSON.stringify(dati) })
+  }
+
+  scollegaMiaChiaveAi(): Promise<MiaChiaveAi> {
+    return this.chiama('/api/io/ai', { method: 'DELETE' })
+  }
+
+  provaMiaChiaveAi(cosa: 'chat' | 'trascrizione'): Promise<Prova> {
+    return this.chiama('/api/io/ai/prova', { method: 'POST', body: JSON.stringify({ cosa }) })
   }
 
   servizi(): Promise<{

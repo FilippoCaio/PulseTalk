@@ -25,6 +25,7 @@ import { agganciaAutenticazione } from './auth.mjs';
 import { avviaScadenzaCanali } from './canali-temporanei.mjs';
 import { creaChiamate } from './chiamate.mjs';
 import { leggiConfig } from './config.mjs';
+import { ambienteEffettivo } from './impostazioni-istanza.mjs';
 import { TalkDb } from './db.mjs';
 import { creaEventi } from './eventi.mjs';
 import { creaStati } from './stati.mjs';
@@ -36,6 +37,7 @@ import { creaProviderAi } from './provider/ai.mjs';
 import { creaGeneratoreImmagini, elencoGeneratori } from './provider/generazione-immagini.mjs';
 import { creaUnsplash } from './provider/immagini.mjs';
 import { rotteAllegati, spazzaAllegati, spazzaParziali } from './routes/allegati.mjs';
+import { rotteAdmin, rotteChiaveAi } from './routes/admin.mjs';
 import { rotteAi } from './routes/ai.mjs';
 import { rotteAutoWriter } from './routes/autowriter.mjs';
 import { rotteBot } from './routes/bot.mjs';
@@ -65,8 +67,59 @@ function gestoreErrori(errore, richiesta, risposta) {
   return risposta.code(500).send({ errore: 'errore interno' });
 }
 
-export async function creaTalk(config) {
-  const db = new TalkDb(config.dbPath);
+/**
+ * La configurazione, piu' cio' che il pannello di amministrazione ha scritto.
+ *
+ * Le impostazioni salvate dal pannello vincono sull'ambiente, e devono valere
+ * anche all'avvio: una chiave scritta ieri dall'applicazione deve esserci
+ * ancora dopo un riavvio del container, senza che nessuno la ricopi nel
+ * docker-compose.
+ *
+ * Il try non e' pudore. `leggiConfig` valida, e valida rifiutando: una riga
+ * scritta male — un URL storto rimasto in tabella da una versione precedente,
+ * un intero fuori scala — impedirebbe l'avvio del server. Un pannello che puo'
+ * rendere il server non avviabile e' peggio del problema che risolve, perche'
+ * l'unico rimedio tornerebbe a essere la sessione SSH. Se la lettura fallisce
+ * si riparte da cio' che c'e' nell'ambiente e lo si dice forte nel log.
+ */
+function conImpostazioni(base, ambiente, db, log = null) {
+  const righe = db.impostazioniIstanza();
+  if (Object.keys(righe).length === 0) return base;
+  try {
+    return leggiConfig(ambienteEffettivo(ambiente, righe));
+  } catch (errore) {
+    log?.error(
+      { err: errore },
+      "impostazioni salvate non valide: uso solo l'ambiente del container",
+    );
+    return base;
+  }
+}
+
+/**
+ * I servizi esterni, tutti quelli che nascono da una `config` e basta.
+ *
+ * Stanno insieme perche' cambiano insieme: si scrive una chiave nel pannello e
+ * vanno rifatti tutti da capo, con la configurazione nuova. Sono funzioni pure
+ * di `config` — nessuno di loro tiene uno stato che si perderebbe — quindi
+ * rifarli costa quanto costruirli la prima volta.
+ */
+function montaServizi(config) {
+  return {
+    config,
+    gif: creaGif(config),
+    ai: creaProviderAi(config),
+    immagini: creaUnsplash(config),
+    // Chi disegna e' scelto a parte da chi chiacchiera: si puo' avere la chat
+    // su OpenAI e le immagini da una Stable Diffusion in casa, o il contrario.
+    generatoreImmagini: creaGeneratoreImmagini(config),
+    generatori: elencoGeneratori(config),
+  };
+}
+
+export async function creaTalk(configIniziale, { ambiente = process.env } = {}) {
+  const db = new TalkDb(configIniziale.dbPath);
+  const config = conImpostazioni(configIniziale, ambiente, db);
 
   const app = Fastify({
     logger: { level: config.logLevel },
@@ -99,14 +152,69 @@ export async function creaTalk(config) {
   // non e' configurato" invece di far sparire la funzione senza spiegazioni.
   const registroMusica = creaRegistroMusica();
   registroMusica.registra(creaSpotify({ config, db, log: app.log }));
-  const gif = creaGif(config);
   const anteprime = creaAnteprimeLink();
-  const ai = creaProviderAi(config);
-  const immagini = creaUnsplash(config);
-  // Chi disegna e' scelto a parte da chi chiacchiera: si puo' avere la chat su
-  // OpenAI e le immagini da una Stable Diffusion in casa, o il contrario.
-  const generatoreImmagini = creaGeneratoreImmagini(config);
-  const generatori = elencoGeneratori(config);
+
+  /**
+   * I servizi vivi, dentro a una scatola che si puo' sostituire.
+   *
+   * Le rotte ricevono la scatola e guardano dentro al momento della chiamata,
+   * invece di prendersi il provider una volta per tutte all'avvio. E' la
+   * differenza fra un pannello che funziona e uno che chiede di riavviare:
+   * riavviare il container per una chiave API vorrebbe dire buttare fuori
+   * dalla chiamata chi ci sta parlando dentro.
+   */
+  const servizi = montaServizi(config);
+
+  /**
+   * Il provider AI da usare *per questa persona*.
+   *
+   * Chi paga lo decide `config.ai.chiavi`. Con `istanza` c'e' una chiave sola
+   * e questa funzione restituisce sempre la stessa; con `utente` ognuno porta
+   * la propria e chi non l'ha messa non ha l'AI; con `mista` la propria vince
+   * e quella di casa fa da rete.
+   *
+   * Costruire un provider non costa niente — sono chiusure su un oggetto, zero
+   * rete e zero stato — quindi si rifa' a ogni richiesta invece di tenere una
+   * cache. Una cache qui vorrebbe dire ricordarsi di svuotarla quando qualcuno
+   * cambia la propria chiave, e una chiave revocata che continua a funzionare
+   * per dieci minuti e' esattamente il genere di bug che non si riproduce.
+   */
+  servizi.aiPer = (utente) => {
+    const modo = servizi.config.ai.chiavi;
+    if (modo === 'istanza' || !utente?.id) return servizi.ai;
+
+    const sua = db.chiaveAi(utente.id);
+    if (!sua?.apiKey) {
+      // In `mista` si ricade sulla chiave di casa; in `utente` no, e il
+      // provider che nasce senza chiave si dichiara spento da solo. Le rotte
+      // rispondono gia' 501 a quello, e il messaggio lo aggiusta chi sa in
+      // quale delle due modalita' siamo.
+      return modo === 'mista' ? servizi.ai : creaProviderAi({ ...servizi.config, ai: { ...servizi.config.ai, apiKey: '' } });
+    }
+
+    return creaProviderAi({
+      ...servizi.config,
+      ai: {
+        ...servizi.config.ai,
+        baseUrl: sua.baseUrl ?? servizi.config.ai.baseUrl,
+        apiKey: sua.apiKey,
+        chatModel: sua.chatModel ?? servizi.config.ai.chatModel,
+        sttModel: sua.sttModel ?? servizi.config.ai.sttModel,
+        imageModel: sua.imageModel ?? servizi.config.ai.imageModel,
+      },
+    });
+  };
+
+  servizi.ricarica = (nuova) => {
+    // `montaServizi` non contiene `aiPer` ne' `ricarica`: Object.assign
+    // sovrascrive solo cio' che rifa', e le due funzioni restano quelle.
+    Object.assign(servizi, montaServizi(nuova));
+    // Spotify non nasce dalla sola config — vuole il database e il log — e
+    // vive dentro al registro invece che qui. Registrarlo di nuovo sostituisce
+    // quello vecchio: il registro e' una mappa per nome.
+    registroMusica.registra(creaSpotify({ config: nuova, db, log: app.log }));
+    return servizi;
+  };
 
   agganciaAutenticazione(app, { db, config });
   rotteCompatibilita(app, { config });
@@ -120,9 +228,11 @@ export async function creaTalk(config) {
   rotteDiretti(app, { db, config, presenze, eventi, chiamate, stati });
   rotteMedia(app, { db, eventi });
   rotteMusica(app, { db, registro: registroMusica, config });
-  rotteServizi(app, { gif, anteprime, ai, immagini, generatoreImmagini, generatori });
-  rotteAi(app, { db, eventi, provider: ai, generatoreImmagini, config });
-  rotteAutoWriter(app, { db, eventi, provider: ai, presenze });
+  rotteServizi(app, { servizi, anteprime });
+  rotteAi(app, { db, eventi, servizi });
+  rotteAutoWriter(app, { db, eventi, servizi, presenze });
+  rotteAdmin(app, { db, servizi, ambiente });
+  rotteChiaveAi(app, { db, servizi });
   rotteBot(app, { db, eventi });
   rotteMessaggi(app, { db, eventi });
   await rotteAllegati(app, { db, config });

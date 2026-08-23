@@ -19,7 +19,7 @@
 import { richiedeRuolo } from '../auth.mjs';
 import { accessoAlCanale } from '../permessi.mjs';
 
-export function rotteAutoWriter(app, { db, eventi, provider, presenze }) {
+export function rotteAutoWriter(app, { db, eventi, servizi, presenze }) {
   const contesto = (richiesta, risposta) => {
     const esito = accessoAlCanale(db, richiesta.utente, richiesta.params.canale);
     if (esito.errore) {
@@ -40,13 +40,15 @@ export function rotteAutoWriter(app, { db, eventi, provider, presenze }) {
     const esito = contesto(richiesta, risposta);
     if (!esito) return;
     await sincronizzaPartecipanti(db, presenze, esito);
-    return { disponibile: provider.capabilities.stt, sessione: perUtente(leggi(db, esito.canale.id), richiesta.utente.id) };
+    return { disponibile: servizi.aiPer(richiesta.utente).capabilities.stt, sessione: perUtente(leggi(db, esito.canale.id), richiesta.utente.id) };
   });
 
   app.post('/api/canali/:canale/autowriter', { onRequest: richiedeRuolo('membro') }, async (richiesta, risposta) => {
     const esito = contesto(richiesta, risposta);
     if (!esito) return;
-    if (!provider.capabilities.stt) return risposta.code(501).send({ errore: 'Auto Writer non disponibile: provider STT non configurato' });
+    if (!servizi.aiPer(richiesta.utente).capabilities.stt) {
+      return risposta.code(501).send({ errore: motivoSttSpento(servizi, richiesta.utente) });
+    }
     if (leggi(db, esito.canale.id)) return risposta.code(409).send({ errore: 'Auto Writer e\' gia\' stato richiesto' });
 
     const dentro = await presenze.leggi();
@@ -61,7 +63,7 @@ export function rotteAutoWriter(app, { db, eventi, provider, presenze }) {
     const transazione = db.sql.transaction(() => {
       const ins = db.sql.prepare(
         `INSERT INTO trascrizioni (canale, richiestoDa, provider, stato, creato) VALUES (?, ?, ?, 'consenso', ?)`,
-      ).run(esito.canale.id, richiesta.utente.id, provider.id, Date.now());
+      ).run(esito.canale.id, richiesta.utente.id, servizi.aiPer(richiesta.utente).id, Date.now());
       const id = Number(ins.lastInsertRowid);
       const aggiungi = db.sql.prepare(
         'INSERT INTO consensi_trascrizione (trascrizione, utente, consenso, istante) VALUES (?, ?, ?, ?)',
@@ -112,7 +114,16 @@ export function rotteAutoWriter(app, { db, eventi, provider, presenze }) {
     let corpo;
     try { corpo = Buffer.from(String(richiesta.body?.audio ?? ''), 'base64'); } catch { corpo = Buffer.alloc(0); }
     if (!corpo.length || corpo.length > 1_400_000 || !tipo.startsWith('audio/')) return risposta.code(400).send({ errore: 'segmento audio non valido' });
-    const testo = await provider.trascrivi({ corpo, tipo });
+    // La chiave e' quella di chi sta parlando, non quella del server.
+    //
+    // E' l'unico modo che rende onesta la modalita' «ognuno la sua»: in una
+    // stanza da quattro ognuno manda la propria voce e ognuno consuma il
+    // proprio credito, invece che quattro tracce sulla carta di uno solo.
+    const mio = servizi.aiPer(richiesta.utente);
+    if (!mio.capabilities.stt) {
+      return risposta.code(501).send({ errore: motivoSttSpento(servizi, richiesta.utente) });
+    }
+    const testo = await mio.trascrivi({ corpo, tipo });
     if (!testo) return risposta.code(204).send();
     db.sql.prepare(
       'INSERT INTO segmenti_trascrizione (trascrizione, parlante, testo, definitivo, creato) VALUES (?, ?, ?, 1, ?)',
@@ -146,7 +157,11 @@ export function rotteAutoWriter(app, { db, eventi, provider, presenze }) {
     const segmenti = db.sql.prepare('SELECT * FROM segmenti_trascrizione WHERE trascrizione = ? ORDER BY id').all(ultima.id);
     if (!segmenti.length) return risposta.code(422).send({ errore: 'la trascrizione e\' vuota' });
     const testo = segmenti.map((s) => `${db.utente(s.parlante)?.nome ?? 'Non identificato'}: ${s.testo}`).join('\n').slice(-40_000);
-    const struttura = await provider.riassumi({ trascrizione: testo });
+    const mio = servizi.aiPer(richiesta.utente);
+    if (!mio.capabilities.riassunto) {
+      return risposta.code(501).send({ errore: "Nessun modello di chat configurato: il riassunto passa da li'." });
+    }
+    const struttura = await mio.riassumi({ trascrizione: testo });
     return { riassunto: struttura, generatoDaAi: true };
   });
 }
@@ -228,4 +243,20 @@ function aggiornaStato(db, trascrizione) {
   } else {
     db.sql.prepare("UPDATE trascrizioni SET stato = 'consenso' WHERE id = ?").run(trascrizione);
   }
+}
+
+/**
+ * Perche' la trascrizione e' spenta, per questa persona.
+ *
+ * Con la chiave dell'istanza e' un problema del server e lo sistema
+ * l'amministratore. Con le chiavi di ciascuno e' un problema di chi legge, e
+ * si sistema in trenta secondi dalle proprie impostazioni: sono due frasi
+ * diverse perche' mandano due persone diverse a fare due cose diverse.
+ */
+function motivoSttSpento(servizi, utente) {
+  const modo = servizi.config.ai.chiavi;
+  if (modo === 'istanza') return 'Auto Writer non disponibile: nessun modello di trascrizione configurato sul server.';
+  return modo === 'utente'
+    ? "Su questo server l'AI la porta ognuno per se': collega la tua chiave dalle impostazioni, sezione Account."
+    : "Non c'e' nessun modello di trascrizione: ne' sulla tua chiave ne' su quella del server.";
 }

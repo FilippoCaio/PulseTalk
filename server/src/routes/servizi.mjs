@@ -2,25 +2,25 @@
 
 import { richiedeRuolo } from '../auth.mjs';
 
-export function rotteServizi(app, { gif, anteprime, ai, immagini, generatoreImmagini, generatori }) {
+export function rotteServizi(app, { servizi, anteprime }) {
   const rate = creaRateLimit(30, 60_000);
 
   app.get('/api/servizi', { onRequest: richiedeRuolo('ospite') }, async () => ({
     gif: {
-      disponibile: gif.disponibile,
-      provider: gif.disponibile ? gif.id : null,
-      etichetta: gif.disponibile ? (gif.etichetta ?? gif.id) : null,
+      disponibile: servizi.gif.disponibile,
+      provider: servizi.gif.disponibile ? servizi.gif.id : null,
+      etichetta: servizi.gif.disponibile ? (servizi.gif.etichetta ?? servizi.gif.id) : null,
     },
     anteprimeLink: { disponibile: true },
     ai: {
-      provider: Object.values(ai.capabilities).some(Boolean) ? ai.id : null,
+      provider: Object.values(servizi.ai.capabilities).some(Boolean) ? servizi.ai.id : null,
       // Quale dei due formati si sta parlando: e' la prima cosa da guardare
       // quando un modello risponde 404 invece che con una frase.
-      formato: ai.formato,
-      ...ai.capabilities,
+      formato: servizi.ai.formato,
+      ...servizi.ai.capabilities,
       // La generazione ha un provider suo: non dipende dalla chiave della chat.
-      immagini: generatoreImmagini.disponibile,
-      ricercaImmagini: immagini.disponibile,
+      immagini: servizi.generatoreImmagini.disponibile,
+      ricercaImmagini: servizi.immagini.disponibile,
     },
     /**
      * Chi puo' disegnare, e perche' gli altri no.
@@ -30,21 +30,21 @@ export function rotteServizi(app, { gif, anteprime, ai, immagini, generatoreImma
      * diverse, e senza la seconda la domanda torna ogni sei mesi.
      */
     generazioneImmagini: {
-      attivo: generatoreImmagini.disponibile ? generatoreImmagini.id : null,
-      provider: generatori,
+      attivo: servizi.generatoreImmagini.disponibile ? servizi.generatoreImmagini.id : null,
+      provider: servizi.generatori,
     },
   }));
 
   app.get('/api/gif/cerca', { onRequest: richiedeRuolo('membro') }, async (richiesta, risposta) => {
     if (!rate(`${richiesta.utente.id}:gif`)) return risposta.code(429).send({ errore: 'troppe ricerche GIF, riprova fra poco' });
-    if (!gif.disponibile) return risposta.code(501).send({ errore: 'La ricerca GIF non e\' configurata su questa istanza' });
+    if (!servizi.gif.disponibile) return risposta.code(501).send({ errore: 'La ricerca GIF non e\' configurata su questa istanza' });
     const q = String(richiesta.query.q ?? '').trim();
     // L'attribuzione la vogliono tutti e due nelle loro condizioni d'uso, e
     // cambia con il provider: scritta fissa nel client diceva "Tenor" anche
     // sotto ai risultati di GIPHY.
-    const attribuzione = `Powered by ${gif.etichetta ?? gif.id}`;
+    const attribuzione = `Powered by ${servizi.gif.etichetta ?? servizi.gif.id}`;
     if (!q) return { risultati: [], attribuzione };
-    return { risultati: await gif.cerca(q), attribuzione };
+    return { risultati: await servizi.gif.cerca(q), attribuzione };
   });
 
   app.post('/api/anteprime-link', { onRequest: richiedeRuolo('ospite') }, async (richiesta, risposta) => {
@@ -60,13 +60,13 @@ export function rotteServizi(app, { gif, anteprime, ai, immagini, generatoreImma
 
   app.get('/api/immagini/cerca', { onRequest: richiedeRuolo('membro') }, async (richiesta, risposta) => {
     if (!rate(`${richiesta.utente.id}:immagini`)) return risposta.code(429).send({ errore: 'troppe ricerche immagini' });
-    if (!immagini.disponibile) return risposta.code(501).send({ errore: 'ricerca immagini non configurata' });
+    if (!servizi.immagini.disponibile) return risposta.code(501).send({ errore: 'ricerca immagini non configurata' });
     const q = String(richiesta.query.q ?? '').trim().slice(0, 120);
-    return { risultati: q ? await immagini.cerca(q) : [], provider: immagini.id };
+    return { risultati: q ? await servizi.immagini.cerca(q) : [], provider: servizi.immagini.id };
   });
 
   app.post('/api/immagini/:id/usa', { onRequest: richiedeRuolo('membro') }, async (richiesta) => {
-    await immagini.usa(richiesta.params.id);
+    await servizi.immagini.usa(richiesta.params.id);
     return { ok: true };
   });
 }

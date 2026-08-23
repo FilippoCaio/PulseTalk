@@ -6,7 +6,18 @@ import { salvaAllegatoInterno } from './allegati.mjs';
 
 const PROMPT_MAX = 4000;
 
-export function rotteAi(app, { db, eventi, provider, generatoreImmagini, config }) {
+/**
+ * `servizi` e non i singoli provider.
+ *
+ * Le chiavi si cambiano dal pannello di amministrazione mentre il server gira,
+ * e quando succede i provider vengono rifatti da capo. Chi se ne fosse preso
+ * uno all'avvio continuerebbe a parlare con quello vecchio — cioe' con la
+ * chiave che l'admin ha appena tolto — finche' qualcuno non riavvia il
+ * container. Guardare dentro alla scatola al momento della chiamata costa una
+ * indirezione e toglie di mezzo un'intera categoria di bug che si manifestano
+ * solo dopo un cambio di configurazione.
+ */
+export function rotteAi(app, { db, eventi, servizi }) {
   const rate = creaRateLimit(10, 60_000);
 
   const prepara = (richiesta, risposta, capacita) => {
@@ -26,13 +37,16 @@ export function rotteAi(app, { db, eventi, provider, generatoreImmagini, config 
     // La generazione delle immagini ha un provider suo, scelto a parte: puo'
     // essere una Stable Diffusion in casa anche quando la chat parla con
     // OpenAI, o viceversa.
-    const acceso = capacita === 'immagini' ? generatoreImmagini.disponibile : provider.capabilities[capacita];
+    const acceso =
+      capacita === 'immagini'
+        ? servizi.generatoreImmagini.disponibile
+        : servizi.aiPer(richiesta.utente).capabilities[capacita];
     if (!acceso) {
       risposta.code(501).send({
         errore:
           capacita === 'chat'
-            ? 'AI Chat non configurata'
-            : `generazione immagini non configurata${generatoreImmagini.motivo ? `: ${generatoreImmagini.motivo}` : ''}`,
+            ? messaggioChatSpenta(servizi, richiesta.utente)
+            : `generazione immagini non configurata${servizi.generatoreImmagini.motivo ? `: ${servizi.generatoreImmagini.motivo}` : ''}`,
       });
       return null;
     }
@@ -62,12 +76,13 @@ export function rotteAi(app, { db, eventi, provider, generatoreImmagini, config 
     }
     const controllo = new AbortController();
     richiesta.raw.once('aborted', () => controllo.abort());
-    const contesto = db.messaggi(pronto.esito.canale.id, { quanti: config.ai.contestoMessaggi })
-      .filter((m) => !m.eliminato && m.testo).slice(-config.ai.contestoMessaggi);
-    const testo = await provider.chat({ prompt: pronto.prompt, contesto, signal: controllo.signal });
+    const contesto = db.messaggi(pronto.esito.canale.id, { quanti: servizi.config.ai.contestoMessaggi })
+      .filter((m) => !m.eliminato && m.testo).slice(-servizi.config.ai.contestoMessaggi);
+    const mio = servizi.aiPer(richiesta.utente);
+    const testo = await mio.chat({ prompt: pronto.prompt, contesto, signal: controllo.signal });
     const id = db.scriviMessaggio({
       canale: pronto.esito.canale.id, autore: bot.id, testo,
-      origine: 'ai', provider: provider.id, modello: provider.modelloChat,
+      origine: 'ai', provider: mio.id, modello: mio.modelloChat,
       richiestoDa: richiesta.utente.id,
     });
     const messaggio = db.messaggi(pronto.esito.canale.id, { prima: id + 1, quanti: 1 })[0];
@@ -85,11 +100,11 @@ export function rotteAi(app, { db, eventi, provider, generatoreImmagini, config 
     if (accessoBot.errore || !accessoBot.permessi.has('sendMessages')) {
       return risposta.code(403).send({ errore: 'il bot assistente non ha accesso e permesso di scrivere in questo canale' });
     }
-    const generata = await generatoreImmagini.genera({ prompt: pronto.prompt, signal: controllo.signal });
+    const generata = await servizi.generatoreImmagini.genera({ prompt: pronto.prompt, signal: controllo.signal });
     const allegato = await salvaAllegatoInterno({ db, config, utente: bot.id, ...generata });
     const id = db.scriviMessaggio({
       canale: pronto.esito.canale.id, autore: bot.id, testo: 'Immagine generata dall\'AI',
-      origine: 'ai-immagine', provider: generatoreImmagini.id, modello: provider.modelloImmagini,
+      origine: 'ai-immagine', provider: servizi.generatoreImmagini.id, modello: servizi.aiPer(richiesta.utente).modelloImmagini,
       richiestoDa: richiesta.utente.id,
     });
     db.legaAllegati(id, [allegato.id], bot.id);
@@ -114,4 +129,22 @@ function creaRateLimit(massimo, finestraMs) {
     voce.quanti += 1;
     return true;
   };
+}
+
+/**
+ * Perche' l'AI e' spenta, detto a chi la sta chiedendo.
+ *
+ * "AI Chat non configurata" e' vero in tutti i casi ed e' utile in uno solo.
+ * Se l'amministratore ha scelto che ognuno porti la propria chiave, la frase
+ * da leggere e' un'altra — e dice cosa fare, invece di dire cosa manca a
+ * qualcun altro.
+ */
+function messaggioChatSpenta(servizi, utente) {
+  const modo = servizi.config.ai.chiavi;
+  if (modo === 'istanza') return 'AI Chat non configurata';
+  const sua = servizi.aiPer(utente);
+  if (sua.capabilities.chat) return 'AI Chat non configurata';
+  return modo === 'utente'
+    ? "Su questo server l'AI la porta ognuno per se': collega la tua chiave dalle impostazioni, sezione Account."
+    : "Nessuna chiave configurata: ne' la tua ne' quella del server.";
 }
