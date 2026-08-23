@@ -1,5 +1,4 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import type { Riquadro as Dati } from '../lib/usaSessione'
 import { PannelloVolume, type VoceVolume } from './Volume'
 import {
   Altoparlante,
@@ -22,30 +21,48 @@ const MARGINE = 8
  * iconcine in alto a destra e la colonna delle persone — ma tutte insieme,
  * dove le sta cercando la mano, sul riquadro che si sta guardando. E' l'unico
  * gesto che nessuno deve imparare: dove c'e' roba, tasto destro.
+ *
+ * Non sa piu' cos'e' un riquadro: prende un titolo, delle voci di volume e
+ * delle cose da fare. Serviva a farlo aprire anche sul video condiviso, che
+ * riquadro non e' — ma per la mano che ci arriva sopra e' la stessa cosa, e
+ * due menu diversi per lo stesso gesto sarebbero due menu da imparare.
+ *
+ * Qui dentro sta anche il cursore del volume, che sopra alle condivisioni non
+ * c'e' piu': la' e' rimasto l'interruttore, e il livello preciso si regola da
+ * qui.
  */
 export default function MenuRiquadro({
   x,
   y,
-  dati,
+  titolo,
+  sottotitolo,
+  cosa,
   voci,
   aFuoco,
-  moderatore,
   metti,
   schermoIntero,
+  azioni,
   caccia,
   qualita,
   chiudi
 }: {
   x: number
   y: number
-  dati: Dati
+  /** Di chi, o di cosa: la prima riga del menu. */
+  titolo: string
+  /** Quale delle sue, quando ce n'e' piu' d'una. */
+  sottotitolo?: string
+  /** Come chiamare cio' che si zittisce: "lo schermo", "la voce", "il video". */
+  cosa: string
   voci: VoceVolume[]
   aFuoco: boolean
-  moderatore: boolean
   /** Mette a fuoco, o toglie dal fuoco se ci sta gia'. */
   metti: () => void
   /** Solo sul riquadro grande: il vero schermo intero. */
   schermoIntero?: { attivo: boolean; alterna: () => void }
+  /** Le voci che valgono solo per questo tipo di riquadro, in fondo. */
+  azioni?: { icona: React.ReactNode; testo: string; fai: () => void; pericolo?: boolean }[]
+  /** Gia' filtrato da chi apre il menu: se c'e', si puo' fare. */
   caccia?: () => Promise<void>
   /**
    * Solo sulla PROPRIA condivisione: cambiare qualita' mentre e' accesa.
@@ -100,7 +117,6 @@ export default function MenuRiquadro({
   }, [chiudi])
 
   const zittito = voci.length > 0 && voci.every((v) => v.muto)
-  const cosa = dati.tipo === 'schermo' ? 'lo schermo' : 'la voce'
 
   return (
     <div
@@ -113,10 +129,8 @@ export default function MenuRiquadro({
       style={{ left: posto.sinistra, top: posto.alto }}
     >
       <div className="truncate px-1.5 pt-0.5 pb-2 text-xs font-semibold text-testo-2">
-        {dati.nome}
-        {dati.tipo === 'schermo' && (
-          <span className="font-normal text-testo-3"> · {dati.etichetta}</span>
-        )}
+        {titolo}
+        {sottotitolo && <span className="font-normal text-testo-3"> · {sottotitolo}</span>}
       </div>
 
       {voci.length > 0 && (
@@ -178,7 +192,25 @@ export default function MenuRiquadro({
         </>
       )}
 
-      {moderatore && caccia && !dati.locale && (
+      {azioni && azioni.length > 0 && (
+        <>
+          <div className="my-1 border-t border-bordo" />
+          {azioni.map((azione) => (
+            <Riga
+              key={azione.testo}
+              icona={azione.icona}
+              testo={azione.testo}
+              pericolo={azione.pericolo}
+              fai={() => {
+                azione.fai()
+                chiudi()
+              }}
+            />
+          ))}
+        </>
+      )}
+
+      {caccia && (
         <>
           <div className="my-1 border-t border-bordo" />
           <Riga

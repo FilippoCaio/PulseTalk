@@ -154,6 +154,31 @@ textarea {
   }
 }
 
+/* L'etichetta dello zoom: entra da sopra e si ferma. Serve a farla notare
+   davvero — compare mentre si sta guardando il video, non l'angolo — e a farla
+   leggere come una cosa che e' appena successa invece che come una scritta che
+   era gia' li'. */
+.comparsa {
+  animation: comparsa 0.16s ease-out;
+}
+
+@keyframes comparsa {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .comparsa {
+    animation: none;
+  }
+}
+
 @keyframes svanisci {
   0%,
   70% {

@@ -147,9 +147,22 @@ export default function BarraSpazi({
 
             {/* L'anello verde intorno all'icona del server in cui si sta
                 parlando: si vede da lontano, e da lontano e' l'unica cosa che
-                serve sapere. */}
+                serve sapere.
+
+                Il raggio e' lo stesso dell'icona, riga per riga, e non un
+                `rounded-2xl` fisso. L'icona cambia forma da sola — tonda a
+                riposo, squadrata da aperta o sotto al cursore — e un anello
+                che non la seguiva restava squadrato intorno a un quadrato con
+                gli angoli tondi: si vedeva l'anello staccarsi negli angoli
+                proprio quando si guardava un altro server, cioe' quando
+                l'anello e' l'unica cosa che sta dicendo dove si sta
+                parlando. */}
             {vocale && (
-              <span className="pointer-events-none absolute inset-0 rounded-2xl border-2 border-ok" />
+              <span
+                className={`pointer-events-none absolute inset-0 border-2 border-ok transition-all ${
+                  attivo ? 'rounded-2xl' : 'rounded-3xl group-hover:rounded-2xl'
+                }`}
+              />
             )}
 
             {sopra === spazio.id && (

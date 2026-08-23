@@ -2,14 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import type { SessioneMedia } from '@shared/tipi'
 import type { SessioniMedia } from '../lib/usaSessioniMedia'
 import { creaPlayer, origineUsabile, STATO, type Player } from '../lib/youtube'
-import {
-  Ingrandisci,
-  Rimpicciolisci,
-  SchermoIntero,
-  SchermoNormale,
-  Video
-} from '../icone'
-import { BottoneVolume, type VoceVolume } from '../sala/Volume'
+import { Ingrandisci, Rimpicciolisci, Video } from '../icone'
+import { BottoneMuto, type VoceVolume } from '../sala/Volume'
 
 /** Oltre questo scarto si salta. Sotto si lascia in pace. */
 const SOGLIA_MS = 1500
@@ -44,7 +38,8 @@ export default function RiquadroYouTube({
   muto,
   cambiaVolume,
   alternaMuto,
-  schermoIntero
+  quandoMenu,
+  senzaCornice = false
 }: {
   sessione: SessioneMedia
   media: SessioniMedia
@@ -55,7 +50,10 @@ export default function RiquadroYouTube({
   muto: boolean
   cambiaVolume: (volume: number) => void
   alternaMuto: () => void
-  schermoIntero: { attivo: boolean; alterna: () => void }
+  /** Tasto destro: apre il menu del riquadro alle coordinate del puntatore. */
+  quandoMenu?: (x: number, y: number) => void
+  /** Riempie la sala a filo, come una condivisione a tutta superficie. */
+  senzaCornice?: boolean
 }): React.JSX.Element {
   const contenitore = useRef<HTMLDivElement | null>(null)
   const player = useRef<Player | null>(null)
@@ -65,6 +63,17 @@ export default function RiquadroYouTube({
   const [caricando, setCaricando] = useState(true)
   const [tentativo, setTentativo] = useState(0)
   const [ripiego, setRipiego] = useState<RipiegoYouTube | null>(null)
+  /**
+   * Dove sta il video e quanto dura, per la barra qui sotto.
+   *
+   * Si legge dal player e non dalla sessione: fra un battito e l'altro il
+   * server non dice niente, e una barra che avanza a scatti di due secondi
+   * sembra rotta. Quando il player non c'e' ancora — o si e' ripiegati su
+   * quello standard — resta la posizione attesa, che e' comunque giusta.
+   */
+  const [dove, setDove] = useState({ posizione: 0, durata: 0 })
+  /** Dove sta il pollice mentre lo si trascina. Null quando non lo si tiene. */
+  const [trascinato, setTrascinato] = useState<number | null>(null)
   const applicando = useRef(false)
   const caricato = useRef<string | null>(null)
   const sessioneCorrente = useRef(sessione)
@@ -258,11 +267,47 @@ export default function RiquadroYouTube({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pronto, riferimento, errore, ripiego])
 
+  // Quattro volte al secondo: abbastanza da sembrare continua, abbastanza poco
+  // da non far lavorare la macchina per una barra che spesso nessuno guarda.
+  useEffect(() => {
+    const leggi = (): void => {
+      const p = player.current
+      const attesa = media.posizioneAttesa(sessione)
+      const posizione = p && pronto && p.durata() > 0 ? p.posizione() : attesa
+      const durata = (p && pronto ? p.durata() : 0) || stato.durataMs || 0
+      setDove((prima) =>
+        Math.abs(prima.posizione - posizione) < 120 && prima.durata === durata
+          ? prima
+          : { posizione, durata }
+      )
+    }
+    leggi()
+    const battito = window.setInterval(leggi, 250)
+    return () => window.clearInterval(battito)
+  }, [media, sessione, pronto, stato.durataMs])
+
   const alterna = (): void => {
     if (!puoComandare) return
     void media.comanda(sessione.id, {
       azione: stato.inRiproduzione ? 'pausa' : 'play'
     })
+  }
+
+  /**
+   * Spostarsi nel video, per tutti.
+   *
+   * Passa dal server come play e pausa: chi trascina la barra sposta la
+   * sessione, non il proprio player. Saltare per conto proprio vorrebbe dire
+   * uscire dal "guardare insieme", che e' l'unica cosa che questo riquadro sa
+   * fare.
+   */
+  const salta = (posizioneMs: number): void => {
+    if (!puoComandare) return
+    // Ottimismo locale: il video si sposta sotto al dito e non mezzo secondo
+    // dopo, quando torna la risposta. Se il server dice altro, il battito
+    // rimette le cose a posto da solo.
+    setDove((prima) => ({ ...prima, posizione: posizioneMs }))
+    void media.comanda(sessione.id, { azione: 'salta', posizioneMs: Math.round(posizioneMs) })
   }
 
   const voceVolume: VoceVolume = {
@@ -284,8 +329,24 @@ export default function RiquadroYouTube({
       }).toString()}`
     : null
 
+  const durata = dove.durata
+  const posizione = trascinato ?? dove.posizione
+
   return (
-    <section className="group/youtube relative h-full w-full overflow-hidden rounded-xl border border-bordo bg-black shadow-lg shadow-black/20">
+    <section
+      onContextMenu={(evento) => {
+        if (!quandoMenu) return
+        // Senza questo esce il menu di Chromium ("Ricarica", "Ispeziona"), che
+        // dentro a un'applicazione non ha senso di esistere.
+        evento.preventDefault()
+        quandoMenu(evento.clientX, evento.clientY)
+      }}
+      className={`group/youtube relative h-full w-full overflow-hidden bg-black ${
+        senzaCornice
+          ? 'rounded-none'
+          : 'rounded-xl border border-bordo shadow-lg shadow-black/20'
+      }`}
+    >
       {urlRipiego ? (
         <iframe
           src={urlRipiego}
@@ -314,22 +375,15 @@ export default function RiquadroYouTube({
         className="absolute top-2 right-2 z-20 flex items-center gap-1 opacity-0 transition-opacity group-hover/youtube:opacity-100 focus-within:opacity-100"
         onClick={(evento) => evento.stopPropagation()}
       >
-        <BottoneVolume
-          voci={[voceVolume]}
-          titolo="Volume di YouTube"
-          verso="sotto"
-          variante="riquadro"
-        />
-        <Comando
-          titolo={schermoIntero.attivo ? 'Esci dallo schermo intero' : 'Schermo intero'}
-          premi={schermoIntero.alterna}
-        >
-          {schermoIntero.attivo ? (
-            <SchermoNormale className="h-4 w-4" />
-          ) : (
-            <SchermoIntero className="h-4 w-4" />
-          )}
-        </Comando>
+        {/* Solo l'interruttore, come sulle condivisioni. Il livello sta nel
+            menu del tasto destro.
+
+            Lo schermo intero non c'e' piu': era il tutto-schermo
+            dell'applicazione, cioe' lo stesso comando che sta gia' in basso a
+            destra nell'overlay. Due pulsanti per la stessa cosa a mezzo
+            centimetro l'uno dall'altro non danno una scelta, danno il dubbio
+            che facciano cose diverse. */}
+        <BottoneMuto voci={[voceVolume]} titolo="il video" />
         <Comando
           titolo={aFuoco ? 'Rimetti nella griglia' : 'Metti a fuoco'}
           premi={quandoScelto}
@@ -342,18 +396,74 @@ export default function RiquadroYouTube({
         </Comando>
       </div>
 
-      <div className="pointer-events-none absolute right-3 bottom-3 left-3 flex items-end justify-between gap-3 opacity-0 transition-opacity group-hover/youtube:opacity-100">
-        <span className="flex items-center gap-2 rounded-lg bg-fondo/90 px-2.5 py-1.5 text-xs text-testo shadow-lg backdrop-blur">
-          <Video className="h-4 w-4 text-vivo" />
-          YouTube · Guarda insieme
-        </span>
-        <span className="numeri rounded-lg bg-fondo/90 px-2 py-1 text-[11px] text-testo-3 shadow-lg backdrop-blur">
-          {ripiego
-            ? 'player standard'
-            : Math.abs(scarto) < 250
-            ? 'in pari'
-            : `${scarto > 0 ? '−' : '+'}${(Math.abs(scarto) / 1000).toFixed(1)}s`}
-        </span>
+      <div className="pointer-events-none absolute right-3 bottom-3 left-3 z-20 space-y-2 opacity-0 transition-opacity group-hover/youtube:opacity-100 focus-within:opacity-100">
+        {/* La barra del tempo.
+
+            Non c'e' sul player standard: quello ha gia' i suoi comandi, e
+            due barre sovrapposte che dicono numeri diversi sono peggio di
+            una sola. E non c'e' finche' YouTube non dice quanto dura il
+            video, perche' una barra senza fondo scala non e' una barra, e'
+            una riga. */}
+        {!ripiego && durata > 0 && (
+          <div className="pointer-events-auto flex items-center gap-2 rounded-lg bg-fondo/90 px-2.5 py-1.5 shadow-lg backdrop-blur">
+            <span className="numeri shrink-0 text-[11px] text-testo-2">{orologio(posizione)}</span>
+
+            <input
+              type="range"
+              min={0}
+              max={durata}
+              step={1000}
+              value={Math.min(posizione, durata)}
+              disabled={!puoComandare}
+              // Mentre si trascina il pollice resta dov'e' il dito, non dove
+              // dice il battito: senza, il cursore tornava indietro da solo
+              // quattro volte al secondo e diventava impossibile da mirare.
+              onChange={(evento) => setTrascinato(Number(evento.target.value))}
+              onPointerUp={() => {
+                if (trascinato !== null) salta(trascinato)
+                setTrascinato(null)
+              }}
+              // La rete di sicurezza: se il dito esce dalla barra e il
+              // browser molla la presa, il salto va fatto lo stesso. Senza,
+              // un trascinamento finito male lasciava il pollice fermo dove
+              // era stato lasciato e il video dov'era.
+              onLostPointerCapture={() => {
+                if (trascinato !== null) salta(trascinato)
+                setTrascinato(null)
+              }}
+              onKeyUp={() => {
+                if (trascinato !== null) salta(trascinato)
+                setTrascinato(null)
+              }}
+              onBlur={() => setTrascinato(null)}
+              title={
+                puoComandare
+                  ? 'Sposta il video — per tutti'
+                  : 'Qui puoi solo guardare: sposta il video chi comanda la sessione'
+              }
+              aria-label="Posizione nel video"
+              className={`h-1 min-w-0 flex-1 accent-vivo ${
+                puoComandare ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'
+              }`}
+            />
+
+            <span className="numeri shrink-0 text-[11px] text-testo-3">{orologio(durata)}</span>
+          </div>
+        )}
+
+        <div className="flex items-end justify-between gap-3">
+          <span className="flex items-center gap-2 rounded-lg bg-fondo/90 px-2.5 py-1.5 text-xs text-testo shadow-lg backdrop-blur">
+            <Video className="h-4 w-4 text-vivo" />
+            YouTube · Guarda insieme
+          </span>
+          <span className="numeri rounded-lg bg-fondo/90 px-2 py-1 text-[11px] text-testo-3 shadow-lg backdrop-blur">
+            {ripiego
+              ? 'player standard'
+              : Math.abs(scarto) < 250
+              ? 'in pari'
+              : `${scarto > 0 ? '−' : '+'}${(Math.abs(scarto) / 1000).toFixed(1)}s`}
+          </span>
+        </div>
       </div>
 
       {caricando && !errore && !ripiego && (
@@ -388,6 +498,21 @@ export default function RiquadroYouTube({
       )}
     </section>
   )
+}
+
+/**
+ * Millisecondi in `m:ss`, o `h:mm:ss` da un'ora in su.
+ *
+ * L'ora compare solo quando serve: `0:04:12` su un video da cinque minuti fa
+ * contare le cifre per capire che sono quattro minuti.
+ */
+function orologio(ms: number): string {
+  const tutti = Math.max(0, Math.floor(ms / 1000))
+  const ore = Math.floor(tutti / 3600)
+  const minuti = Math.floor((tutti % 3600) / 60)
+  const secondi = tutti % 60
+  const ss = String(secondi).padStart(2, '0')
+  return ore > 0 ? `${ore}:${String(minuti).padStart(2, '0')}:${ss}` : `${minuti}:${ss}`
 }
 
 function Comando({

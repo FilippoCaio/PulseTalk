@@ -23,7 +23,7 @@ import {
   SchermoStop,
   Stella
 } from '../icone'
-import { BottoneVolume, type VoceVolume } from './Volume'
+import { BottoneMuto, BottoneVolume, type VoceVolume } from './Volume'
 
 /**
  * Un riquadro: una persona, o uno schermo.
@@ -253,6 +253,12 @@ export default function Riquadro({
   }
 
   const premuto = (evento: React.PointerEvent): void => {
+    // Solo il tasto sinistro. Col destro si apre il menu, e senza questa riga
+    // tenerlo premuto un secondo e mezzo — cioe' il tempo di leggere le voci
+    // del menu appena aperto — faceva partire un "guarda qui" a tutta la
+    // stanza, da un gesto che non c'entrava niente.
+    if (evento.button !== 0) return
+
     // La pressione lunga vale anche a zoom 1, dove non c'e' niente da
     // trascinare: e' il caso normale, e legarla allo zoom la renderebbe una
     // funzione che si scopre per sbaglio.
@@ -458,13 +464,22 @@ export default function Riquadro({
         onClick={(evento) => evento.stopPropagation()}
         className="absolute top-2 right-2 z-20 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100"
       >
+        {/* Sulle condivisioni l'altoparlante e' un interruttore e basta; sulle
+            persone resta il cursore. Non e' un capriccio: la voce di qualcuno
+            si abbassa, uno schermo che suona si spegne. Il livello preciso di
+            una condivisione sta nel menu del tasto destro, dove stanno le
+            cose che si toccano una volta per sessione. */}
         {volumi && volumi.length > 0 && (
-          <BottoneVolume
-            voci={volumi}
-            titolo={`Volume di ${dati.nome}`}
-            verso="sotto"
-            variante="riquadro"
-          />
+          dati.tipo === 'schermo' ? (
+            <BottoneMuto voci={volumi} titolo={`l'audio di ${dati.nome}`} />
+          ) : (
+            <BottoneVolume
+              voci={volumi}
+              titolo={`Volume di ${dati.nome}`}
+              verso="sotto"
+              variante="riquadro"
+            />
+          )
         )}
 
         {/* Solo su una condivisione altrui che si sta ricevendo: e' il modo di
@@ -528,21 +543,39 @@ export default function Riquadro({
         )
       })}
 
-      {zoomVisibile && ingrandibile && (
-        <div
-          onClick={(evento) => {
-            evento.stopPropagation()
-            if (zoom.scala > 1) setZoom(FERMO)
-          }}
-          title={zoom.scala > 1 ? 'Reset zoom al 100% (anche con doppio clic)' : 'Zoom 100%'}
-          className={`numeri pointer-events-auto absolute top-2 left-2 z-20 flex items-center gap-1 rounded-lg bg-black/65 px-2 py-1 text-[11px] text-white/80 backdrop-blur-sm ${
-            zoom.scala > 1 ? 'cursor-pointer hover:bg-black/85' : ''
-          }`}
-        >
-          <Lente className="h-3.5 w-3.5" />
-          Zoom {Math.round(zoom.scala * 100)}%
-        </div>
-      )}
+      {/* L'angolo in alto a sinistra, in colonna: lo zoom sopra, i numeri sotto.
+          Erano due riquadri appoggiati nello stesso punto, e chi ingrandiva con
+          le statistiche accese si ritrovava la percentuale scritta sopra al
+          bitrate — proprio nel momento in cui serviva leggerla. Impilati non si
+          toccano piu', e lo zoom resta il primo che si incontra scendendo
+          dall'angolo.
+
+          Lo zoom si guarda per un istante e poche volte in una sessione: e'
+          l'unica etichetta della chiamata che puo' permettersi di essere
+          vistosa, perche' quando c'e' e' l'unica cosa che si sta cercando.
+          Fondo pieno, anello chiaro, ombra: leggibile anche appoggiata sul
+          bianco di un documento condiviso. */}
+      <div className="pointer-events-none absolute top-2 left-2 z-20 flex max-w-[calc(100%-1rem)] flex-col items-start gap-1.5">
+        {zoomVisibile && ingrandibile && (
+          <div
+            onClick={(evento) => {
+              evento.stopPropagation()
+              if (zoom.scala > 1) setZoom(FERMO)
+            }}
+            title={zoom.scala > 1 ? 'Reset zoom al 100% (anche con doppio clic)' : 'Zoom 100%'}
+            className={`comparsa numeri pointer-events-auto flex items-center gap-1.5 rounded-lg bg-black/85 px-2.5 py-1.5 text-xs leading-none font-semibold text-white shadow-lg shadow-black/50 ring-1 ring-white/25 backdrop-blur-sm ${
+              zoom.scala > 1 ? 'cursor-pointer hover:bg-black hover:ring-white/40' : ''
+            }`}
+          >
+            <Lente className="h-4 w-4" />
+            Zoom {Math.round(zoom.scala * 100)}%
+          </div>
+        )}
+
+        {mostraStatistiche && statistiche && (
+          <Numeri statistiche={statistiche} locale={dati.locale} />
+        )}
+      </div>
 
       {/* Il nome, in una targhetta invece che sopra a un alone.
           La sfumatura nera larga tutto il riquadro serviva a rendere leggibile
@@ -584,8 +617,6 @@ export default function Riquadro({
           </div>
         </div>
       )}
-
-      {mostraStatistiche && statistiche && <Numeri statistiche={statistiche} locale={dati.locale} />}
     </div>
   )
 }
@@ -670,9 +701,11 @@ function Numeri({
   const { larghezza, altezza, fps, bitrate, codec, perdita, motivoRiduzione } = statistiche
 
   return (
-    // In alto a sinistra: a destra ci sono i comandi, che comparendo
-    // finirebbero sopra ai numeri proprio mentre si sta cercando di leggerli.
-    <div className="numeri pointer-events-none absolute top-2 left-2 space-y-0.5 rounded-lg bg-black/65 px-2 py-1.5 text-[11px] leading-tight text-white/70 opacity-0 backdrop-blur-sm transition-opacity group-hover:opacity-100">
+    // La posizione non e' piu' sua: sta nella colonna in alto a sinistra,
+    // sotto all'etichetta dello zoom. A destra ci sono i comandi, che
+    // comparendo finirebbero sopra ai numeri proprio mentre si sta cercando
+    // di leggerli.
+    <div className="numeri pointer-events-none space-y-0.5 rounded-lg bg-black/65 px-2 py-1.5 text-[11px] leading-tight text-white/70 opacity-0 backdrop-blur-sm transition-opacity group-hover:opacity-100">
       {larghezza && altezza && (
         <div>
           {larghezza}×{altezza}

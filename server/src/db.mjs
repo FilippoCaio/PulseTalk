@@ -1366,15 +1366,30 @@ export class TalkDb {
    * Il cursore e' l'id e non la data: gli id sono unici e monotoni, le date
    * no — due messaggi nello stesso millisecondo esistono, e con un cursore
    * temporale uno dei due sparirebbe dallo scorrimento.
+   *
+   * Gli eliminati non escono di qui. La riga resta in tabella — serve a non
+   * riusare l'id e a tenere in piedi le risposte che la citavano — ma la
+   * lapide "messaggio rimosso" la vede solo chi era in ascolto nel momento in
+   * cui e' successo, mandata dall'evento. Chi apre la chat dopo trova la
+   * conversazione senza buchi.
+   *
+   * Prima uscivano, e quelle righe grigie non se ne andavano piu': una chat
+   * usata per un mese diventava un elenco di cose cancellate con qualche
+   * messaggio in mezzo. Una cancellazione che lascia un segno permanente non
+   * e' una cancellazione, e' una nota a margine che nessuno ha chiesto.
    */
   messaggi(canaleId, { prima = null, quanti = 50 } = {}) {
     const limite = Math.min(Math.max(1, quanti), 100);
     const righe = prima
       ? this.sql
-          .prepare('SELECT * FROM messaggi WHERE canale = ? AND id < ? ORDER BY id DESC LIMIT ?')
+          .prepare(
+            'SELECT * FROM messaggi WHERE canale = ? AND eliminato = 0 AND id < ? ORDER BY id DESC LIMIT ?',
+          )
           .all(canaleId, prima, limite)
       : this.sql
-          .prepare('SELECT * FROM messaggi WHERE canale = ? ORDER BY id DESC LIMIT ?')
+          .prepare(
+            'SELECT * FROM messaggi WHERE canale = ? AND eliminato = 0 ORDER BY id DESC LIMIT ?',
+          )
           .all(canaleId, limite);
 
     // Si leggono all'indietro e si consegnano in avanti: chi li mostra li

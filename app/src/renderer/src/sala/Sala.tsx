@@ -15,7 +15,7 @@ import { MAX_CONDIVISIONI_GUARDATE } from '../lib/usaSessione'
 import type { Riquadro as DatiRiquadro, Sessione } from '../lib/usaSessione'
 import { usaMisura } from '../lib/misura'
 import { ponte } from '../ponte'
-import { Chiudi, Riavvolgi } from '../icone'
+import { Chiudi, Pausa, Play, Riavvolgi } from '../icone'
 import { Avviso } from '../ui'
 import OverlayChiamata from './OverlayChiamata'
 import MenuRiquadro from './MenuRiquadro'
@@ -23,6 +23,7 @@ import Chat from '../chat/Chat'
 import type { usaChat } from '../lib/usaChat'
 import Riquadro from './Riquadro'
 import SceltaSorgente from './SceltaSorgente'
+import { PannelloInvito, RiquadroInvito } from './Invito'
 import PannelloInsieme from '../media/PannelloInsieme'
 import RiquadroYouTube from '../media/RiquadroYouTube'
 import type { SessioniMedia } from '../lib/usaSessioniMedia'
@@ -130,6 +131,8 @@ export default function Sala({
    * gli importa niente.
    */
   const [soloGrande, setSoloGrande] = useState(false)
+  /** L'elenco degli amici da chiamare dentro, quando e' aperto. */
+  const [mostraInvito, setMostraInvito] = useState(false)
   const [erroreLocale, setErroreLocale] = useState<string | null>(null)
   /**
    * L'ordine deciso a mano, per id di riquadro.
@@ -356,7 +359,7 @@ export default function Sala({
     setSenzaFuoco(false)
   }, [quantiSchermi])
 
-  const { grande, striscia, griglia } = useMemo(() => {
+  const { grande, striscia: strisciaScelta, griglia: grigliaScelta } = useMemo(() => {
     const scelto = aFuoco ? (riquadri.find((r) => r.id === aFuoco) ?? null) : null
 
     // Nessuno a fuoco: se c'e' un solo schermo condiviso in tutto il canale,
@@ -373,19 +376,62 @@ export default function Sala({
     return { grande: null, striscia: [], griglia: riquadri }
   }, [aFuoco, senzaFuoco, riquadri])
 
-  // Tolta la sovraimpressione, le persone tornano.
+  // La scelta di nascondere gli altri resta com'e' stata lasciata, anche
+  // passando dalla griglia e tornando indietro.
   //
-  // Senza questo la scelta resterebbe appesa: si rimette tutto in griglia, poi
-  // piu' tardi qualcosa torna in primo piano — magari da solo, perche' e'
-  // rimasto un unico schermo condiviso — e gli altri sparirebbero senza che
-  // nessuno abbia premuto niente.
-  useEffect(() => {
-    if (!grande) setSoloGrande(false)
-  }, [grande])
+  // Prima si azzerava ogni volta che non c'era piu' niente in primo piano, per
+  // non far sparire nessuno a sorpresa al ritorno. Ma il ritorno succede di
+  // continuo — basta un clic sulla sovraimpressione per rimetterla in griglia —
+  // e chi si era messo a schermo pieno se lo ritrovava disfatto ogni volta, con
+  // il pulsante da ripremere. Una preferenza che si dimentica da sola e' una
+  // preferenza che va rimessa a mano dieci volte in una sessione: dura piu' del
+  // primo piano che l'ha vista nascere.
+
+  /**
+   * Il video condiviso e' una condivisione come le altre.
+   *
+   * Prima era un caso a parte: messo a fuoco finiva dentro a un contenitore
+   * con un tetto di larghezza, con le persone schiacciate in una striscia
+   * bassa qui sotto e senza il pulsante per nasconderle. Ma per chi guarda non
+   * c'e' nessuna differenza fra uno schermo condiviso e un video guardato
+   * insieme — sono tutti e due "la cosa che stiamo guardando" — e ogni
+   * differenza di trattamento era una regola in piu' da scoprire.
+   *
+   * Adesso prende lo stesso posto grande, con la stessa striscia accanto,
+   * lo stesso "nascondi gli altri" e lo stesso pieno schermo a filo.
+   */
+  const youtubeGrande = Boolean(youtube && media && youtubeAFuoco)
+  const striscia = youtubeGrande ? riquadri : strisciaScelta
+  const griglia = youtubeGrande ? [] : grigliaScelta
+  /** Qualcosa sta in primo piano: uno schermo, una persona, o il video. */
+  const inPrimoPiano = Boolean(grande) || youtubeGrande
+
+  /**
+   * L'invito ha due forme, e non stanno mai insieme.
+   *
+   * Da soli in una griglia e' una tessera come le altre: lo spazio c'e'
+   * comunque — una faccia sola in mezzo allo schermo non ne ha bisogno — e
+   * quello e' esattamente il momento in cui l'unica cosa utile da mostrare e'
+   * come far arrivare qualcun altro. In tutti gli altri casi, compagnia o
+   * sovraimpressione, resta il pulsantino nell'overlay: li' lo spazio serve a
+   * cio' che si sta guardando.
+   *
+   * In una chiamata diretta non c'e' ne' l'uno ne' l'altro: una conversazione
+   * a due e' una stanza da due posti, e un terzo non ci entra nemmeno
+   * volendo. Offrire di invitare qualcuno sarebbe un pulsante che promette
+   * una cosa che il server rifiuta.
+   */
+  const puoInvitare = !ingresso.diretta
+  const invitoInGriglia = puoInvitare && persone.length === 1 && griglia.length > 0
 
   const tessera = useMemo(
-    () => tessere(griglia.length + (youtube && !youtubeAFuoco ? 1 : 0), spazio.larghezza, spazio.altezza),
-    [griglia.length, spazio.larghezza, spazio.altezza, youtube, youtubeAFuoco]
+    () =>
+      tessere(
+        griglia.length + (youtube && !youtubeAFuoco ? 1 : 0) + (invitoInGriglia ? 1 : 0),
+        spazio.larghezza,
+        spazio.altezza
+      ),
+    [griglia.length, spazio.larghezza, spazio.altezza, youtube, youtubeAFuoco, invitoInGriglia]
   )
 
   // Chi e' in primo piano riceve tutto, gli altri schermi calano.
@@ -446,7 +492,7 @@ export default function Sala({
   // applicazione, un riquadro in primo piano e la striscia degli altri
   // nascosta. In tutti gli altri casi restano i margini che separano le
   // tessere e fanno posto alle barre dell'overlay.
-  const aTuttaSuperficie = schermoIntero.attivo && Boolean(grande) && soloGrande
+  const aTuttaSuperficie = schermoIntero.attivo && inPrimoPiano && soloGrande
 
   // `relative` sulla radice qui sotto e l ancora della barra dei comandi.
   // Senza, quella si aggrappava alla radice dell applicazione — che comprende
@@ -493,27 +539,6 @@ export default function Sala({
           )}
           {(sessione.errore || erroreLocale) && <Avviso>{sessione.errore ?? erroreLocale}</Avviso>}
 
-          {youtube && media && youtubeAFuoco && (
-            <div className="mx-auto flex min-h-[200px] w-full max-w-6xl flex-1 overflow-hidden">
-              <RiquadroYouTube
-                key={youtube.id}
-                sessione={youtube}
-                media={media}
-                puoComandare={media.puoComandare && ingresso.permessi.puoCondividere !== false}
-                aFuoco
-                quandoScelto={() => setYoutubeAFuoco(false)}
-                volume={volumeYoutube}
-                muto={youtubeMuto}
-                cambiaVolume={(volume) => {
-                  setVolumeYoutube(volume)
-                  if (volume > 0) setYoutubeMuto(false)
-                }}
-                alternaMuto={() => setYoutubeMuto((muto) => !muto)}
-                schermoIntero={schermoIntero}
-              />
-            </div>
-          )}
-
           {/* Detto una volta e piccolo: due gesti che non si scoprono da soli,
               e che dopo averli letti una volta non si dimenticano piu'. */}
           {grande?.tipo === 'schermo' && (
@@ -537,41 +562,63 @@ export default function Sala({
             </div>
           ) : (
             <>
-              {grande && (
+              {inPrimoPiano && (
                 <div
                   className={`flex min-h-0 flex-1 overflow-hidden ${
                     aTuttaSuperficie ? 'gap-0' : 'gap-2'
                   } ${VERSO[aggancio]}`}
                 >
                   <div className="min-h-0 min-w-0 flex-1">
-                    <Riquadro
-                      dati={grande}
-                      foto={fotoDi(grande.identita)}
-                      mostraStatistiche={impostazioni.mostraStatistiche}
-                      specchiaCamera={impostazioni.specchiaCamera ?? true}
-                      aFuoco
-                      volumi={vociDi(grande)}
-                      puntatori={puntatoriDi(grande)}
-                      quandoPunta={
-                        grande.tipo === 'schermo' && !grande.locale
-                          ? (x, y) => sessione.punta(grande.id, x, y)
-                          : undefined
-                      }
-                      quandoTiene={
-                        grande.tipo === 'schermo' && !grande.locale
-                          ? (x, y) => sessione.punta(grande.id, x, y, true)
-                          : undefined
-                      }
-                      quandoLascia={() => sessione.lascia(grande.id)}
-                      quandoMenu={(x, y) => setMenu({ x, y, id: grande.id })}
-                      quandoScelto={togli}
-                      guarda={daSbloccare(grande) ? () => sessione.guarda(grande.id) : undefined}
-                      nonGuardare={
-                        daSbloccare(grande) ? () => sessione.nonGuardare(grande.id) : undefined
-                      }
-                      puoiGuardare={postiLiberi}
-                      senzaCornice={aTuttaSuperficie}
-                    />
+                    {youtubeGrande && youtube && media ? (
+                      <RiquadroYouTube
+                        key={youtube.id}
+                        sessione={youtube}
+                        media={media}
+                        puoComandare={
+                          media.puoComandare && ingresso.permessi.puoCondividere !== false
+                        }
+                        aFuoco
+                        quandoScelto={() => setYoutubeAFuoco(false)}
+                        volume={volumeYoutube}
+                        muto={youtubeMuto}
+                        cambiaVolume={(volume) => {
+                          setVolumeYoutube(volume)
+                          if (volume > 0) setYoutubeMuto(false)
+                        }}
+                        alternaMuto={() => setYoutubeMuto((muto) => !muto)}
+                        quandoMenu={(x, y) => setMenu({ x, y, id: MENU_YOUTUBE })}
+                        senzaCornice={aTuttaSuperficie}
+                      />
+                    ) : grande ? (
+                      <Riquadro
+                        dati={grande}
+                        foto={fotoDi(grande.identita)}
+                        mostraStatistiche={impostazioni.mostraStatistiche}
+                        specchiaCamera={impostazioni.specchiaCamera ?? true}
+                        aFuoco
+                        volumi={vociDi(grande)}
+                        puntatori={puntatoriDi(grande)}
+                        quandoPunta={
+                          grande.tipo === 'schermo' && !grande.locale
+                            ? (x, y) => sessione.punta(grande.id, x, y)
+                            : undefined
+                        }
+                        quandoTiene={
+                          grande.tipo === 'schermo' && !grande.locale
+                            ? (x, y) => sessione.punta(grande.id, x, y, true)
+                            : undefined
+                        }
+                        quandoLascia={() => sessione.lascia(grande.id)}
+                        quandoMenu={(x, y) => setMenu({ x, y, id: grande.id })}
+                        quandoScelto={togli}
+                        guarda={daSbloccare(grande) ? () => sessione.guarda(grande.id) : undefined}
+                        nonGuardare={
+                          daSbloccare(grande) ? () => sessione.nonGuardare(grande.id) : undefined
+                        }
+                        puoiGuardare={postiLiberi}
+                        senzaCornice={aTuttaSuperficie}
+                      />
+                    ) : null}
                   </div>
 
                   {striscia.length > 0 && !soloGrande && (
@@ -632,13 +679,12 @@ export default function Sala({
                 </div>
               )}
 
+              {/* La striscia bassa sotto al video non esiste piu': quando il
+                  video sta in primo piano le persone finiscono nella striscia
+                  vera, quella di fianco, come con ogni altra condivisione. Qui
+                  resta solo la griglia. */}
               {(griglia.length > 0 || (youtube && !youtubeAFuoco)) && (
-                <div
-                  ref={contenitore}
-                  className={`flex justify-center overflow-y-auto ${
-                    youtubeAFuoco ? 'h-28 shrink-0' : 'min-h-0 flex-1'
-                  }`}
-                >
+                <div ref={contenitore} className="flex min-h-0 flex-1 justify-center overflow-y-auto">
                   {/* `m-auto` sul figlio invece di `items-center` sul padre.
 
                       Sono la stessa cosa finche' il contenuto ci sta, e due
@@ -683,7 +729,7 @@ export default function Sala({
                             if (volume > 0) setYoutubeMuto(false)
                           }}
                           alternaMuto={() => setYoutubeMuto((muto) => !muto)}
-                          schermoIntero={schermoIntero}
+                          quandoMenu={(x, y) => setMenu({ x, y, id: MENU_YOUTUBE })}
                         />
                       </div>
                     )}
@@ -730,10 +776,30 @@ export default function Sala({
                         </div>
                       )
                     })}
+
+                    {/* Ultima della fila: l'invito viene dopo le persone che
+                        ci sono gia', non prima. */}
+                    {invitoInGriglia && (
+                      <div
+                        className="overflow-hidden"
+                        style={{ width: tessera.larghezza, height: tessera.altezza }}
+                      >
+                        <RiquadroInvito invita={() => setMostraInvito(true)} />
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
             </>
+          )}
+
+          {mostraInvito && (
+            <PannelloInvito
+              api={api}
+              nomeCanale={ingresso.canale.nome}
+              gia={new Set(persone.map((p) => Number(p.identita.slice(1))))}
+              chiudi={() => setMostraInvito(false)}
+            />
           )}
 
           {scegliSorgente && (
@@ -831,9 +897,15 @@ export default function Sala({
               }
             : undefined
         }
+        // Vale anche col video in primo piano: da li' in poi e' una
+        // condivisione come le altre, e nascondere le persone e' la stessa
+        // cosa che si vuole fare.
         soloGrande={
-          grande ? { attivo: soloGrande, alterna: () => setSoloGrande((v) => !v) } : undefined
+          inPrimoPiano ? { attivo: soloGrande, alterna: () => setSoloGrande((v) => !v) } : undefined
         }
+        // Nell'overlay solo quando l'invito non e' gia' una tessera: le due
+        // forme si escludono, e a deciderlo e' chi sa com'e' fatta la griglia.
+        invita={puoInvitare && !invitoInGriglia ? () => setMostraInvito(true) : undefined}
         impostazioni={impostazioni}
         schermoIntero={schermoIntero}
         alternaMicrofono={() => void sessione.alternaMicrofono()}
@@ -852,16 +924,83 @@ export default function Sala({
           ai bordi come taglia tutto il resto. */}
       {(() => {
         if (!menu) return null
+
+        // Il video condiviso non e' un riquadro e non sta nell'elenco: ha una
+        // chiave sua. La tendina pero' e' la stessa — per la mano che ci
+        // arriva sopra col tasto destro non c'e' nessuna differenza.
+        if (menu.id === MENU_YOUTUBE) {
+          if (!youtube || !media) return null
+          const puoComandare =
+            media.puoComandare && ingresso.permessi.puoCondividere !== false
+          return (
+            <MenuRiquadro
+              x={menu.x}
+              y={menu.y}
+              titolo={youtube.stato.titolo || 'Video condiviso'}
+              sottotitolo="YouTube"
+              cosa="il video"
+              voci={[
+                {
+                  chiave: 'youtube',
+                  nome: 'video',
+                  volume: volumeYoutube,
+                  muto: youtubeMuto,
+                  cambia: (v) => {
+                    setVolumeYoutube(v)
+                    if (v > 0) setYoutubeMuto(false)
+                  },
+                  alternaMuto: () => setYoutubeMuto((m) => !m)
+                }
+              ]}
+              aFuoco={youtubeAFuoco}
+              metti={() => {
+                if (youtubeAFuoco) return setYoutubeAFuoco(false)
+                setAFuoco(null)
+                setSenzaFuoco(true)
+                setYoutubeAFuoco(true)
+              }}
+              schermoIntero={youtubeAFuoco ? schermoIntero : undefined}
+              azioni={
+                puoComandare
+                  ? [
+                      {
+                        icona: staSuonando(youtube) ? <Pausa /> : <Play />,
+                        testo: staSuonando(youtube) ? 'Metti in pausa per tutti' : 'Riproduci per tutti',
+                        fai: () =>
+                          void media.comanda(youtube.id, {
+                            azione: staSuonando(youtube) ? 'pausa' : 'play'
+                          })
+                      },
+                      {
+                        icona: <Riavvolgi />,
+                        testo: 'Ricomincia da capo',
+                        fai: () => void media.comanda(youtube.id, { azione: 'riparti' })
+                      },
+                      {
+                        icona: <Chiudi />,
+                        testo: 'Chiudi il video per tutti',
+                        pericolo: true,
+                        fai: () => void media.chiudi(youtube.id)
+                      }
+                    ]
+                  : undefined
+              }
+              chiudi={() => setMenu(null)}
+            />
+          )
+        }
+
         const suo = riquadri.find((r) => r.id === menu.id)
         if (!suo) return null
         return (
           <MenuRiquadro
             x={menu.x}
             y={menu.y}
-            dati={suo}
+            titolo={suo.nome}
+            sottotitolo={suo.tipo === 'schermo' ? suo.etichetta : undefined}
+            cosa={suo.tipo === 'schermo' ? 'lo schermo' : 'la voce'}
             voci={vociDi(suo)}
             aFuoco={grande?.id === suo.id}
-            moderatore={moderatore}
             metti={() => (grande?.id === suo.id ? togli() : metti(suo))}
             schermoIntero={grande?.id === suo.id ? schermoIntero : undefined}
             caccia={
@@ -1149,8 +1288,23 @@ const STRISCIA: Record<PosizioneStriscia, string> = {
   destra: 'w-52 flex-col overflow-y-auto overflow-x-hidden'
 }
 
+/**
+ * La chiave con cui il menu del tasto destro indica il video condiviso.
+ *
+ * Il menu si apre su un id di riquadro, e il video un riquadro non e': gli
+ * serve un nome che nessun riquadro possa avere. Gli id veri arrivano dalla
+ * SFU e sono `<identita>/<traccia>`, quindi due punti in testa bastano e
+ * avanzano.
+ */
+const MENU_YOUTUBE = '::youtube'
+
 /** Lo spazio fra un riquadro e l'altro, in pixel. Uguale al `gap-2` del CSS. */
 const SPAZIO = 8
+
+/** Se questa sessione sta suonando adesso. */
+function staSuonando(sessione: { stato: { inRiproduzione?: boolean } }): boolean {
+  return sessione.stato.inRiproduzione === true
+}
 
 /** Sedici a nove, come le camere e come quasi tutti gli schermi. */
 const RAPPORTO = 16 / 9

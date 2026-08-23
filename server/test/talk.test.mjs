@@ -804,7 +804,7 @@ describe('messaggi', () => {
   });
 
   it('elimina solo i propri, e nemmeno il proprietario tocca gli altrui', async (t) => {
-    const { admin, marco, testo } = await conCanale(t);
+    const { talk, admin, marco, testo } = await conCanale(t);
     const { messaggio: suo } = await (await marco.chiama(`/api/canali/${testo.id}/messaggi`, {
       method: 'POST',
       body: JSON.stringify({ testo: 'da togliere' }),
@@ -819,12 +819,19 @@ describe('messaggi', () => {
     );
     assert.equal((await marco.chiama(`/api/messaggi/${suo.id}`, { method: 'DELETE' })).status, 200);
 
-    // Il posto resta vuoto invece di sparire: se la riga sparisse,
-    // sparirebbero anche le risposte che la citano.
+    // Riletta, la conversazione non ha buchi: la lapide "messaggio rimosso"
+    // la vede solo chi era in ascolto, dall'evento. Chi apre la chat dopo
+    // trova solo cio' che c'e' ancora.
     const { messaggi } = await (await admin.chiama(`/api/canali/${testo.id}/messaggi`)).json();
-    assert.equal(messaggi.length, 2);
-    assert.equal(messaggi[0].eliminato, true);
-    assert.equal(messaggi[0].testo, '');
+    assert.equal(messaggi.length, 1);
+    assert.equal(messaggi[0].id, mio.id);
+
+    // La riga pero' resta in tabella: se sparisse davvero, sparirebbe anche
+    // l'id, e le risposte che la citavano punterebbero nel vuoto.
+    const riga = talk.db.messaggio(suo.id);
+    assert.ok(riga, 'la riga non va cancellata dal database');
+    assert.equal(riga.eliminato, 1);
+    assert.equal(riga.testo, '');
   });
 
   // Un messaggio dell'AI ha per autore il bot, e il bot non fa login: se a

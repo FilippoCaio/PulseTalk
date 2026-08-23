@@ -77,6 +77,52 @@ export function PannelloVolume({ voci }: { voci: VoceVolume[] }): React.JSX.Elem
 }
 
 /**
+ * L'altoparlante e basta: acceso o spento, senza cursore.
+ *
+ * Sta sopra alle condivisioni, dove il fumetto col cursore era la scelta
+ * sbagliata. Su uno schermo altrui si preme per un motivo solo — far tacere
+ * una notifica, o il video che e' partito da solo — e si preme di fretta; un
+ * fumetto che si apre chiede un secondo clic per fare quella cosa li', e
+ * intanto copre un pezzo di quello che si stava guardando.
+ *
+ * Il livello preciso non sparisce: sta nel menu del tasto destro, insieme a
+ * tutto il resto che si regola di rado. Un gesto per la cosa frequente, un
+ * altro per quella rara.
+ */
+export function BottoneMuto({
+  voci,
+  titolo
+}: {
+  voci: VoceVolume[]
+  /** Cosa si sta zittendo, per il nome del pulsante. */
+  titolo: string
+}): React.JSX.Element {
+  const zittito = voci.every((v) => v.muto || v.volume === 0)
+  const nome = zittito ? `Riattiva ${titolo}` : `Zittisci ${titolo}`
+
+  return (
+    <button
+      onClick={(evento) => {
+        evento.stopPropagation()
+        // Con piu' di una voce si spengono e si riaccendono insieme: il
+        // pulsante ne mostra una sola, e lasciarne indietro una vorrebbe dire
+        // un'icona che dice "acceso" sopra a qualcosa che non si sente.
+        for (const v of voci) if (v.muto === zittito) v.alternaMuto()
+      }}
+      title={`${nome} — il livello preciso sta nel menu del tasto destro`}
+      aria-label={nome}
+      className={`inline-flex h-8 w-8 items-center justify-center rounded-lg backdrop-blur-sm transition-colors ${
+        zittito
+          ? 'bg-male/70 text-white hover:bg-male/85'
+          : 'bg-black/55 text-white/85 hover:bg-black/80 hover:text-white'
+      }`}
+    >
+      {zittito ? <AltoparlanteMuto className="h-4 w-4" /> : <Altoparlante className="h-4 w-4" />}
+    </button>
+  )
+}
+
+/**
  * Il pulsante con l'altoparlante, e il pannello che gli si apre accanto.
  *
  * Il fumetto si chiude cliccando fuori o con Esc, e ferma i clic che lo

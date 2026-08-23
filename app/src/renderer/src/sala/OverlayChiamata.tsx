@@ -22,6 +22,7 @@ import {
   SchermoStop,
   Su,
   Utenti,
+  UtentiPiu,
   Video
 } from '../icone'
 
@@ -58,6 +59,7 @@ export default function OverlayChiamata({
   chat,
   insieme,
   soloGrande,
+  invita,
   impostazioni,
   schermoIntero,
   alternaMicrofono,
@@ -101,6 +103,16 @@ export default function OverlayChiamata({
   insieme?: { aperta: boolean; alterna: () => void; attiva: boolean }
   /** Assente quando non c'e' niente in sovraimpressione: niente da nascondere. */
   soloGrande?: { attivo: boolean; alterna: () => void }
+  /**
+   * Apre l'elenco degli amici da chiamare qui dentro.
+   *
+   * Assente quando l'invito e' gia' un riquadro intero nella griglia — vedi
+   * `RiquadroInvito`, che compare stando da soli — perche' due porte per la
+   * stessa stanza a mezzo centimetro di distanza sono una di troppo. Chi
+   * decide quale delle due mostrare e' la sala, che e' l'unica a sapere se la
+   * griglia c'e'.
+   */
+  invita?: () => void
   impostazioni: Impostazioni
   schermoIntero: { attivo: boolean; alterna: () => void }
   alternaMicrofono: () => void
@@ -194,6 +206,22 @@ export default function OverlayChiamata({
             : 'right-0'
       } ${mostra ? 'opacity-100' : 'opacity-0'}`}
     >
+      {/* Le due ombre, in cima e in fondo.
+
+          Le barre galleggiano sopra ai riquadri, e un riquadro puo' essere
+          qualunque cosa: una faccia in controluce, un documento bianco, un
+          terminale. Senza niente sotto, il nome del canale e i pulsanti a
+          volte si leggono e a volte scompaiono, e non c'e' modo di
+          prevederlo. Due sfumature scure danno un fondo a tutte e due le
+          strisce senza disegnare un bordo.
+
+          Stanno dentro all'involucro che si accende col cursore, quindi
+          vanno e vengono con i pulsanti: fuori resterebbero due bande scure
+          appoggiate su un video che nessuno stava piu' guardando. Prime fra i
+          fratelli, cosi' le barre ci stanno sopra. */}
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-black/65 via-black/25 to-transparent" />
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-black/65 via-black/25 to-transparent" />
+
       {/* La barra alta: quello che prima era l'intestazione fissa.
           Sta nello stesso involucro dei comandi in basso, quindi compare e
           sparisce con lo stesso gesto e con la stessa opacita' — due strisce
@@ -302,6 +330,25 @@ export default function OverlayChiamata({
             }}
             smetti={smettiDiCondividere}
           />
+        )}
+
+        {/* Chiamare qualcun altro qui dentro. Fuori dalla scatola, a
+            sinistra: non e' un comando del proprio microfono o della propria
+            camera come quelli li' dentro — non cambia niente di cio' che sta
+            uscendo da questo computer — ed e' la stessa ragione per cui
+            "esci" e' uscito dall'altra parte.
+
+            Manca quando l'invito e' gia' un riquadro nella griglia: la stessa
+            porta due volte non aiuta nessuno a trovarla. */}
+        {invita && (
+          <button
+            onClick={invita}
+            title="Invita degli amici in chiamata"
+            aria-label="Invita degli amici in chiamata"
+            className="flex h-[54px] w-[54px] shrink-0 items-center justify-center rounded-2xl border border-bordo bg-fondo-2/95 text-testo-2 shadow-xl shadow-black/40 backdrop-blur transition-colors hover:bg-fondo-3/95 hover:text-testo"
+          >
+            <UtentiPiu className="h-5 w-5" />
+          </button>
         )}
 
         <div className="flex items-center gap-1.5 rounded-2xl border border-bordo bg-fondo-2/95 p-1.5 shadow-xl shadow-black/40 backdrop-blur">
@@ -417,11 +464,23 @@ export default function OverlayChiamata({
           >
             <Riavvolgi />
           </Tondo>
-
-          <Tondo tono="male" titolo="Esci dalla chiamata" premi={esci}>
-            <Esci />
-          </Tondo>
         </div>
+
+        {/* Uscire, fuori dalla scatola e a destra di tutto.
+
+            Dentro era un tondo rosso in fila con gli altri, e in fila con gli
+            altri vuol dire a un pixel di distanza da "spegni la camera": e'
+            l'unico pulsante della barra da cui non si torna indietro, ed era
+            quello con il vicino piu' pericoloso. Staccato ha una mira tutta
+            sua, e il rosso pieno lo si riconosce senza leggere niente. */}
+        <button
+          onClick={esci}
+          title="Esci dalla chiamata"
+          aria-label="Esci dalla chiamata"
+          className="flex h-[54px] w-[54px] shrink-0 items-center justify-center rounded-2xl bg-male text-white shadow-xl shadow-black/40 transition-colors hover:bg-male/80 [&>svg]:h-5 [&>svg]:w-5"
+        >
+          <Esci />
+        </button>
 
         </div>
       </div>

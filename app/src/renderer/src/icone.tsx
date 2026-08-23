@@ -450,6 +450,25 @@ export function Utenti(props: Props): React.JSX.Element {
   )
 }
 
+/**
+ * Una persona con il piu': chiama qualcuno qui dentro.
+ *
+ * E' l'`Utenti` con la seconda sagoma sostituita da una crocetta. Due persone
+ * dicono "gli amici", il piu' dice "aggiungine uno": messe insieme dicono la
+ * cosa senza bisogno di leggere il nome del pulsante, che e' il punto di
+ * un'icona che compare solo quando serve.
+ */
+export function UtentiPiu(props: Props): React.JSX.Element {
+  return (
+    <Base {...props}>
+      <circle cx="9.5" cy="8" r="3.6" />
+      <path d="M3 20.5v-1a4.5 4.5 0 0 1 4.5-4.5h4a4.5 4.5 0 0 1 4.5 4.5v1" />
+      <path d="M19 6.5v5" />
+      <path d="M16.5 9h5" />
+    </Base>
+  )
+}
+
 /** La campanella: avvisami quando questa persona entra in un vocale. */
 export function Campanella(props: Props): React.JSX.Element {
   return (
