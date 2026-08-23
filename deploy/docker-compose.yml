@@ -93,6 +93,13 @@ services:
       TALK_TENOR_API_KEY: ${TALK_TENOR_API_KEY:-}
       TALK_TENOR_CLIENT_KEY: ${TALK_TENOR_CLIENT_KEY:-pulse_talk}
       TALK_GIPHY_API_KEY: ${TALK_GIPHY_API_KEY:-}
+      # Chi paga l'AI. `istanza`: una chiave per tutti, la mette chi amministra.
+      # `utente`: ognuno collega la propria e consuma il proprio credito.
+      # `mista`: la propria vince, quella di casa fa da rete.
+      #
+      # Come tutte quelle qui sotto, si cambia anche dal pannello Server dentro
+      # all'applicazione — e li' vince su quello che c'e' scritto qui.
+      TALK_AI_CHIAVI: ${TALK_AI_CHIAVI:-istanza}
       TALK_AI_BASE_URL: ${TALK_AI_BASE_URL:-https://api.openai.com/v1}
       TALK_AI_FORMATO: ${TALK_AI_FORMATO:-auto}
       TALK_AI_API_KEY: ${TALK_AI_API_KEY:-}
