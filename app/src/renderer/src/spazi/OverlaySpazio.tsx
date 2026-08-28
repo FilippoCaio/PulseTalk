@@ -22,12 +22,15 @@ import { Altoparlante } from '../icone'
 export default function OverlaySpazio({
   spazio,
   canaleVocale,
-  profili
+  profili,
+  ancora
 }: {
   spazio: Spazio
   /** Il canale vocale di questo spazio in cui si sta parlando adesso, se c'e'. */
   canaleVocale: Canale | null
   profili?: Map<number, { nome: string; avatar: string | null }>
+  /** Dove sta sullo schermo l'icona che lo ha fatto comparire. */
+  ancora: DOMRect
 }): React.JSX.Element {
   const presenti = canaleVocale?.presenti ?? []
 
@@ -45,8 +48,23 @@ export default function OverlaySpazio({
       // ridisegno che la fa ripartire. Il costo di sbagliare e' che il
       // cartellino non compare affatto, e il guadagno era un decimo di
       // secondo di morbidezza su una cosa che deve esserci subito.
-      className="pointer-events-none absolute left-full z-40 ml-2 w-max max-w-64 -translate-y-1/2 rounded-xl border border-bordo bg-fondo-2 px-3 py-2 shadow-lg shadow-black/40"
-      style={{ top: '50%' }}
+      //
+      // POSIZIONE FISSA, e non piu' `absolute left-full` rispetto al bottone.
+      // La barra degli spazi scorre — le serve, sul telefono — e una scatola
+      // che scorre ritaglia cio' che le esce su tutti e due gli assi, anche
+      // quello lasciato `visible`: il CSS lo porta ad `auto` da solo appena
+      // l'altro non e' piu' `visible`. Il cartellino, che sta a `left: 100%`
+      // di un'icona larga 48 dentro a una colonna larga 64, cadeva quindi
+      // fuori dal ritaglio: non si vedeva, e l'unica traccia che lasciava era
+      // la barra di scorrimento orizzontale che la sua sporgenza faceva
+      // comparire in fondo alla colonna.
+      //
+      // `fixed` si ancora alla finestra invece che al contenitore, quindi
+      // nessun `overflow` di mezzo lo puo' tagliare. In cambio le coordinate
+      // vanno misurate: le prende chi lo fa comparire, dal bottone, nello
+      // stesso momento in cui il mouse ci arriva.
+      className="pointer-events-none fixed z-40 w-max max-w-64 -translate-y-1/2 rounded-xl border border-bordo bg-fondo-2 px-3 py-2 shadow-lg shadow-black/40"
+      style={{ left: ancora.right + 8, top: ancora.top + ancora.height / 2 }}
       role="tooltip"
     >
       <p className="truncate text-sm font-medium text-testo">{spazio.nome}</p>

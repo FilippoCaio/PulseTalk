@@ -69,7 +69,25 @@ export default function BarraSpazi({
   const [creando, setCreando] = useState(false)
   const [nome, setNome] = useState('')
   const [inCorso, setInCorso] = useState(false)
-  const [sopra, setSopra] = useState<number | null>(null)
+  /**
+   * Quale icona ha il cursore sopra, e dove sta sullo schermo.
+   *
+   * L'ancoraggio serve perche' il cartellino non puo' piu' posizionarsi da
+   * solo rispetto al bottone: questa barra scorre (`overflow-y-auto`, che
+   * serve sul telefono), e una barra che scorre ritaglia cio' che le esce —
+   * su tutti e due gli assi, perche' il CSS porta ad `auto` anche quello
+   * lasciato `visible`. Un cartellino a `left: 100%` finiva quindi tagliato
+   * via, e l'unica cosa che se ne vedeva era la barra di scorrimento
+   * orizzontale che la sua sporgenza faceva comparire in fondo.
+   *
+   * Misurando qui e disegnando in posizione fissa, il cartellino esce dal
+   * ritaglio: `fixed` si ancora alla finestra, non al contenitore.
+   */
+  const [sopra, setSopra] = useState<{ id: number; ancora: DOMRect } | null>(null)
+
+  const entra = (id: number) => (e: React.FocusEvent | React.MouseEvent): void =>
+    setSopra({ id, ancora: e.currentTarget.getBoundingClientRect() })
+  const esci = (id: number) => (): void => setSopra((q) => (q?.id === id ? null : q))
 
   const conferma = async (): Promise<void> => {
     if (!nome.trim()) return
@@ -134,10 +152,10 @@ export default function BarraSpazi({
           <button
             key={spazio.id}
             onClick={() => scegli(spazio.id)}
-            onMouseEnter={() => setSopra(spazio.id)}
-            onMouseLeave={() => setSopra((quale) => (quale === spazio.id ? null : quale))}
-            onFocus={() => setSopra(spazio.id)}
-            onBlur={() => setSopra((quale) => (quale === spazio.id ? null : quale))}
+            onMouseEnter={entra(spazio.id)}
+            onMouseLeave={esci(spazio.id)}
+            onFocus={entra(spazio.id)}
+            onBlur={esci(spazio.id)}
             // Niente `title`: il cartellino dice gia' tutto, e i due insieme
             // farebbero comparire due riquadri sovrapposti dopo un secondo.
             aria-label={spazio.nome}
@@ -182,8 +200,13 @@ export default function BarraSpazi({
               />
             )}
 
-            {sopra === spazio.id && (
-              <OverlaySpazio spazio={spazio} canaleVocale={vocale} profili={profili} />
+            {sopra?.id === spazio.id && (
+              <OverlaySpazio
+                spazio={spazio}
+                canaleVocale={vocale}
+                profili={profili}
+                ancora={sopra.ancora}
+              />
             )}
           </button>
         )
