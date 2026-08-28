@@ -935,7 +935,7 @@ function Email({ api }: { api: Api }): React.JSX.Element | null {
   return (
     <Sezione
       titolo="Indirizzo di posta"
-      sotto="Serve solo a rientrare se dimentichi la password. Non lo vede nessun altro."
+      sotto="Serve a due cose: rientrare se dimentichi la password, e — solo se lo accendi tu — sapere quando qualcuno entra in un canale vocale mentre non sei collegato. Non lo vede nessun altro."
     >
       {esito && <Avviso tono="neutro">{esito}</Avviso>}
       {errore && <Avviso>{errore}</Avviso>}
@@ -981,6 +981,29 @@ function Email({ api }: { api: Api }): React.JSX.Element | null {
           </Bottone>
         </div>
       )}
+
+      {/* Gli avvisi compaiono solo con un indirizzo dimostrato. Offrirli prima
+          vorrebbe dire promettere di scrivere a una casella che potrebbe non
+          essere di chi sta guardando. L'elenco arriva dal server insieme al
+          valore, cosi' aggiungerne uno e' una riga in avvisi.mjs. */}
+      {stato.confermato &&
+        (stato.avvisi ?? []).map((avviso) => (
+          <Interruttore
+            key={avviso.chiave}
+            acceso={stato.scelte?.[avviso.chiave] === true}
+            cambia={(acceso) => {
+              // Ottimismo sull'interruttore: aspettare il giro di rete per
+              // vederlo muovere fa premere due volte.
+              setStato({ ...stato, scelte: { ...stato.scelte, [avviso.chiave]: acceso } })
+              void api
+                .impostaAvvisi({ [avviso.chiave]: acceso })
+                .then(({ scelte }) => setStato((s) => (s ? { ...s, scelte } : s)))
+                .catch((e) => setErrore((e as Error).message))
+            }}
+            titolo={avviso.nome}
+            sotto={avviso.sotto}
+          />
+        ))}
 
       {!aperto && !daConfermare && (
         <Bottone tono="fantasma" onClick={() => setAperto(true)}>

@@ -425,6 +425,10 @@ export interface StatoEmail {
   confermato: boolean
   possibile: boolean
   validoMinuti?: number
+  /** Il catalogo degli avvisi, mandato dal server: il pannello lo disegna da sé. */
+  avvisi?: { chiave: string; nome: string; sotto: string }[]
+  /** Quali sono accesi. Di serie nessuno. */
+  scelte?: Record<string, boolean>
 }
 
 export interface Presente {

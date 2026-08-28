@@ -22,6 +22,7 @@
 // una nuova da qui, che risolve lo stesso problema senza tenere in giro
 // niente da rubare.
 
+import { AVVISI, leggiPreferenze, scriviPreferenze } from '../avvisi.mjs';
 import { richiedeRuolo } from '../auth.mjs';
 import { indirizzoValido } from '../posta.mjs';
 import { cifra, creaFreno, problemaConLaPassword, verifica } from '../password.mjs';
@@ -62,7 +63,7 @@ function testoRecupero({ nome, utente, codice }) {
   ].join('\n');
 }
 
-export function rotteEmail(app, { db, servizi }) {
+export function rotteEmail(app, { db, servizi, avvisi = null }) {
   // Il freno del recupero conta per indirizzo. Chiedere il codice e' gratis e
   // non richiede di sapere niente: senza un limite, questa rotta diventa il
   // modo piu' comodo per riempire la casella di qualcuno.
@@ -82,7 +83,36 @@ export function rotteEmail(app, { db, servizi }) {
       // Senza posta configurata il pannello non offre niente, invece di
       // offrire un pulsante che poi fallisce.
       possibile: servizi.posta.disponibile,
+      // Il catalogo viaggia col valore: cosi' l'elenco degli avvisi si allunga
+      // aggiungendo una riga in avvisi.mjs, e il pannello lo disegna da solo.
+      avvisi: AVVISI,
+      scelte: leggiPreferenze(utente?.avvisiEmail),
     };
+  });
+
+  /**
+   * Quali avvisi si vogliono ricevere.
+   *
+   * Solo con un indirizzo confermato: accendere un avviso verso una casella
+   * mai dimostrata vorrebbe dire mandare a uno sconosciuto la notizia che i
+   * tuoi amici sono in chiamata. E' meno grave di una password, ma e' la
+   * stessa forma di errore.
+   */
+  app.put('/api/io/avvisi', { onRequest: richiedeRuolo('ospite') }, async (richiesta, risposta) => {
+    const attuale = db.utente(richiesta.utente.id);
+    if (!attuale?.email || !attuale.emailConfermata) {
+      return risposta.code(409).send({ errore: 'prima serve un indirizzo confermato' });
+    }
+
+    db.impostaAvvisi(
+      attuale.id,
+      scriviPreferenze(richiesta.body?.scelte, leggiPreferenze(attuale.avvisiEmail)),
+    );
+    // Le finestre di silenzio in memoria non c'entrano con le preferenze: chi
+    // accende un avviso adesso non deve aspettare mezz'ora per il primo.
+    avvisi?.dimentica?.();
+
+    return { scelte: leggiPreferenze(db.utente(attuale.id).avvisiEmail) };
   });
 
   /**

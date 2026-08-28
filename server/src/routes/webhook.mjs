@@ -20,7 +20,7 @@ const EVENTI_DI_PRESENZA = new Set([
   'track_unpublished',
 ]);
 
-export function rotteWebhook(app, { verificatore, presenze, eventi, db, chiamate = null }) {
+export function rotteWebhook(app, { verificatore, presenze, eventi, db, chiamate = null, avvisi = null }) {
   // Dentro a un plugin, e non e' un vezzo di stile: i parser di Fastify sono
   // incapsulati per contesto, e qui sotto ne serve uno che lascia il corpo
   // grezzo. Registrarlo sull'istanza principale lo applicherebbe a *tutte* le
@@ -80,6 +80,17 @@ export function rotteWebhook(app, { verificatore, presenze, eventi, db, chiamate
           db.membriDi(spazio.id).map((m) => m.id),
           { tipo: 'presenza', spazio: spazio.id },
         );
+
+        // E per posta a chi non e' collegato e lo ha chiesto. Non si aspetta:
+        // la SFU vuole un 200 subito e ritenta se non lo ottiene, e un server
+        // di posta lento trascinerebbe il webhook con se'.
+        if (avvisi && evento.event === 'participant_joined') {
+          const chi = Number(String(evento.participant?.identity ?? '').replace(/^u/, ''));
+          const canale = db.canalePerChiaveSfu?.(nome) ?? null;
+          if (Number.isInteger(chi) && chi > 0) {
+            avvisi.entratoInVocale({ utenteId: chi, spazioId: spazio.id, canale: canale?.nome ?? null });
+          }
+        }
       }
     }
 

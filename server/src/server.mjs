@@ -33,6 +33,7 @@ import { creaRegistroMusica } from './provider/musica.mjs';
 import { creaAnteprimeLink } from './provider/anteprime-link.mjs';
 import { creaGif } from './provider/gif.mjs';
 import { creaPosta } from './posta.mjs';
+import { creaAvvisi } from './avvisi.mjs';
 import { creaSpotify } from './provider/spotify.mjs';
 import { creaProviderAi } from './provider/ai.mjs';
 import { creaGeneratoreImmagini, elencoGeneratori } from './provider/generazione-immagini.mjs';
@@ -219,10 +220,12 @@ export async function creaTalk(configIniziale, { ambiente = process.env } = {}) 
     return servizi;
   };
 
+  const avvisi = creaAvvisi({ db, eventi, stati, servizi, log: app.log });
+
   agganciaAutenticazione(app, { db, config });
   rotteCompatibilita(app, { config });
   rotteAuth(app, { db, config, stati });
-  rotteEmail(app, { db, servizi });
+  rotteEmail(app, { db, servizi, avvisi });
   rotteInviti(app, { db });
   rotteAmici(app, { db, eventi });
   rotteSpazi(app, { db, config, presenze, eventi });
@@ -240,7 +243,7 @@ export async function creaTalk(configIniziale, { ambiente = process.env } = {}) 
   rotteBot(app, { db, eventi });
   rotteMessaggi(app, { db, eventi });
   await rotteAllegati(app, { db, config });
-  await rotteWebhook(app, { verificatore: creaVerificatore(config), presenze, eventi, db, chiamate });
+  await rotteWebhook(app, { verificatore: creaVerificatore(config), presenze, eventi, db, chiamate, avvisi });
 
   const fermaScadenze = await avviaScadenzaCanali({ db, presenze, eventi, log: app.log });
   app.addHook('onClose', async () => fermaScadenze());

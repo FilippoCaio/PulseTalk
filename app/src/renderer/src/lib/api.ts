@@ -457,6 +457,14 @@ export class Api {
     return this.chiama('/api/io/email', { method: 'DELETE' })
   }
 
+  /** Quali avvisi per posta si vogliono. Vuole un indirizzo gia' confermato. */
+  impostaAvvisi(scelte: Record<string, boolean>): Promise<{ scelte: Record<string, boolean> }> {
+    return this.chiama('/api/io/avvisi', {
+      method: 'PUT',
+      body: JSON.stringify({ scelte })
+    })
+  }
+
   // -- Rientrare senza la password --------------------------------------------
 
   /**

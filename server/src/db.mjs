@@ -123,6 +123,13 @@ const COLONNE_AGGIUNTE = [
   // proprio account passi dalla casella di uno sconosciuto.
   ['utenti', 'email', 'TEXT'],
   ['utenti', 'emailConfermata', 'INTEGER NOT NULL DEFAULT 0'],
+  // Quali avvisi per posta si vogliono ricevere, in un JSON.
+  //
+  // In un campo solo e non in una colonna per avviso: sono preferenze, e ogni
+  // avviso nuovo vorrebbe una migrazione. Vuoto vuol dire nessuno, che e' il
+  // valore giusto di serie — chi ha dato il suo indirizzo per rientrare non lo
+  // ha dato per essere avvisato.
+  ['utenti', 'avvisiEmail', "TEXT NOT NULL DEFAULT ''"],
   ['token', 'dispositivo', 'TEXT'],
   ['inviti', 'usiMax', 'INTEGER NOT NULL DEFAULT 1'],
   ['inviti', 'usi', 'INTEGER NOT NULL DEFAULT 0'],
@@ -710,6 +717,11 @@ export class TalkDb {
 
     this.sql.prepare('UPDATE codici SET usato = ? WHERE id = ?').run(ora(), riga.id);
     return { utente: riga.utente, indirizzo: riga.indirizzo };
+  }
+
+  /** Quali avvisi per posta vuole ricevere questa persona. */
+  impostaAvvisi(utenteId, json) {
+    return this.sql.prepare('UPDATE utenti SET avvisiEmail = ? WHERE id = ?').run(json, utenteId).changes;
   }
 
   /** L'indirizzo diventa quello dell'account, e da adesso e' dimostrato. */
@@ -1540,6 +1552,26 @@ export class TalkDb {
   chiaveSfu(canale) {
     const spazio = this.spazio(canale.spazio);
     return `${spazio.chiave}--${canale.chiave}`;
+  }
+
+  /**
+   * Il canale che sta dietro a un nome di stanza della SFU.
+   *
+   * La strada opposta di `chiaveSfu`, e serve a chi riceve un webhook: da li'
+   * arriva un nome di stanza e nient'altro. Torna null per una stanza che non
+   * corrisponde piu' a niente — un canale cancellato mentre la SFU la teneva
+   * ancora viva — ed e' un caso normale, non un errore.
+   */
+  canalePerChiaveSfu(nome) {
+    const [chiaveSpazio, chiaveCanale] = String(nome ?? '').split('--');
+    if (!chiaveSpazio || !chiaveCanale) return null;
+    return this.sql
+      .prepare(
+        `SELECT c.* FROM canali c
+           JOIN spazi s ON s.id = c.spazio
+          WHERE s.chiave = ? AND c.chiave = ?`,
+      )
+      .get(chiaveSpazio, chiaveCanale) ?? null;
   }
 
   // -- Messaggi --------------------------------------------------------------
