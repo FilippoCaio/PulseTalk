@@ -80,6 +80,31 @@ CREATE TABLE IF NOT EXISTS codici (
 CREATE INDEX IF NOT EXISTS idx_codici_ricerca ON codici(scopo, impronta);
 CREATE INDEX IF NOT EXISTS idx_codici_utente ON codici(utente, scopo);
 
+-- Entrare da un dispositivo nuovo senza digitare la password ------------------
+--
+-- Si guarda il codice su un aggeggio dove si e' gia' dentro e lo si scrive su
+-- quello nuovo. E' l'unica strada in cui la password non passa da una
+-- tastiera: e su un telefono, dove digitare venti caratteri e' un supplizio,
+-- e' anche la ragione per cui le password sul telefono diventano corte.
+--
+-- Perche' un codice piu' lungo di quelli mandati per posta. Quelli si cercano
+-- insieme all'indirizzo, che dice gia' di chi sono; questo si cerca da solo,
+-- perche' il dispositivo nuovo non sa ancora niente di nessuno. Senza un
+-- secondo dato che restringa la ricerca, l'unica difesa e' l'entropia: otto
+-- caratteri invece di sei, e due minuti invece di un quarto d'ora.
+--
+-- Vive appena il tempo di essere ribattuto, ed e' la parte che lo rende
+-- sicuro: un codice che apre un account e resta valido un pomeriggio e' un
+-- codice che qualcuno legge da sopra la spalla e usa dopo.
+CREATE TABLE IF NOT EXISTS accoppiamenti (
+  id       INTEGER PRIMARY KEY,
+  utente   INTEGER NOT NULL REFERENCES utenti(id) ON DELETE CASCADE,
+  impronta TEXT    NOT NULL UNIQUE,
+  creato   INTEGER NOT NULL,
+  scade    INTEGER NOT NULL,
+  usato    INTEGER
+);
+
 -- I posti ---------------------------------------------------------------------
 --
 -- Uno spazio e' quello che Discord chiama "server": un gruppo di persone con i

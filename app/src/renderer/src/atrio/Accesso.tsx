@@ -74,6 +74,7 @@ export function ModuloAccesso({
   const [inCorso, setInCorso] = useState(false)
   const [errore, setErrore] = useState<string | null>(null)
   const [recupero, setRecupero] = useState(false)
+  const [conCodice, setConCodice] = useState(false)
 
   /**
    * Se il nome scelto e' gia' di qualcun altro **su questo server**.
@@ -182,6 +183,16 @@ export function ModuloAccesso({
 
   if (recupero) {
     return <Recupero server={server} indietro={() => setRecupero(false)} />
+  }
+
+  if (conCodice) {
+    return (
+      <ConCodice
+        server={server}
+        indietro={() => setConCodice(false)}
+        quandoEntra={quandoEntra}
+      />
+    )
   }
 
   return (
@@ -336,6 +347,18 @@ export function ModuloAccesso({
             className="w-full text-center text-xs text-testo-3 underline underline-offset-2 hover:text-testo-2"
           >
             Ho dimenticato la password
+          </button>
+        )}
+
+        {modo === 'accedi' && (
+          <button
+            onClick={() => {
+              setErrore(null)
+              setConCodice(true)
+            }}
+            className="w-full text-center text-xs text-testo-3 underline underline-offset-2 hover:text-testo-2"
+          >
+            Ho un codice da un altro dispositivo
           </button>
         )}
       </div>
@@ -687,6 +710,87 @@ function Recupero({
             </Bottone>
           </>
         )}
+      </div>
+
+      <p className="mt-4 text-center text-sm text-testo-3">
+        <button
+          onClick={indietro}
+          className="text-vivo underline underline-offset-2 hover:text-vivo-2"
+        >
+          Torna indietro
+        </button>
+      </p>
+    </>
+  )
+}
+
+/**
+ * Entrare con un codice letto su un dispositivo dove si e' gia' dentro.
+ *
+ * E' la strada per il telefono, e la ragione per cui esiste e' che la password
+ * su una tastiera di vetro e' un supplizio — che e' anche il motivo per cui le
+ * password scelte sui telefoni sono corte. Qui non ne passa nessuna: il codice
+ * vive due minuti, vale una volta, e vale come credenziale.
+ *
+ * Nessun campo per il nome utente, di proposito: il codice dice gia' di chi e'.
+ * Chiederlo comunque sembrerebbe piu' sicuro e non lo sarebbe — sarebbe solo
+ * un secondo modo di sbagliare.
+ */
+function ConCodice({
+  server,
+  indietro,
+  quandoEntra
+}: {
+  server: string
+  indietro: () => void
+  quandoEntra: (entrata: Entrata) => Promise<void> | void
+}): React.JSX.Element {
+  const [codice, setCodice] = useState('')
+  const [inCorso, setInCorso] = useState(false)
+  const [errore, setErrore] = useState<string | null>(null)
+
+  const entra = async (): Promise<void> => {
+    setErrore(null)
+    const base = normalizzaIndirizzo(server)
+    if (!base) return setErrore('Serve l\'indirizzo del server.')
+
+    setInCorso(true)
+    try {
+      const esito = await new Api(base, null).collegaConCodice(codice.trim())
+      await quandoEntra({ indirizzo: base, token: esito.token, utente: esito.utente })
+    } catch (e) {
+      setErrore((e as Error).message)
+    } finally {
+      setInCorso(false)
+    }
+  }
+
+  return (
+    <>
+      <div className="space-y-4">
+        <p className="text-sm text-testo-2">
+          Su un dispositivo dove sei gia&apos; dentro apri{' '}
+          <span className="text-testo">Impostazioni → Account → Collega un dispositivo</span> e
+          scrivi qui il codice che compare.
+        </p>
+
+        <Campo etichetta="Il codice" aiuto="Otto caratteri. Vale due minuti.">
+          <input
+            className={`${classiInput} numeri text-center text-lg tracking-[0.3em] uppercase`}
+            value={codice}
+            maxLength={8}
+            onChange={(e) => setCodice(e.target.value.toUpperCase())}
+            onKeyDown={(e) => e.key === 'Enter' && !inCorso && void entra()}
+            autoFocus
+            spellCheck={false}
+          />
+        </Campo>
+
+        {errore && <Avviso>{errore}</Avviso>}
+
+        <Bottone tono="vivo" className="w-full" disabled={inCorso} onClick={() => void entra()}>
+          {inCorso ? 'un momento…' : 'Entra'}
+        </Bottone>
       </div>
 
       <p className="mt-4 text-center text-sm text-testo-3">

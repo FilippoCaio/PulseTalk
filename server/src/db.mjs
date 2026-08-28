@@ -719,6 +719,51 @@ export class TalkDb {
     return { utente: riga.utente, indirizzo: riga.indirizzo };
   }
 
+  // -- Collegare un dispositivo nuovo -----------------------------------------
+
+  /**
+   * Un codice da guardare qui e ribattere altrove.
+   *
+   * Come per i codici di posta, chiederne uno nuovo spegne il precedente: due
+   * codici vivi contemporaneamente sono due chiavi, e la seconda esiste solo
+   * perche' ci si e' dimenticati della prima.
+   *
+   * Otto caratteri e due minuti. Vedi lo schema per il perche' della
+   * differenza con i sei della posta.
+   */
+  creaAccoppiamento(utenteId, { validoSecondi = 120 } = {}) {
+    this.sql.prepare('DELETE FROM accoppiamenti WHERE utente = ?').run(utenteId);
+    const codice = codiceLeggibile(8);
+    this.sql
+      .prepare('INSERT INTO accoppiamenti (utente, impronta, creato, scade) VALUES (?, ?, ?, ?)')
+      .run(utenteId, impronta(codice), ora(), ora() + validoSecondi);
+    return { codice, scade: ora() + validoSecondi };
+  }
+
+  /**
+   * Consuma un codice e dice di chi era.
+   *
+   * Il codice si brucia appena viene riconosciuto, prima ancora che la sessione
+   * nasca: se qualcosa va storto dopo, il peggio che succede e' che ne serve
+   * uno nuovo — molto meglio di un codice che resta valido perche' il passo
+   * successivo e' fallito.
+   */
+  consumaAccoppiamento(codice) {
+    const pulito = String(codice ?? '').trim().toUpperCase().replace(/[\s-]/g, '');
+    if (!pulito) return { problema: 'codice non valido' };
+
+    const riga = this.sql.prepare('SELECT * FROM accoppiamenti WHERE impronta = ?').get(impronta(pulito));
+    if (!riga) return { problema: 'codice non valido' };
+    if (riga.usato) return { problema: 'codice gia\' usato' };
+    if (riga.scade < ora()) return { problema: 'codice scaduto' };
+
+    this.sql.prepare('UPDATE accoppiamenti SET usato = ? WHERE id = ?').run(ora(), riga.id);
+
+    const utente = this.utente(riga.utente);
+    if (!utente || !utente.attivo) return { problema: 'codice non valido' };
+    return { utente };
+  }
+
   /** Quali avvisi per posta vuole ricevere questa persona. */
   impostaAvvisi(utenteId, json) {
     return this.sql.prepare('UPDATE utenti SET avvisiEmail = ? WHERE id = ?').run(json, utenteId).changes;

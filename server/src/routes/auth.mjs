@@ -357,6 +357,54 @@ export function rotteAuth(app, { db, config, stati }) {
     },
   );
 
+  // -- Collegare un dispositivo nuovo ----------------------------------------
+
+  /**
+   * Un codice da guardare qui e ribattere sul dispositivo nuovo.
+   *
+   * E' la risposta alla domanda "e la mia password qual era?", che nasce quasi
+   * sempre davanti a un telefono in mano. Il server la password non la sa —
+   * ne conserva solo l'impronta scrypt — e non c'e' nessuna versione di questo
+   * programma in cui possa dirtela. Ma il problema vero non era saperla: era
+   * entrare da li'. Questo lo risolve senza che nessuna password attraversi
+   * una tastiera di vetro.
+   */
+  app.post(
+    '/api/auth/dispositivo/codice',
+    { onRequest: richiedeRuolo('ospite') },
+    async (richiesta) => {
+      const { codice, scade } = db.creaAccoppiamento(richiesta.utente.id);
+      richiesta.log.info({ utente: richiesta.utente.id }, 'codice di collegamento creato');
+      // Il codice in chiaro esiste solo in questa risposta: da qui in poi il
+      // database ne ha soltanto l'impronta.
+      return { codice, scade };
+    },
+  );
+
+  /**
+   * Il codice, da fuori, in cambio di una sessione.
+   *
+   * Senza credenziali, come il riscatto di un invito: il codice *e'* la
+   * credenziale, e vale due minuti. Il freno per indirizzo e' lo stesso che
+   * protegge l'accesso — qui non c'e' un nome utente su cui contare i
+   * tentativi, quindi si conta su chi li fa.
+   */
+  app.post('/api/auth/dispositivo/riscatta', async (richiesta, risposta) => {
+    const chiave = richiesta.ip ?? 'ignoto';
+    await frenoIndirizzo.attendi(chiave);
+
+    const esito = db.consumaAccoppiamento(richiesta.body?.codice);
+    if (esito.problema) {
+      frenoIndirizzo.sbagliato(chiave);
+      return risposta.code(400).send({ errore: esito.problema });
+    }
+    frenoIndirizzo.riuscito(chiave);
+
+    const token = db.creaSessione(esito.utente.id, dispositivoDa(richiesta));
+    richiesta.log.info({ utente: esito.utente.id }, 'dispositivo collegato con un codice');
+    return { token, utente: vistaUtente(db.utente(esito.utente.id)) };
+  });
+
   // -- Chi sono gli altri ----------------------------------------------------
 
   /**

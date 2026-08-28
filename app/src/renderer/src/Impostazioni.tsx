@@ -485,6 +485,7 @@ export default function PannelloImpostazioni({
             {pagina === 'account' && (
               <>
                 <Sessioni api={api} />
+                <CodiceDispositivo api={api} />
 
                 <Sezione titolo="Accesso">
                   <p className="text-sm text-testo-2">
@@ -876,6 +877,74 @@ function CambioPassword({ api }: { api: Api }): React.JSX.Element {
             </Bottone>
           </div>
         </div>
+      )}
+    </Sezione>
+  )
+}
+
+/**
+ * Un codice da ribattere su un dispositivo nuovo.
+ *
+ * E' la risposta alla domanda che nasce quasi sempre col telefono in mano: "e
+ * la mia password qual era?". Il server non la sa e non puo' saperla — ne
+ * conserva solo l'impronta scrypt, che e' a senso unico — ma il problema vero
+ * non era saperla: era entrare da li'. Cosi' non passa da nessuna tastiera di
+ * vetro, che e' anche il motivo per cui le password sui telefoni diventano
+ * corte.
+ *
+ * Il conto alla rovescia si vede, e non e' decorazione: due minuti sono pochi
+ * apposta — un codice che apre un account e resta buono un pomeriggio e' un
+ * codice che qualcuno legge da sopra la spalla e usa dopo — e chi lo sta
+ * copiando deve sapere quanto tempo ha invece di scoprirlo fallendo.
+ */
+function CodiceDispositivo({ api }: { api: Api }): React.JSX.Element {
+  const [codice, setCodice] = useState<string | null>(null)
+  const [restano, setRestano] = useState(0)
+  const [errore, setErrore] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!codice) return
+    if (restano <= 0) return setCodice(null)
+    const t = setTimeout(() => setRestano((s) => s - 1), 1000)
+    return () => clearTimeout(t)
+  }, [codice, restano])
+
+  const chiedi = (): void => {
+    setErrore(null)
+    void api
+      .codiceDispositivo()
+      .then(({ codice, scade }) => {
+        setCodice(codice)
+        setRestano(Math.max(1, scade - Math.floor(Date.now() / 1000)))
+      })
+      .catch((e) => setErrore((e as Error).message))
+  }
+
+  return (
+    <Sezione
+      titolo="Collega un dispositivo"
+      sotto="Per entrare da un telefono o da un altro computer senza riscrivere la password."
+    >
+      {errore && <Avviso>{errore}</Avviso>}
+
+      {codice ? (
+        <div className="space-y-2">
+          <p className="numeri rounded-lg border border-bordo bg-fondo px-4 py-3 text-center text-2xl tracking-[0.35em]">
+            {codice}
+          </p>
+          <p className="text-center text-xs text-testo-3">
+            scade fra {Math.floor(restano / 60)}:{String(restano % 60).padStart(2, '0')} · si usa
+            una volta sola
+          </p>
+          <p className="text-sm text-testo-2">
+            Sull&apos;altro dispositivo apri PulseTalk, scegli lo stesso server e usa{' '}
+            <span className="text-testo">Ho un codice da un altro dispositivo</span>.
+          </p>
+        </div>
+      ) : (
+        <Bottone tono="fantasma" onClick={chiedi}>
+          Mostrami un codice
+        </Bottone>
       )}
     </Sezione>
   )

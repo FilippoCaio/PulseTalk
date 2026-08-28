@@ -457,6 +457,27 @@ export class Api {
     return this.chiama('/api/io/email', { method: 'DELETE' })
   }
 
+  // -- Collegare un dispositivo nuovo -----------------------------------------
+
+  /**
+   * Un codice da guardare qui e ribattere sul dispositivo nuovo.
+   *
+   * E' la risposta a "e la mia password qual era?": il server non la sa — ne
+   * tiene solo l'impronta scrypt — ma il problema vero non era saperla, era
+   * entrare da li'.
+   */
+  codiceDispositivo(): Promise<{ codice: string; scade: number }> {
+    return this.chiama('/api/auth/dispositivo/codice', { method: 'POST' })
+  }
+
+  /** Il codice, da fuori, in cambio di una sessione. Senza credenziali. */
+  collegaConCodice(codice: string): Promise<{ token: string; utente: Utente }> {
+    return this.chiama('/api/auth/dispositivo/riscatta', {
+      method: 'POST',
+      body: JSON.stringify({ codice, dispositivo: dispositivo() })
+    })
+  }
+
   /** Quali avvisi per posta si vogliono. Vuole un indirizzo gia' confermato. */
   impostaAvvisi(scelte: Record<string, boolean>): Promise<{ scelte: Record<string, boolean> }> {
     return this.chiama('/api/io/avvisi', {
