@@ -412,6 +412,21 @@ export interface Sessione {
   questa: boolean
 }
 
+/**
+ * L'indirizzo di posta del proprio account.
+ *
+ * `confermato` e' la sola cosa che conta davvero: separa un indirizzo scritto
+ * da un indirizzo dimostrato, e solo il secondo serve a rientrare. `possibile`
+ * dice se il server sa spedire — dove non sa, il pannello non offre niente
+ * invece di offrire un pulsante che poi fallisce.
+ */
+export interface StatoEmail {
+  indirizzo: string | null
+  confermato: boolean
+  possibile: boolean
+  validoMinuti?: number
+}
+
 export interface Presente {
   identita: string
   nome: string

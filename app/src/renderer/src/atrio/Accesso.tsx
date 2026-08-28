@@ -73,6 +73,7 @@ export function ModuloAccesso({
 
   const [inCorso, setInCorso] = useState(false)
   const [errore, setErrore] = useState<string | null>(null)
+  const [recupero, setRecupero] = useState(false)
 
   /**
    * Se il nome scelto e' gia' di qualcun altro **su questo server**.
@@ -178,6 +179,10 @@ export function ModuloAccesso({
   const azione =
     etichettaAzione ?? { accedi: 'Entra', registra: 'Crea l\'account' }
   const nomePreso = preso?.nome === utente.trim().toLowerCase() ? preso : null
+
+  if (recupero) {
+    return <Recupero server={server} indietro={() => setRecupero(false)} />
+  }
 
   return (
     <>
@@ -318,6 +323,21 @@ export function ModuloAccesso({
         >
           {inCorso ? 'un momento…' : modo === 'accedi' ? azione.accedi : azione.registra}
         </Bottone>
+
+        {/* Solo entrando: in registrazione una password da dimenticare non
+            c'e' ancora, e l'offerta sarebbe una porta che non va da nessuna
+            parte. */}
+        {modo === 'accedi' && (
+          <button
+            onClick={() => {
+              setErrore(null)
+              setRecupero(true)
+            }}
+            className="w-full text-center text-xs text-testo-3 underline underline-offset-2 hover:text-testo-2"
+          >
+            Ho dimenticato la password
+          </button>
+        )}
       </div>
 
       <p className="mt-4 text-center text-sm text-testo-3">
@@ -513,5 +533,170 @@ export function Completa({
         </div>
       </div>
     </div>
+  )
+}
+
+/**
+ * Rientrare avendo dimenticato la password.
+ *
+ * Due passi, e il secondo non arriva mai da solo: si chiede il codice a una
+ * casella, e chi la apre lo riporta qui dentro. E' la stessa idea dell'invito
+ * — dimostrare di possedere qualcosa invece di sapere qualcosa — con la
+ * differenza che qui la cosa da possedere l'ha dichiarata l'interessato.
+ *
+ * LA RISPOSTA E' SEMPRE LA STESSA, anche per un indirizzo che qui dentro non
+ * esiste, e la schermata deve dire la stessa cosa: "se quell'indirizzo e'
+ * collegato a un account, il codice e' partito". Scrivere "indirizzo non
+ * trovato" renderebbe questo modulo il modo piu' comodo per sapere chi
+ * frequenta il server, e vanificherebbe la cautela che sta nella rotta.
+ *
+ * NON SI ENTRA DA QUI. Finito, si torna al modulo di accesso e si entra con la
+ * password appena scelta: e' un passaggio in piu' e serve, perche' e' il
+ * momento in cui si scopre di averla scritta come si credeva — mentre la si
+ * ha ancora in mente, invece che alla prossima apertura.
+ */
+function Recupero({
+  server,
+  indietro
+}: {
+  server: string
+  indietro: () => void
+}): React.JSX.Element {
+  const [passo, setPasso] = useState<'chiedo' | 'riscatto' | 'fatto'>('chiedo')
+  const [indirizzo, setIndirizzo] = useState('')
+  const [codice, setCodice] = useState('')
+  const [password, setPassword] = useState('')
+  const [conferma, setConferma] = useState('')
+  const [inCorso, setInCorso] = useState(false)
+  const [errore, setErrore] = useState<string | null>(null)
+
+  const api = (): Api => new Api(normalizzaIndirizzo(server) ?? '', null)
+
+  const chiedi = async (): Promise<void> => {
+    setErrore(null)
+    if (!indirizzo.trim()) return setErrore('Serve l\'indirizzo di posta.')
+    setInCorso(true)
+    try {
+      await api().chiediRecupero(indirizzo.trim())
+      setPasso('riscatto')
+    } catch (e) {
+      setErrore((e as Error).message)
+    } finally {
+      setInCorso(false)
+    }
+  }
+
+  const riscatta = async (): Promise<void> => {
+    setErrore(null)
+    if (password !== conferma) return setErrore('Le due password non coincidono.')
+    setInCorso(true)
+    try {
+      await api().riscattaRecupero(indirizzo.trim(), codice.trim(), password)
+      setPasso('fatto')
+    } catch (e) {
+      setErrore((e as Error).message)
+    } finally {
+      setInCorso(false)
+    }
+  }
+
+  return (
+    <>
+      <div className="space-y-4">
+        {passo === 'chiedo' && (
+          <>
+            <p className="text-sm text-testo-2">
+              Scrivi l&apos;indirizzo di posta collegato al tuo account: ti arriva un codice per
+              sceglierne una nuova.
+            </p>
+            <Campo etichetta="Indirizzo di posta">
+              <input
+                className={classiInput}
+                type="email"
+                value={indirizzo}
+                onChange={(e) => setIndirizzo(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && !inCorso && void chiedi()}
+                autoComplete="email"
+                autoFocus
+              />
+            </Campo>
+            {errore && <Avviso>{errore}</Avviso>}
+            <Bottone tono="vivo" className="w-full" disabled={inCorso} onClick={() => void chiedi()}>
+              {inCorso ? 'un momento…' : 'Mandami il codice'}
+            </Bottone>
+          </>
+        )}
+
+        {passo === 'riscatto' && (
+          <>
+            {/* Il condizionale non e' timidezza: e' la stessa frase che il
+                server dice a chiunque, ed e' cio' che impedisce di usare
+                questo modulo per scoprire chi ha un account qui. */}
+            <Avviso tono="neutro">
+              Se {indirizzo.trim()} e&apos; collegato a un account, il codice e&apos; partito. Vale
+              un quarto d&apos;ora.
+            </Avviso>
+            <Campo etichetta="Il codice" aiuto="Sei caratteri, dalla mail.">
+              <input
+                className={`${classiInput} numeri tracking-[0.3em] uppercase`}
+                value={codice}
+                maxLength={6}
+                onChange={(e) => setCodice(e.target.value.toUpperCase())}
+                autoFocus
+              />
+            </Campo>
+            <Campo etichetta="Nuova password" aiuto="Almeno 10 caratteri.">
+              <input
+                className={classiInput}
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="new-password"
+              />
+            </Campo>
+            <Campo etichetta="Ripeti la nuova password">
+              <input
+                className={classiInput}
+                type="password"
+                value={conferma}
+                onChange={(e) => setConferma(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && !inCorso && void riscatta()}
+                autoComplete="new-password"
+              />
+            </Campo>
+            {errore && <Avviso>{errore}</Avviso>}
+            <Bottone
+              tono="vivo"
+              className="w-full"
+              disabled={inCorso}
+              onClick={() => void riscatta()}
+            >
+              {inCorso ? 'un momento…' : 'Rimetti la password'}
+            </Bottone>
+          </>
+        )}
+
+        {passo === 'fatto' && (
+          <>
+            <Avviso tono="neutro">
+              Fatto. Sono state chiuse tutte le sessioni aperte con questo account, anche sugli
+              altri dispositivi.
+            </Avviso>
+            <Bottone tono="vivo" className="w-full" onClick={indietro}>
+              Entra con la password nuova
+            </Bottone>
+          </>
+        )}
+      </div>
+
+      <p className="mt-4 text-center text-sm text-testo-3">
+        <button
+          onClick={indietro}
+          className="text-vivo underline underline-offset-2 hover:text-vivo-2"
+        >
+          Torna indietro
+        </button>
+      </p>
+    </>
   )
 }

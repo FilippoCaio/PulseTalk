@@ -9,7 +9,7 @@
 // chiavi per entrare, e l'unico momento in cui il valore vero esiste e' quando
 // lo si consegna a chi lo usera'.
 
-import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, randomInt, timingSafeEqual } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 
@@ -33,6 +33,30 @@ export const impronta = (valore) => createHash('sha256').update(valore, 'utf8').
 const segretoNuovo = (byte = 32) => randomBytes(byte).toString('base64url');
 
 const ora = () => Math.floor(Date.now() / 1000);
+
+/**
+ * Quante volte si puo' sbagliare un codice prima che smetta di valere.
+ *
+ * E' il controllo che rende sicuro un codice corto. Sei caratteri su
+ * trentadue sono circa trenta bit: pochi contro un programma che li prova
+ * tutti, moltissimi contro cinque tentativi. La lunghezza serve a poterlo
+ * digitare, il tetto a renderlo inespugnabile.
+ */
+const TENTATIVI_MAX = 5;
+
+/**
+ * Un codice che una persona deve poter leggere da una mail e ribattere.
+ *
+ * Niente 0, O, 1, I e L: sono le coppie che si sbagliano leggendo, e uno
+ * scambio fra zero e O si presenta come "il codice non funziona" — indistinguibile
+ * da un codice davvero scaduto, e quindi impossibile da capire per chi lo sta
+ * digitando.
+ *
+ * `randomInt` e non `Math.random()`: il codice apre un account.
+ */
+const ALFABETO = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
+const codiceLeggibile = (quanti = 6) =>
+  Array.from({ length: quanti }, () => ALFABETO[randomInt(ALFABETO.length)]).join('');
 
 // I segni diacritici, scritti per punto di codice invece che come carattere
 // vero: questo file passa da editor, da git e da un disco exFAT, e un accento
@@ -89,6 +113,16 @@ const COLONNE_AGGIUNTE = [
   ['utenti', 'utente', 'TEXT'],
   ['utenti', 'password', 'TEXT'],
   ['utenti', 'avatar', 'TEXT'],
+  // L'indirizzo e' facoltativo, e resta tale: questa e' un'istanza fra amici,
+  // e c'e' chi non lo dara'. Per loro la strada per rientrare resta quella di
+  // prima — un admin che rimette la password — e va bene cosi'.
+  //
+  // `emailConfermata` non e' un dettaglio contabile: e' cio' che separa un
+  // indirizzo scritto da un indirizzo posseduto. Solo il secondo puo' servire
+  // a rientrare, altrimenti basterebbe un refuso perche' la strada per il
+  // proprio account passi dalla casella di uno sconosciuto.
+  ['utenti', 'email', 'TEXT'],
+  ['utenti', 'emailConfermata', 'INTEGER NOT NULL DEFAULT 0'],
   ['token', 'dispositivo', 'TEXT'],
   ['inviti', 'usiMax', 'INTEGER NOT NULL DEFAULT 1'],
   ['inviti', 'usi', 'INTEGER NOT NULL DEFAULT 0'],
@@ -573,6 +607,116 @@ export class TalkDb {
 
   impostaPassword(utenteId, cifrata) {
     return this.sql.prepare('UPDATE utenti SET password = ? WHERE id = ?').run(cifrata, utenteId).changes;
+  }
+
+  // -- L'indirizzo di posta, e i codici che lo certificano --------------------
+
+  /**
+   * Scrive l'indirizzo e lo dichiara da confermare.
+   *
+   * Sempre da confermare, anche se e' lo stesso di prima riscritto uguale: la
+   * conferma dice "questa casella la apre chi ha scritto qui dentro", ed e'
+   * una cosa che si dimostra, non che si eredita da una schermata precedente.
+   */
+  impostaEmail(utenteId, indirizzo) {
+    return this.sql
+      .prepare('UPDATE utenti SET email = ?, emailConfermata = 0 WHERE id = ?')
+      .run(indirizzo ? String(indirizzo).trim().toLowerCase() : null, utenteId).changes;
+  }
+
+  /**
+   * Chi ha questo indirizzo, se qualcuno ce l'ha e lo ha confermato.
+   *
+   * Solo confermati, ed e' il cuore del recupero: un indirizzo scritto e mai
+   * dimostrato non deve poter aprire niente, o basterebbe scrivere quello di
+   * qualcun altro nel proprio account per farsi mandare la sua chiave di casa.
+   */
+  utentePerEmail(indirizzo) {
+    return this.sql
+      .prepare('SELECT * FROM utenti WHERE email = ? AND emailConfermata = 1 AND attivo = 1')
+      .get(String(indirizzo ?? '').trim().toLowerCase());
+  }
+
+  /**
+   * Un codice nuovo, e la fine di quelli di prima.
+   *
+   * Chiederne uno secondo invalida il primo. Senza, ogni richiesta lascerebbe
+   * dietro un codice ancora valido, e chi ne chiede cinque perche' il primo
+   * non arriva si ritroverebbe cinque chiavi in giro invece di una.
+   *
+   * Torna il codice in chiaro, e questa e' l'unica volta che esiste: da qui in
+   * poi il database ne ha solo l'impronta, e nessuna rotta puo' ripescarlo.
+   */
+  creaCodice({ utente, scopo, indirizzo, validoMinuti = 15 }) {
+    this.sql.prepare('DELETE FROM codici WHERE utente = ? AND scopo = ?').run(utente, scopo);
+    const codice = codiceLeggibile();
+    this.sql
+      .prepare(
+        `INSERT INTO codici (utente, scopo, impronta, indirizzo, creato, scade)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+      .run(utente, scopo, impronta(codice), String(indirizzo).trim().toLowerCase(), ora(), ora() + validoMinuti * 60);
+    return codice;
+  }
+
+  /**
+   * Perche' questo codice non va bene, se non va bene.
+   *
+   * Un posto solo che decide, come per gli inviti. Le stesse condizioni
+   * ripetute nella conferma e nel recupero sarebbero due copie, e quando due
+   * copie divergono a divergere e' quella che lascia passare.
+   */
+  #problemaConCodice(riga) {
+    if (!riga) return 'codice non valido';
+    if (riga.usato) return 'codice gia\' usato';
+    if (riga.scade < ora()) return 'codice scaduto';
+    if (riga.tentativi >= TENTATIVI_MAX) return 'troppi tentativi: chiedine uno nuovo';
+    return null;
+  }
+
+  /**
+   * Consuma un codice, o dice perche' no.
+   *
+   * Il tentativo si conta *prima* di rispondere, e vale anche quando il codice
+   * non esiste — altrimenti sbagliarlo mille volte costerebbe quanto
+   * sbagliarlo una, e sei caratteri si finiscono di provare in un pomeriggio.
+   *
+   * Si cerca per indirizzo oltre che per impronta: e' l'indirizzo a dire di
+   * chi e' il codice, e chiederlo insieme toglie ogni ambiguita' su codici
+   * corti che potrebbero, in teoria, ripetersi fra due persone.
+   */
+  consumaCodice({ scopo, indirizzo, codice }) {
+    const pulito = String(codice ?? '').trim().toUpperCase().replace(/[\s-]/g, '');
+    const dove = String(indirizzo ?? '').trim().toLowerCase();
+
+    const riga = this.sql
+      .prepare('SELECT * FROM codici WHERE scopo = ? AND indirizzo = ? AND impronta = ?')
+      .get(scopo, dove, impronta(pulito));
+
+    // Il conteggio va sul codice vivo di quella persona, non su quello che non
+    // e' stato trovato: e' l'unico modo di far pesare un tentativo sbagliato.
+    if (!riga) {
+      this.sql
+        .prepare('UPDATE codici SET tentativi = tentativi + 1 WHERE scopo = ? AND indirizzo = ? AND usato IS NULL')
+        .run(scopo, dove);
+      return { problema: 'codice non valido' };
+    }
+
+    const problema = this.#problemaConCodice(riga);
+    if (problema) {
+      this.sql.prepare('UPDATE codici SET tentativi = tentativi + 1 WHERE id = ?').run(riga.id);
+      return { problema };
+    }
+
+    this.sql.prepare('UPDATE codici SET usato = ? WHERE id = ?').run(ora(), riga.id);
+    return { utente: riga.utente, indirizzo: riga.indirizzo };
+  }
+
+  /** L'indirizzo diventa quello dell'account, e da adesso e' dimostrato. */
+  confermaEmail(utenteId, indirizzo) {
+    return this.sql
+      .prepare('UPDATE utenti SET email = ?, emailConfermata = 1 WHERE id = ?')
+      .run(String(indirizzo).trim().toLowerCase(), utenteId).changes;
   }
 
   /** Nome visibile e foto: non toccano le credenziali. */

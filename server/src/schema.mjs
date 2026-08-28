@@ -45,6 +45,41 @@ CREATE TABLE IF NOT EXISTS inviti (
   utente   INTEGER REFERENCES utenti(id)
 );
 
+-- I codici usa e getta mandati per posta ---------------------------------------
+--
+-- Due usi, una tabella: 'conferma' certifica che un indirizzo appartiene a chi
+-- lo ha scritto, 'recupero' rimette in piedi una password dimenticata. Stanno
+-- insieme perche' hanno le stesse regole — scadono, valgono una volta sola, e
+-- si consumano contando i tentativi — e due tabelle vorrebbero dire due copie
+-- di quelle regole, che prima o poi divergono. A divergere e' sempre quella
+-- che concede.
+--
+-- Il codice non si salva in chiaro, come gli inviti: resta solo la sua
+-- impronta. Chi legge questo file non trova niente con cui entrare.
+--
+-- La colonna indirizzo c'e' e non si ricava dall'utente, ed e' il punto della
+-- conferma: il codice certifica *quell'indirizzo li'*, che al momento
+-- dell'invio non e' ancora quello dell'account — se lo fosse, si starebbe
+-- confermando una cosa gia' data per buona.
+--
+-- La colonna tentativi e' il controllo che conta davvero. Un codice di sei
+-- caratteri e' corto abbastanza da poter essere digitato da una persona, e
+-- quindi corto abbastanza da poter essere indovinato da un programma: e' il
+-- tetto sui tentativi, non la lunghezza, a rendere la cosa impraticabile.
+CREATE TABLE IF NOT EXISTS codici (
+  id        INTEGER PRIMARY KEY,
+  utente    INTEGER NOT NULL REFERENCES utenti(id) ON DELETE CASCADE,
+  scopo     TEXT    NOT NULL,
+  impronta  TEXT    NOT NULL,
+  indirizzo TEXT    NOT NULL,
+  creato    INTEGER NOT NULL,
+  scade     INTEGER NOT NULL,
+  usato     INTEGER,
+  tentativi INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_codici_ricerca ON codici(scopo, impronta);
+CREATE INDEX IF NOT EXISTS idx_codici_utente ON codici(utente, scopo);
+
 -- I posti ---------------------------------------------------------------------
 --
 -- Uno spazio e' quello che Discord chiama "server": un gruppo di persone con i

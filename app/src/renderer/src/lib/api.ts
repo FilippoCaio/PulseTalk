@@ -23,6 +23,7 @@ import type {
   Ruolo,
   SessioneMedia,
   Sessione,
+  StatoEmail,
   Spazio,
   Utente,
   VoceCoda,
@@ -423,6 +424,64 @@ export class Api {
 
   revocaSessione(id: number): Promise<{ revocata: number }> {
     return this.chiama(`/api/auth/sessioni/${id}/revoca`, { method: 'POST' })
+  }
+
+  // -- L'indirizzo di posta ---------------------------------------------------
+
+  /** Quale indirizzo c'e', se e' dimostrato, e se il server sa spedire. */
+  statoEmail(): Promise<StatoEmail> {
+    return this.chiama('/api/io/email')
+  }
+
+  /**
+   * Scrive l'indirizzo e ci fa mandare un codice.
+   *
+   * La password attuale serve davvero: l'indirizzo e' la strada per rientrare,
+   * quindi cambiarlo vale quanto cambiare la password.
+   */
+  scriviEmail(indirizzo: string, password: string): Promise<StatoEmail> {
+    return this.chiama('/api/io/email', {
+      method: 'POST',
+      body: JSON.stringify({ indirizzo, password })
+    })
+  }
+
+  confermaEmail(codice: string): Promise<StatoEmail> {
+    return this.chiama('/api/io/email/conferma', {
+      method: 'POST',
+      body: JSON.stringify({ codice })
+    })
+  }
+
+  togliEmail(): Promise<StatoEmail> {
+    return this.chiama('/api/io/email', { method: 'DELETE' })
+  }
+
+  // -- Rientrare senza la password --------------------------------------------
+
+  /**
+   * Chiede il codice per rimettere la password.
+   *
+   * La risposta e' la stessa che l'indirizzo esista o no, di proposito: una
+   * differenza qui direbbe a chiunque chi ha un account su questo server.
+   */
+  chiediRecupero(indirizzo: string): Promise<{ ok: boolean; validoMinuti: number }> {
+    return this.chiama('/api/auth/recupero', {
+      method: 'POST',
+      body: JSON.stringify({ indirizzo })
+    })
+  }
+
+  /** Il codice e la password nuova. Chiude tutte le sessioni, compresa la propria. */
+  riscattaRecupero(
+    indirizzo: string,
+    codice: string,
+    password: string
+  ): Promise<{ ok: boolean; sessioniChiuse: number }> {
+    return this.chiama('/api/auth/recupero/riscatta', {
+      method: 'POST',
+      body: JSON.stringify({ indirizzo, codice, password })
+    })
   }
 
   config(): Promise<{ sfuUrl: string; limiti: Limiti; versione: number }> {

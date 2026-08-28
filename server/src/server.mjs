@@ -44,6 +44,7 @@ import { rotteAutoWriter } from './routes/autowriter.mjs';
 import { rotteBot } from './routes/bot.mjs';
 import { rotteAmici } from './routes/amici.mjs';
 import { rotteAuth } from './routes/auth.mjs';
+import { rotteEmail } from './routes/email.mjs';
 import { rotteCompatibilita } from './routes/compatibilita.mjs';
 import { rotteDiretti } from './routes/diretti.mjs';
 import { rotteEventiSpazio } from './routes/eventi-spazio.mjs';
@@ -221,6 +222,7 @@ export async function creaTalk(configIniziale, { ambiente = process.env } = {}) 
   agganciaAutenticazione(app, { db, config });
   rotteCompatibilita(app, { config });
   rotteAuth(app, { db, config, stati });
+  rotteEmail(app, { db, servizi });
   rotteInviti(app, { db });
   rotteAmici(app, { db, eventi });
   rotteSpazi(app, { db, config, presenze, eventi });

@@ -3,6 +3,7 @@ import type {
   Impostazioni,
   PosizioneStriscia,
   Sessione,
+  StatoEmail,
   StatoAggiornamento,
   StatoUtente,
   Utente
@@ -424,6 +425,7 @@ export default function PannelloImpostazioni({
                 <Profilo api={api} utente={utente} quandoCambia={quandoCambiaUtente} />
                 <StatoDiProfilo api={api} utente={utente} quandoCambia={quandoCambiaUtente} />
                 <CambioPassword api={api} />
+                <Email api={api} />
               </>
             )}
 
@@ -877,6 +879,164 @@ function CambioPassword({ api }: { api: Api }): React.JSX.Element {
       )}
     </Sezione>
   )
+}
+
+/**
+ * L'indirizzo di posta del proprio account.
+ *
+ * Facoltativo, e resta tale: questa e' un'istanza fra amici e c'e' chi non lo
+ * dara'. Serve a una cosa sola, per adesso — rientrare avendo dimenticato la
+ * password — e la schermata lo dice invece di chiederlo e basta: un campo che
+ * non spiega a cosa serve e' un campo che si compila male o non si compila.
+ *
+ * I due stati che contano sono «scritto» e «dimostrato», e si vedono a colpo
+ * d'occhio. Solo il secondo apre qualcosa: senza la conferma, un refuso
+ * manderebbe la chiave di casa a uno sconosciuto.
+ */
+function Email({ api }: { api: Api }): React.JSX.Element | null {
+  const [stato, setStato] = useState<StatoEmail | null>(null)
+  const [aperto, setAperto] = useState(false)
+  const [indirizzo, setIndirizzo] = useState('')
+  const [password, setPassword] = useState('')
+  const [codice, setCodice] = useState('')
+  const [errore, setErrore] = useState<string | null>(null)
+  const [esito, setEsito] = useState<string | null>(null)
+  const [inCorso, setInCorso] = useState(false)
+
+  useEffect(() => {
+    void api
+      .statoEmail()
+      .then(setStato)
+      .catch((e) => setErrore((e as Error).message))
+  }, [api])
+
+  const fai = async (cosa: () => Promise<StatoEmail>, detto: string): Promise<void> => {
+    setErrore(null)
+    setEsito(null)
+    setInCorso(true)
+    try {
+      setStato(await cosa())
+      setEsito(detto)
+    } catch (e) {
+      setErrore((e as Error).message)
+    } finally {
+      setInCorso(false)
+    }
+  }
+
+  // Dove il server non sa spedire non si offre niente: un campo che promette
+  // di far rientrare, su un server senza posta, promette una cosa che non
+  // succedera'.
+  if (!stato?.possibile) return null
+
+  // Scritto ma non confermato: l'unica cosa da fare e' finire.
+  const daConfermare = stato.indirizzo !== null && !stato.confermato
+
+  return (
+    <Sezione
+      titolo="Indirizzo di posta"
+      sotto="Serve solo a rientrare se dimentichi la password. Non lo vede nessun altro."
+    >
+      {esito && <Avviso tono="neutro">{esito}</Avviso>}
+      {errore && <Avviso>{errore}</Avviso>}
+
+      {stato.indirizzo && (
+        <div className="flex items-center gap-3 rounded-lg border border-bordo bg-fondo px-3 py-2">
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm">{stato.indirizzo}</p>
+            <p className="text-[11px] text-testo-3">
+              {stato.confermato ? (
+                <span className="text-ok">confermato</span>
+              ) : (
+                <span className="text-attenzione">manca la conferma: cosi&apos; non serve a rientrare</span>
+              )}
+            </p>
+          </div>
+          <button
+            className="shrink-0 text-xs text-male hover:underline"
+            onClick={() => void fai(() => api.togliEmail(), 'Indirizzo tolto.')}
+          >
+            togli
+          </button>
+        </div>
+      )}
+
+      {daConfermare && (
+        <div className="space-y-3">
+          <Campo
+            etichetta="Il codice che ti e' arrivato"
+            aiuto="Sei caratteri. Vale un quarto d'ora, e si usa una volta sola."
+          >
+            <input
+              className={`${classiInput} numeri tracking-[0.3em] uppercase`}
+              value={codice}
+              maxLength={6}
+              onChange={(e) => setCodice(e.target.value.toUpperCase())}
+              onKeyDown={(e) => e.key === 'Enter' && !inCorso && void confermaOra()}
+              autoFocus
+            />
+          </Campo>
+          <Bottone tono="vivo" disabled={inCorso} onClick={() => void confermaOra()}>
+            Conferma
+          </Bottone>
+        </div>
+      )}
+
+      {!aperto && !daConfermare && (
+        <Bottone tono="fantasma" onClick={() => setAperto(true)}>
+          {stato.indirizzo ? 'Cambia indirizzo' : 'Aggiungi un indirizzo'}
+        </Bottone>
+      )}
+
+      {aperto && !daConfermare && (
+        <div className="space-y-3">
+          <Campo etichetta="Indirizzo">
+            <input
+              className={classiInput}
+              type="email"
+              value={indirizzo}
+              onChange={(e) => setIndirizzo(e.target.value)}
+              autoComplete="email"
+              autoFocus
+            />
+          </Campo>
+          {/* La password attuale non e' un fastidio in piu': l'indirizzo e' la
+              strada per rientrare, quindi cambiarlo vale quanto cambiare la
+              password. Senza questa domanda, una sessione lasciata aperta su un
+              computer altrui basterebbe a dirottare tutti i recuperi futuri. */}
+          <Campo etichetta="La tua password" aiuto="Serve perche' questo indirizzo e' la strada per rientrare.">
+            <input
+              className={classiInput}
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && !inCorso && void scriviOra()}
+              autoComplete="current-password"
+            />
+          </Campo>
+          <div className="flex gap-2">
+            <Bottone tono="vivo" disabled={inCorso} onClick={() => void scriviOra()}>
+              Mandami il codice
+            </Bottone>
+            <Bottone tono="fantasma" onClick={() => setAperto(false)}>
+              Annulla
+            </Bottone>
+          </div>
+        </div>
+      )}
+    </Sezione>
+  )
+
+  async function scriviOra(): Promise<void> {
+    await fai(() => api.scriviEmail(indirizzo, password), 'Ti ho mandato un codice.')
+    setPassword('')
+    setAperto(false)
+  }
+
+  async function confermaOra(): Promise<void> {
+    await fai(() => api.confermaEmail(codice), 'Indirizzo confermato.')
+    setCodice('')
+  }
 }
 
 /**
