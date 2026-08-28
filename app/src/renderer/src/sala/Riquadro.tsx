@@ -67,7 +67,8 @@ export default function Riquadro({
   nonGuardare,
   puoiGuardare = true,
   senzaCornice = false,
-  specchiaCamera = false
+  specchiaCamera = false,
+  nuovo = true
 }: {
   dati: Dati
   /** La foto profilo, se ne ha caricata una. Altrimenti restano le iniziali. */
@@ -102,6 +103,17 @@ export default function Riquadro({
   senzaCornice?: boolean
   /** Solo anteprima locale della webcam; non modifica mai la traccia pubblicata. */
   specchiaCamera?: boolean
+  /**
+   * Vero solo la prima volta che questo riquadro compare nella sala.
+   *
+   * Lo decide la sala, non lui: questo componente viene rimontato ogni volta
+   * che il riquadro cambia posto — la griglia, la striscia e il posto grande
+   * sono tre rami diversi — e da dentro non c'e' modo di distinguere "sono
+   * appena arrivato" da "mi hanno spostato". Senza questa distinzione
+   * l'animazione di comparsa riparte a ogni ingrandimento, su tutti i riquadri
+   * insieme, e quello che si vede e' un lampo.
+   */
+  nuovo?: boolean
 }): React.JSX.Element {
   const video = useRef<HTMLVideoElement>(null)
   const scatola = useRef<HTMLDivElement>(null)
@@ -391,7 +403,7 @@ export default function Riquadro({
       onPointerUp={lasciato}
       onPointerCancel={lasciato}
       onDoubleClick={() => !quandoPunta && ingrandibile && setZoom(FERMO)}
-      className={`scheda group relative h-full w-full overflow-hidden bg-fondo-2 ${
+      className={`${nuovo ? 'scheda' : ''} group relative h-full w-full overflow-hidden bg-fondo-2 ${
         senzaCornice ? 'rounded-none' : 'rounded-xl'
       } ${
         dati.tipo === 'schermo' ? 'bg-black' : ''

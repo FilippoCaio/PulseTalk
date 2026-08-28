@@ -264,7 +264,21 @@ export default function Sala({
       setTrascinato(null)
       setSopra(null)
     },
-    className: `${trascinato === id ? 'opacity-40' : ''} ${
+    // Il riquadro che si sta trascinando resta opaco.
+    //
+    // Prima si smorzava al 40%, che e' la convenzione dei trascinamenti di
+    // file: li' l'oggetto e' un'icona ferma, e sbiadirlo dice "questo lo stai
+    // spostando". Qui l'oggetto e' un video in movimento — una faccia che
+    // parla, uno schermo su cui qualcuno sta lavorando — e smorzarlo vuol dire
+    // smettere di poterlo guardare proprio nel momento in cui si sta decidendo
+    // dove metterlo. Il segno c'e' lo stesso, ma e' un contorno tratteggiato
+    // intorno: si distingue dal contorno pieno di dove si sta per lasciare, e
+    // non toglie un pixel di immagine.
+    className: `${
+      trascinato === id
+        ? 'outline outline-2 outline-dashed -outline-offset-2 outline-testo-3 rounded-xl'
+        : ''
+    } ${
       sopra === id && trascinato !== id
         ? 'outline outline-2 -outline-offset-2 outline-vivo rounded-xl'
         : ''
@@ -396,6 +410,32 @@ export default function Sala({
   useEffect(() => {
     setSenzaFuoco(false)
   }, [quantiSchermi])
+
+  /**
+   * Chi e' gia' comparso in questa sala.
+   *
+   * Serve perche' i riquadri vengono rimontati quando cambiano posto: il posto
+   * grande, la striscia e la griglia sono tre rami diversi dell'albero, e
+   * spostarne uno vuol dire distruggerlo e rifarlo. L'animazione di comparsa
+   * riparte quindi a ogni ingrandimento — e non su uno solo: mettendo a fuoco
+   * un riquadro, tutti gli altri passano insieme dalla griglia alla striscia.
+   * Quello che si vede e' un lampo di tutta la sala.
+   *
+   * Questa memoria sta qui e non dentro al riquadro proprio perche' la sala
+   * non viene rimontata: e' l'unico posto da cui si possa distinguere "sono
+   * appena arrivato" da "mi hanno spostato".
+   *
+   * Si legge durante il disegno e si aggiorna dopo, quando cio' che si e'
+   * disegnato e' ormai sullo schermo.
+   */
+  const gia = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    const presenti = new Set(riquadri.map((r) => r.id))
+    // Chi se ne va viene dimenticato: rientrando e' una comparsa vera, e
+    // merita l'animazione come la prima volta.
+    for (const id of gia.current) if (!presenti.has(id)) gia.current.delete(id)
+    for (const id of presenti) gia.current.add(id)
+  })
 
   const { grande, striscia: strisciaScelta, griglia: grigliaScelta } = useMemo(() => {
     const scelto = aFuoco ? (riquadri.find((r) => r.id === aFuoco) ?? null) : null
@@ -730,6 +770,7 @@ export default function Sala({
                       ) : grande ? (
                         <Riquadro
                           dati={grande}
+                          nuovo={!gia.current.has(grande.id)}
                           foto={fotoDi(grande.identita)}
                           mostraStatistiche={impostazioni.mostraStatistiche}
                           specchiaCamera={impostazioni.specchiaCamera ?? true}
@@ -776,6 +817,7 @@ export default function Sala({
                           >
                             <Riquadro
                               dati={riquadro}
+                              nuovo={!gia.current.has(riquadro.id)}
                               foto={fotoDi(riquadro.identita)}
                               mostraStatistiche={impostazioni.mostraStatistiche}
                               specchiaCamera={impostazioni.specchiaCamera ?? true}
@@ -877,6 +919,7 @@ export default function Sala({
                         >
                           <Riquadro
                             dati={riquadro}
+                            nuovo={!gia.current.has(riquadro.id)}
                             foto={fotoDi(riquadro.identita)}
                             mostraStatistiche={impostazioni.mostraStatistiche}
                             specchiaCamera={impostazioni.specchiaCamera ?? true}
