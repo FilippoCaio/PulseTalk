@@ -669,7 +669,7 @@ export default function Sala({
           {/* Detto una volta e piccolo: due gesti che non si scoprono da soli,
               e che dopo averli letti una volta non si dimenticano piu'. */}
           {grande?.tipo === 'schermo' && (
-            <p className="pointer-events-none absolute right-4 bottom-2 z-10 text-[11px] text-testo-3 opacity-0 transition-opacity duration-200 group-hover/sala:opacity-100">
+            <p className="pointer-events-none absolute right-4 bottom-2 z-10 text-[11px] text-testo-3 opacity-0 transition-opacity group-hover/sala:opacity-100">
               rotella per ingrandire · clic per indicare · icona in basso a destra per la
               sovraimpressione
             </p>

@@ -22,6 +22,14 @@
   --color-ok: #3ecf8e;
   --color-attenzione: #f5a524;
   --color-male: #f4525a;
+
+  /* Anche i passaggi di colore e i passaggi al passaggio del mouse, che in
+     Tailwind sono 150ms di serie. Un pannello che si posa lento sopra a un
+     pulsante che si accende di scatto e' un'interfaccia con due velocita'.
+     Stanno qui e non in :root perche' sono variabili del tema: e' da qui che
+     Tailwind le legge per le sue utility `transition-*`. */
+  --default-transition-duration: 260ms;
+  --default-transition-timing-function: cubic-bezier(0.28, 0.75, 0, 1);
 }
 
 html,
@@ -195,7 +203,7 @@ textarea {
    leggere come una cosa che e' appena successa invece che come una scritta che
    era gia' li'. */
 .comparsa {
-  animation: comparsa 0.16s ease-out;
+  animation: comparsa var(--tempo-lampo) var(--dolce);
 }
 
 @keyframes comparsa {
@@ -234,21 +242,42 @@ textarea {
  *
  * `--molla` supera di poco il punto d'arrivo e ci torna: e' quel filo di
  * rimbalzo che fa sembrare un pannello una cosa che si e' posata li' invece di
- * una che e' apparsa. Sotto i 200 millisecondi non si legge come lentezza, si
- * legge come materia.
+ * una che e' apparsa.
  *
  * `--dolce` non rimbalza e serve a cio' che copre lo schermo: un velo che
  * rimbalza sembra un difetto.
+ *
+ * PIU' FLUIDE CHE RAPIDE, ed e' una scelta. Le durate stanno sopra i due
+ * decimi, dove il movimento smette di essere un lampo e si legge per intero:
+ * si vede da dove una cosa arriva, non solo che e' arrivata. Si paga in
+ * reattivita' percepita, e va bene — questa non e' un'interfaccia in cui si
+ * corre.
+ *
+ * Ma allungare da solo non basta, e le altre due mosse sono la parte che si
+ * dimentica:
+ *
+ * IL RIMBALZO CALA MENTRE LA DURATA CRESCE. Una molla che sfora del 24% a 240
+ * millisecondi si legge come materia; la stessa a 420 si legge come un
+ * tremolio, perche' il ritorno dura abbastanza da poterlo seguire con
+ * l'occhio. Piu' tempo c'e', meno esagerazione serve.
+ *
+ * LE DISTANZE CRESCONO CON LE DURATE. Un pannello che percorre quattordici
+ * pixel in 240 millisecondi ha una sua velocita'; gli stessi quattordici in
+ * 420 sembrano un'esitazione. Allungando il tempo si allunga anche il
+ * tragitto, cosi' la velocita' resta quella di una cosa che si muove invece
+ * che di una che stenta.
  * ------------------------------------------------------------------------- */
 
 :root {
-  --molla: cubic-bezier(0.22, 1.24, 0.36, 1);
-  --dolce: cubic-bezier(0.32, 0.72, 0, 1);
+  /* Sforo ridotto da 1.24 a 1.08: alle durate nuove e' quel che resta di un
+     rimbalzo prima che diventi un'oscillazione da guardare. */
+  --molla: cubic-bezier(0.16, 1.08, 0.32, 1);
+  --dolce: cubic-bezier(0.28, 0.75, 0, 1);
   --uscita: cubic-bezier(0.4, 0, 0.9, 0.35);
 
-  --tempo-lampo: 120ms;
-  --tempo-corto: 180ms;
-  --tempo: 240ms;
+  --tempo-lampo: 200ms;
+  --tempo-corto: 300ms;
+  --tempo: 420ms;
 }
 
 /* Il velo scuro dietro a un pannello. Solo opacita': muovere anche lui
@@ -271,7 +300,7 @@ textarea {
 @keyframes pannello-entra {
   from {
     opacity: 0;
-    transform: translate3d(0, 14px, 0) scale(0.965);
+    transform: translate3d(0, 22px, 0) scale(0.955);
   }
   to {
     opacity: 1;
@@ -287,7 +316,7 @@ textarea {
 @keyframes lato-entra {
   from {
     opacity: 0;
-    transform: translate3d(-10px, 0, 0);
+    transform: translate3d(-16px, 0, 0);
   }
   to {
     opacity: 1;
@@ -303,7 +332,7 @@ textarea {
 @keyframes lato-entra-destra {
   from {
     opacity: 0;
-    transform: translate3d(10px, 0, 0);
+    transform: translate3d(16px, 0, 0);
   }
   to {
     opacity: 1;
@@ -317,7 +346,7 @@ textarea {
 @keyframes menu-entra {
   from {
     opacity: 0;
-    transform: scale(0.94) translate3d(0, -6px, 0);
+    transform: scale(0.92) translate3d(0, -10px, 0);
   }
   to {
     opacity: 1;
@@ -336,11 +365,11 @@ textarea {
 @keyframes scheda-entra {
   0% {
     opacity: 0;
-    transform: scale(0.9);
+    transform: scale(0.88);
   }
   60% {
     opacity: 1;
-    transform: scale(1.012);
+    transform: scale(1.008);
   }
   100% {
     opacity: 1;
@@ -348,14 +377,14 @@ textarea {
   }
 }
 .scheda {
-  animation: scheda-entra 0.28s var(--molla);
+  animation: scheda-entra var(--tempo) var(--molla);
 }
 
 /* Una riga di elenco che arriva: piccola, e da sinistra come si legge. */
 @keyframes riga-entra {
   from {
     opacity: 0;
-    transform: translate3d(-6px, 0, 0);
+    transform: translate3d(-10px, 0, 0);
   }
   to {
     opacity: 1;
@@ -370,19 +399,19 @@ textarea {
    gradini e poi si ferma: oltre, l'ultima riga arriverebbe quando chi guarda
    ha gia' smesso di aspettare. */
 .scaglione-1 {
-  animation-delay: 25ms;
+  animation-delay: 45ms;
 }
 .scaglione-2 {
-  animation-delay: 50ms;
+  animation-delay: 90ms;
 }
 .scaglione-3 {
-  animation-delay: 75ms;
+  animation-delay: 135ms;
 }
 .scaglione-4 {
-  animation-delay: 100ms;
+  animation-delay: 180ms;
 }
 .scaglione-5 {
-  animation-delay: 125ms;
+  animation-delay: 225ms;
 }
 
 /*
@@ -401,5 +430,25 @@ textarea {
   .scheda,
   .riga-comparsa {
     animation: none;
+  }
+
+  /* E le durate a zero, che e' la rete sotto all'elenco qui sopra.
+     Quell'elenco va tenuto aggiornato a mano, e prima o poi qualcuno
+     aggiungera' un'animazione dimenticandosene; azzerando i tre tempi e i
+     passaggi di Tailwind, cio' che si dimentica smette comunque di muoversi.
+     Serviva meno quando il movimento piu' lungo durava 240 millisecondi. */
+  :root {
+    --tempo-lampo: 0.01ms;
+    --tempo-corto: 0.01ms;
+    --tempo: 0.01ms;
+    --default-transition-duration: 0.01ms;
+  }
+
+  .scaglione-1,
+  .scaglione-2,
+  .scaglione-3,
+  .scaglione-4,
+  .scaglione-5 {
+    animation-delay: 0ms;
   }
 }

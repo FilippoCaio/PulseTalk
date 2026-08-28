@@ -400,7 +400,7 @@ export default function Riquadro({
       {/* Il bordo, sopra a tutto e senza rubare i clic. */}
       {!senzaCornice && (
         <div
-          className={`pointer-events-none absolute inset-0 z-10 rounded-xl transition-colors duration-150 ${bordo}`}
+          className={`pointer-events-none absolute inset-0 z-10 rounded-xl transition-colors ${bordo}`}
         />
       )}
       {dati.traccia ? (

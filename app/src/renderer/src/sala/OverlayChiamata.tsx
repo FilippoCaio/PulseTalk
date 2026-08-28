@@ -285,7 +285,7 @@ export default function OverlayChiamata({
       // perche' un overlay non puo' misurare un elemento che gli sta accanto.
       // Allargando la chat e dimenticando questa riga, i comandi finiscono
       // sotto al pannello — ed e' successo.
-      className={`pointer-events-none absolute top-0 bottom-0 left-0 z-30 transition-opacity duration-200 ${
+      className={`pointer-events-none absolute top-0 bottom-0 left-0 z-30 transition-opacity ${
         insieme?.aperta
           ? 'right-0 md:right-[clamp(18rem,34vw,26rem)]'
           : chat?.aperta
