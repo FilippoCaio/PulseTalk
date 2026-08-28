@@ -279,11 +279,17 @@ export default function OverlayChiamata({
       // entrambe vanno sottratte, altrimenti i pulsanti finiscono sopra al
       // pannello e la barra inferiore e' centrata sulla finestra anziche'
       // sulla chiamata.
+      //
+      // Le due misure sono le stesse scritte sugli `aside` in Sala.tsx, e
+      // vanno cambiate insieme: sono la stessa larghezza detta due volte,
+      // perche' un overlay non puo' misurare un elemento che gli sta accanto.
+      // Allargando la chat e dimenticando questa riga, i comandi finiscono
+      // sotto al pannello — ed e' successo.
       className={`pointer-events-none absolute top-0 bottom-0 left-0 z-30 transition-opacity duration-200 ${
         insieme?.aperta
           ? 'right-0 md:right-[clamp(18rem,34vw,26rem)]'
           : chat?.aperta
-            ? 'right-0 md:right-[clamp(14rem,28vw,20rem)]'
+            ? 'right-0 md:right-[clamp(18rem,32vw,26rem)]'
             : 'right-0'
       } ${mostra ? 'opacity-100' : 'opacity-0'}`}
     >
