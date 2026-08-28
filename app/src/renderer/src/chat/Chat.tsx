@@ -103,7 +103,13 @@ export default function Chat({
       <div
         ref={scorrevole}
         onScroll={alloScorrimento}
-        className="min-h-0 flex-1 overflow-y-auto px-4 py-3"
+        // `overflow-x-hidden` e non solo `overflow-y-auto`: quando un asse non e'
+        // `visible`, il CSS porta anche l'altro ad `auto`, e bastava un
+        // elemento largo un pixel di troppo per far comparire la barra
+        // orizzontale in fondo alla chat. Dichiararlo toglie quella barra dai
+        // casi possibili; che poi non ci sia niente da nascondere lo garantisce
+        // il contenuto, che adesso va a capo invece di allargarsi.
+        className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4 py-3"
       >
         {chat.caricando && chat.messaggi.length === 0 && (
           <p className="respiro py-8 text-center text-sm text-testo-3">carico…</p>

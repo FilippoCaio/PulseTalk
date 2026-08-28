@@ -948,7 +948,7 @@ export default function Sala({
         {/* La chat, a destra dei riquadri e non sopra: sovrapposta coprirebbe
             proprio le persone che si stanno guardando mentre si scrive. */}
         {mostraChat && canaleVocale && (
-          <aside className="absolute inset-0 z-40 flex min-w-0 flex-col border-l border-bordo bg-fondo-2 md:static md:w-[clamp(14rem,28vw,20rem)] md:shrink-0">
+          <aside className="absolute inset-0 z-40 flex min-w-0 flex-col border-l border-bordo bg-fondo-2 md:static md:w-[clamp(18rem,32vw,26rem)] md:shrink-0">
             <Chat
               api={api}
               canale={canaleVocale}

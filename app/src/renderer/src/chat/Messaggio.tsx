@@ -225,7 +225,7 @@ export default function Messaggio({
           ) : (
             dati.testo &&
             !soloGif && (
-              <p className="text-sm leading-relaxed break-words whitespace-pre-wrap text-testo">
+              <p className="text-sm leading-relaxed [overflow-wrap:anywhere] whitespace-pre-wrap text-testo">
                 <ConLink
                   testo={dati.testo}
                   suLink={(url, sopra) => {
@@ -261,7 +261,7 @@ export default function Messaggio({
               onClick={() => ponte.apriEsterno(anteprima.url)}
               onMouseEnter={() => setLinkSorvolato(true)}
               onMouseLeave={() => setLinkSorvolato(false)}
-              className="mt-1.5 flex max-w-xl overflow-hidden rounded-lg border border-bordo bg-fondo-2 text-left hover:border-fondo-3"
+              className="mt-1.5 flex w-full max-w-xl overflow-hidden rounded-lg border border-bordo bg-fondo-2 text-left hover:border-fondo-3"
             >
               <span className="min-w-0 flex-1 p-3">
                 <span className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-testo-3">
@@ -271,7 +271,7 @@ export default function Messaggio({
                 {anteprima.titolo && <span className="mt-0.5 block text-sm font-medium">{anteprima.titolo}</span>}
                 {anteprima.descrizione && <span className="mt-1 line-clamp-2 block text-xs text-testo-3">{anteprima.descrizione}</span>}
               </span>
-              {immagineAnteprima && <img src={immagineAnteprima} alt="" className="h-28 w-36 shrink-0 object-cover" />}
+              {immagineAnteprima && <img src={immagineAnteprima} alt="" className="h-28 w-36 max-w-[38%] shrink object-cover" />}
             </button>
           )}
 
@@ -438,7 +438,7 @@ function Attaccato({ api, allegato }: { api: Api; allegato: Allegato }): React.J
           else window.open(u, '_blank')
         })
       }}
-      className="mt-1.5 flex items-center gap-2 rounded-lg border border-bordo bg-fondo-2 px-3 py-2 text-left text-sm hover:border-fondo-3"
+      className="mt-1.5 flex max-w-full items-center gap-2 rounded-lg border border-bordo bg-fondo-2 px-3 py-2 text-left text-sm hover:border-fondo-3"
     >
       <span className="text-testo-3">↓</span>
       <span className="min-w-0">
@@ -469,7 +469,18 @@ function ConLink({
             onMouseLeave={() => suLink?.(pezzo, false)}
             onFocus={() => suLink?.(pezzo, true)}
             onBlur={() => suLink?.(pezzo, false)}
-            className="text-vivo underline underline-offset-2 hover:text-vivo-2"
+            // `anywhere` e non `break-word`, e la differenza qui e' tutto.
+            //
+            // Sono tutti e due `overflow-wrap`, e tutti e due spezzano una
+            // parola lunga. Ma `break-word` non tocca la **larghezza minima
+            // intrinseca** della scatola, e questa scatola e' un <button>,
+            // cioe' un inline-block che si dimensiona sul contenuto: un URL di
+            // ottanta caratteri gli dava una larghezza minima di ottanta
+            // caratteri, e la colonna della chat vocale si allargava sotto,
+            // con la barra di scorrimento orizzontale a seguire. `anywhere`
+            // entra anche in quel calcolo, quindi il pulsante si stringe
+            // quanto serve e il link va a capo.
+            className="max-w-full text-left align-bottom [overflow-wrap:anywhere] text-vivo underline underline-offset-2 hover:text-vivo-2"
           >
             {pezzo}
           </button>

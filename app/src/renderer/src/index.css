@@ -311,24 +311,6 @@ textarea {
   }
 }
 
-/* Il cartellino agganciato a un'icona della barra: entra dal lato, e i suoi
-   fotogrammi si portano dietro il `-translate-y-1/2` che lo centra. Senza,
-   l'animazione sostituirebbe quel `transform` per il tempo in cui dura e il
-   cartellino salterebbe di mezza altezza prima di rimettersi a posto. */
-@keyframes cartellino-entra {
-  from {
-    opacity: 0;
-    transform: translate3d(-8px, -50%, 0);
-  }
-  to {
-    opacity: 1;
-    transform: translate3d(0, -50%, 0);
-  }
-}
-.cartellino-comparsa {
-  animation: cartellino-entra var(--tempo-lampo) var(--molla);
-}
-
 /* Un menu che si apre da sotto al pulsante che l'ha chiamato: nasce piccolo
    dall'angolo in alto, non dal centro. L'origine la mette chi lo usa quando
    l'angolo e' un altro. */
@@ -416,7 +398,6 @@ textarea {
   .da-sinistra,
   .da-destra,
   .menu-comparsa,
-  .cartellino-comparsa,
   .scheda,
   .riga-comparsa {
     animation: none;
