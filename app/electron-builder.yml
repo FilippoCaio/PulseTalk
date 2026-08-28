@@ -13,6 +13,25 @@ files:
   - out/**
   - build/icona.png
   - package.json
+  # Il progetto nativo Android non ha niente da fare in un pacchetto Windows, e
+  # non e' solo peso morto: e' quello che rendeva l'installer inutilizzabile.
+  #
+  # I pacchetti `@capacitor/*` stanno fra le dipendenze perche' servono alla CLI
+  # di Capacitor per sincronizzare il progetto Android; il codice che gira lo
+  # impacchetta gia' Vite dentro ai bundle di `out/`, quindi da qui nessuno li
+  # richiede a runtime. Insieme a loro pero' entrava anche la cartella `build/`
+  # lasciata da Gradle — classi Java compilate, sotto percorsi come
+  # `.../build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/...`.
+  #
+  # `CopyFiles` di NSIS passa da SHFileOperation, che si ferma a 259 caratteri
+  # anche dove Windows ha i percorsi lunghi abilitati: quel flag vale solo per
+  # le API che lo dichiarano nel manifest, e l'installer non lo fa. Sopra quella
+  # soglia la copia fallisce, e l'installer lo racconta come «PulseTalk cannot
+  # be closed» — che e' la sua ipotesi, non il motivo. La 0.5.3 stava a 258 e
+  # passava per due caratteri; la 0.5.4 e' arrivata a 268 e non si installava
+  # piu'.
+  - '!node_modules/@capacitor/android/**'
+  - '!node_modules/@capacitor/*/android/**'
 
 # Dove l'app installata va a cercare le versioni nuove, e dove electron-builder
 # carica quando gli si passa --publish.
