@@ -362,22 +362,39 @@ textarea {
    E' l'unica animazione qui dentro con un rimbalzo che si vede davvero, ed e'
    voluto — sono le due cose che si vogliono notare mentre si sta guardando
    altro. */
+/*
+ * E qui il rimbalzo non c'e', a differenza di tutto il resto.
+ *
+ * C'era: il riquadro cresceva fino a 1.008 e tornava a 1, con la molla che ci
+ * aggiungeva il suo. Il guaio e' dove vive questo riquadro — dentro a una
+ * maschera con `overflow-hidden` cucita sulla sua misura esatta. Tutto cio'
+ * che supera l'1 finisce fuori dalla maschera e viene tagliato via, e la prima
+ * cosa che sta sul bordo e' il bordo.
+ *
+ * Lo sforo pero' e' una percentuale, mentre il bordo e' due pixel fissi:
+ * misurato, su una tessera da 400x225 ne restava fuori 0,92 px e il bordo si
+ * assottigliava della meta'; sul riquadro grande da 1280x720 ne restava fuori
+ * 2,95 px e il bordo spariva del tutto per tutta la durata dell'animazione. Da
+ * qui il "si spegne e si riaccende" — che si notava ingrandendo, cioe' proprio
+ * dove la maschera e' piu' grande e il taglio piu' profondo.
+ *
+ * Quindi la scala non supera mai 1, e l'accelerazione e' `--dolce` e non
+ * `--molla`: quella curva sfora di suo (1.08), e su un valore che arriva a 1
+ * sforare vuol dire passare da 1. Il riquadro si annuncia lo stesso crescendo
+ * da 0.88 — l'annuncio era quello, non il rimbalzo.
+ */
 @keyframes scheda-entra {
-  0% {
+  from {
     opacity: 0;
     transform: scale(0.88);
   }
-  60% {
-    opacity: 1;
-    transform: scale(1.008);
-  }
-  100% {
+  to {
     opacity: 1;
     transform: scale(1);
   }
 }
 .scheda {
-  animation: scheda-entra var(--tempo) var(--molla);
+  animation: scheda-entra var(--tempo) var(--dolce);
 }
 
 /* Una riga di elenco che arriva: piccola, e da sinistra come si legge. */
