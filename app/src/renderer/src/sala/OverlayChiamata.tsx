@@ -10,6 +10,7 @@ import {
   CameraSpenta,
   Esci,
   Fumetto,
+  Giu,
   Ingranaggio,
   Microfono,
   MicrofonoSpento,
@@ -26,6 +27,8 @@ import {
   UtentiPiu,
   Video
 } from '../icone'
+
+const RITARDO_NASCONDI_MS = 3000
 
 /**
  * La barra dei comandi della chiamata, sospesa sopra ai riquadri.
@@ -64,6 +67,7 @@ export default function OverlayChiamata({
   invita,
   impostazioni,
   schermoIntero,
+  tornaAiServer,
   alternaMicrofono,
   alternaCamera,
   apriCondivisione,
@@ -131,6 +135,8 @@ export default function OverlayChiamata({
   invita?: () => void
   impostazioni: Impostazioni
   schermoIntero: { attivo: boolean; alterna: () => void }
+  /** Esce dalla vista della sala, non dalla chiamata. Solo telefono. */
+  tornaAiServer?: () => void
   alternaMicrofono: () => void
   alternaCamera: () => void
   apriCondivisione: () => void
@@ -148,6 +154,8 @@ export default function OverlayChiamata({
   )
   const scadenza = useRef<number | null>(null)
   const radice = useRef<HTMLDivElement>(null)
+  const visibileAdesso = useRef(true)
+  const tocco = useRef<{ id: number; x: number; y: number } | null>(null)
 
   // Si ascolta solo la superficie della chiamata. Muovere il mouse nella chat
   // o nelle colonne laterali non deve far ricomparire comandi che non
@@ -160,24 +168,81 @@ export default function OverlayChiamata({
       if (scadenza.current !== null) window.clearTimeout(scadenza.current)
       scadenza.current = null
     }
-    const riavvia = (): void => {
-      annulla()
-      setVisibile(true)
-      scadenza.current = window.setTimeout(() => setVisibile(false), 2600)
+    const impostaVisibile = (valore: boolean): void => {
+      visibileAdesso.current = valore
+      setVisibile(valore)
     }
-    const esce = (): void => {
+    const nascondiDopo = (ritardo = RITARDO_NASCONDI_MS): void => {
+      annulla()
+      scadenza.current = window.setTimeout(() => impostaVisibile(false), ritardo)
+    }
+    const mostraPerUnPo = (): void => {
+      impostaVisibile(true)
+      nascondiDopo()
+    }
+    const muove = (evento: PointerEvent): void => {
+      // Su touch un pointermove arriva anche tenendo il dito fermo con un
+      // minimo tremolio. Era questo a far sembrare necessaria la pressione
+      // prolungata. Il movimento continua invece a essere il gesto giusto per
+      // mouse e trackpad.
+      if (evento.pointerType === 'mouse') mostraPerUnPo()
+    }
+    const entra = (evento: PointerEvent): void => {
+      if (evento.pointerType === 'mouse') mostraPerUnPo()
+    }
+    const iniziaTocco = (evento: PointerEvent): void => {
+      if (evento.pointerType === 'mouse' || !evento.isPrimary) {
+        if (evento.pointerType === 'mouse') mostraPerUnPo()
+        return
+      }
+      tocco.current = { id: evento.pointerId, x: evento.clientX, y: evento.clientY }
+    }
+    const finisceTocco = (evento: PointerEvent): void => {
+      const iniziato = tocco.current
+      tocco.current = null
+      if (!iniziato || iniziato.id !== evento.pointerId) return
+
+      // Uno scorrimento della griglia non e' un tap.
+      if (Math.hypot(evento.clientX - iniziato.x, evento.clientY - iniziato.y) > 14) return
+
+      // I comandi hanno gia' una propria azione: il loro tap tiene viva la
+      // barra, ma non la alterna accidentalmente mentre si preme Muto o Camera.
+      if (radice.current?.contains(evento.target as Node)) {
+        mostraPerUnPo()
+        return
+      }
+
+      if (visibileAdesso.current) {
+        annulla()
+        impostaVisibile(false)
+        setAperto(null)
+      } else {
+        mostraPerUnPo()
+      }
+    }
+    const annullaTocco = (): void => {
+      tocco.current = null
+    }
+    const esce = (evento: PointerEvent): void => {
+      if (evento.pointerType !== 'mouse') return
       annulla()
       setAperto(null)
-      scadenza.current = window.setTimeout(() => setVisibile(false), 120)
+      nascondiDopo(120)
     }
 
-    riavvia()
-    superficie.addEventListener('pointerenter', riavvia)
-    superficie.addEventListener('pointermove', riavvia)
+    mostraPerUnPo()
+    superficie.addEventListener('pointerenter', entra)
+    superficie.addEventListener('pointermove', muove)
+    superficie.addEventListener('pointerdown', iniziaTocco)
+    superficie.addEventListener('pointerup', finisceTocco)
+    superficie.addEventListener('pointercancel', annullaTocco)
     superficie.addEventListener('pointerleave', esce)
     return () => {
-      superficie.removeEventListener('pointerenter', riavvia)
-      superficie.removeEventListener('pointermove', riavvia)
+      superficie.removeEventListener('pointerenter', entra)
+      superficie.removeEventListener('pointermove', muove)
+      superficie.removeEventListener('pointerdown', iniziaTocco)
+      superficie.removeEventListener('pointerup', finisceTocco)
+      superficie.removeEventListener('pointercancel', annullaTocco)
       superficie.removeEventListener('pointerleave', esce)
       annulla()
     }
@@ -216,9 +281,9 @@ export default function OverlayChiamata({
       // sulla chiamata.
       className={`pointer-events-none absolute top-0 bottom-0 left-0 z-30 transition-opacity duration-200 ${
         insieme?.aperta
-          ? 'right-[clamp(18rem,34vw,26rem)]'
+          ? 'right-0 md:right-[clamp(18rem,34vw,26rem)]'
           : chat?.aperta
-            ? 'right-[clamp(14rem,28vw,20rem)]'
+            ? 'right-0 md:right-[clamp(14rem,28vw,20rem)]'
             : 'right-0'
       } ${mostra ? 'opacity-100' : 'opacity-0'}`}
     >
@@ -271,6 +336,17 @@ export default function OverlayChiamata({
         </div>
 
         <div className="pointer-events-auto flex shrink-0 items-center gap-2">
+          {tornaAiServer && (
+            <button
+              type="button"
+              onClick={tornaAiServer}
+              title="Torna a server e canali"
+              aria-label="Torna a server e canali"
+              className="flex h-10 w-10 items-center justify-center rounded-2xl border border-bordo bg-fondo-2/95 text-testo-2 shadow-xl shadow-black/40 backdrop-blur transition-colors hover:text-testo md:hidden"
+            >
+              <Giu className="h-5 w-5 rotate-90" />
+            </button>
+          )}
           {collegando && (
             <span className="respiro rounded-2xl border border-bordo bg-fondo-2/95 px-3 py-2 text-xs text-attenzione shadow-xl shadow-black/40 backdrop-blur">
               riprendo la linea…
@@ -332,8 +408,8 @@ export default function OverlayChiamata({
         </div>
       </div>
 
-      <div className="absolute inset-x-0 bottom-0 flex justify-center p-4">
-        <div className="pointer-events-auto relative flex items-end gap-2">
+      {aperto !== null && (
+        <div className="pointer-events-auto absolute inset-x-2 bottom-20 z-10 flex justify-center sm:bottom-24">
         {aperto === 'microfono' && (
           <MenuMicrofono
             impostazioni={impostazioni}
@@ -368,6 +444,11 @@ export default function OverlayChiamata({
             smetti={smettiDiCondividere}
           />
         )}
+        </div>
+      )}
+
+      <div className="absolute inset-x-0 bottom-0 flex justify-center overflow-x-auto p-2 sm:p-4">
+        <div className="pointer-events-auto relative flex items-end gap-1.5 sm:gap-2">
 
         {/* Chiamare qualcun altro qui dentro. Fuori dalla scatola, a
             sinistra: non e' un comando del proprio microfono o della propria
@@ -532,7 +613,7 @@ export default function OverlayChiamata({
         onClick={schermoIntero.alterna}
         title={schermoIntero.attivo ? 'Torna alle colonne' : 'A tutto schermo'}
         aria-label={schermoIntero.attivo ? 'Torna alle colonne' : 'A tutto schermo'}
-        className="pointer-events-auto absolute right-5 bottom-6 text-testo-3 transition-colors hover:text-testo [&>svg]:h-5 [&>svg]:w-5"
+        className="pointer-events-auto absolute right-5 bottom-6 hidden text-testo-3 transition-colors hover:text-testo md:block [&>svg]:h-5 [&>svg]:w-5"
       >
         {schermoIntero.attivo ? <SchermoNormale /> : <SchermoIntero />}
       </button>
@@ -606,7 +687,7 @@ function ConFreccia({
 
 function Pannello({ children }: { children: React.ReactNode }): React.JSX.Element {
   return (
-    <div className="absolute bottom-full left-0 mb-2 w-72 space-y-3 rounded-xl border border-bordo bg-fondo-2 p-3 shadow-xl shadow-black/40">
+    <div className="max-h-[min(60dvh,30rem)] w-[min(18rem,calc(100vw-1rem))] space-y-3 overflow-y-auto rounded-xl border border-bordo bg-fondo-2 p-3 shadow-xl shadow-black/40">
       {children}
     </div>
   )

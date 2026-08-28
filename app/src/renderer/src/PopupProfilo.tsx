@@ -108,7 +108,7 @@ export default function PopupProfilo({
   return (
     <div
       ref={scatola}
-      className="absolute bottom-3 left-[4.5rem] z-50 w-64 rounded-xl border border-bordo bg-fondo-2 p-3 shadow-xl shadow-black/50"
+      className="absolute right-3 bottom-3 left-3 z-50 rounded-xl border border-bordo bg-fondo-2 p-3 shadow-xl shadow-black/50 sm:right-auto sm:left-[4.5rem] sm:w-64"
     >
       <div className="flex items-center gap-3 pb-3">
         <span className="relative shrink-0">

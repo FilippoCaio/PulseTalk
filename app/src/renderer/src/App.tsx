@@ -19,7 +19,6 @@ import { usaSessioniMedia } from './lib/usaSessioniMedia'
 import { suona } from './lib/suoni'
 import Accesso, { Completa } from './atrio/Accesso'
 import Avvio from './atrio/Avvio'
-import Inviti from './atrio/Inviti'
 import BarraSpazi from './spazi/BarraSpazi'
 import ColonnaCanali from './spazi/ColonnaCanali'
 import PannelloVoce from './spazi/PannelloVoce'
@@ -44,9 +43,15 @@ import {
   usaDispositiviMancanti,
   usaRiallineaDispositivi
 } from './lib/usaDispositivi'
-import { Chiudi } from './icone'
+import { Chiudi, Giu, Menu } from './icone'
 import { Avviso, BottoneIcona, Conferma } from './ui'
 import { ErroreApi } from './lib/api'
+import {
+  ascoltaIndietroAndroid,
+  avviaServizioChiamata,
+  fermaServizioChiamata,
+  preparaAudioAndroid
+} from './lib/android'
 
 /**
  * Tre colonne, e una regola che le tiene insieme.
@@ -89,6 +94,10 @@ export default function App(): React.JSX.Element {
    */
   const [vista, setVista] = useState<'spazi' | 'diretti'>('spazi')
   const [conversazioneApertaId, setConversazioneApertaId] = useState<number | null>(null)
+  /** Sul telefono le due colonne di navigazione sono un cassetto a tutta pagina. */
+  const [navigazioneMobileAperta, setNavigazioneMobileAperta] = useState(true)
+  /** La sala occupa anche le colonne desktop; sul telefono la vista e' gia' piena. */
+  const [chiamataPiena, setChiamataPiena] = useState(false)
 
   const [menuSpazioAperto, setMenuSpazioAperto] = useState(false)
   const [impostazioniSpazio, setImpostazioniSpazio] = useState<string | null>(null)
@@ -101,7 +110,6 @@ export default function App(): React.JSX.Element {
   const [mostraProfilo, setMostraProfilo] = useState(false)
   /** Con quale sezione aprire le impostazioni. Null: l'ultima usata. */
   const [sezioneImpostazioni, setSezioneImpostazioni] = useState<string | null>(null)
-  const [mostraInviti, setMostraInviti] = useState(false)
   const [mostraRicerca, setMostraRicerca] = useState(false)
   const [mostraAmici, setMostraAmici] = useState(false)
   const [iscrittiDi, setIscrittiDi] = useState<Canale | null>(null)
@@ -127,6 +135,7 @@ export default function App(): React.JSX.Element {
 
 
   useEffect(() => {
+    void preparaAudioAndroid()
     void ponte.leggiImpostazioni().then(setImpostazioni)
     return ponte.onImpostazioniCambiate(setImpostazioni)
   }, [])
@@ -385,9 +394,11 @@ export default function App(): React.JSX.Element {
             ? { ...impostazioni, microfonoAllIngresso: false }
             : impostazioni
         )
+        await avviaServizioChiamata(nuovo.canale.nome)
       } catch (e) {
         setIngresso(null)
         await sessione.esci().catch(() => {})
+        await fermaServizioChiamata()
         setAvviso(spiega(e as Error))
       }
     },
@@ -422,9 +433,22 @@ export default function App(): React.JSX.Element {
   )
 
   const esciDallaVoce = useCallback(async () => {
+    const chiamata = ingresso
     const diretta = ingresso?.diretta ?? null
     await sessione.esci()
     setIngresso(null)
+    setChiamataPiena(false)
+    setNavigazioneMobileAperta(true)
+    setMenuSpazioAperto(false)
+    if (chiamata?.diretta) {
+      setVista('diretti')
+      setConversazioneApertaId(chiamata.diretta.conversazione)
+    } else if (chiamata) {
+      setVista('spazi')
+      setSpazioApertoId(chiamata.canale.spazio)
+      setCanaleApertoId(null)
+    }
+    await fermaServizioChiamata()
     // Uscire da una chiamata diretta vuol dire riagganciare: senza questa
     // riga la stanza resterebbe aperta sulla SFU e l'altro continuerebbe a
     // vedere una chiamata in corso con dentro nessuno.
@@ -441,9 +465,11 @@ export default function App(): React.JSX.Element {
       try {
         setIngresso(nuovo)
         await sessione.entra(nuovo, impostazioni)
+        await avviaServizioChiamata(nuovo.canale.nome)
       } catch (e) {
         setIngresso(null)
         await sessione.esci().catch(() => {})
+        await fermaServizioChiamata()
         setAvviso(spiega(e as Error))
       }
     },
@@ -477,6 +503,7 @@ export default function App(): React.JSX.Element {
         // vedere con chi sta parlando, non restare dov'era.
         setVista('diretti')
         setConversazioneApertaId(conversazione)
+        setNavigazioneMobileAperta(false)
         await entraConIngresso(nuovo)
       } catch (e) {
         setAvviso((e as Error).message)
@@ -494,6 +521,7 @@ export default function App(): React.JSX.Element {
       if (ingresso?.diretta?.conversazione === conversazione) {
         await sessione.esci().catch(() => {})
         setIngresso(null)
+        await fermaServizioChiamata()
       }
       await api.chiudiChiamata(conversazione, motivo).catch(() => {})
       diretti.segnaChiamata(null)
@@ -616,6 +644,27 @@ export default function App(): React.JSX.Element {
   const tornaAllaChiamata = useCallback((): void => {
     if (!ingresso) return
     setMenuSpazioAperto(false)
+    setNavigazioneMobileAperta(false)
+    if (ingresso.diretta) {
+      setVista('diretti')
+      setConversazioneApertaId(ingresso.diretta.conversazione)
+      return
+    }
+    setVista('spazi')
+    setSpazioApertoId(ingresso.canale.spazio)
+    setCanaleApertoId(ingresso.canale.id)
+  }, [ingresso])
+
+  /**
+   * Lascia soltanto la schermata della chiamata, restando collegati al vocale.
+   * Sul telefono riapre server e canali nello spazio della chiamata; la
+   * linguetta laterale permette poi di rientrare con un solo tocco.
+   */
+  const lasciaVistaChiamata = useCallback((): void => {
+    if (!ingresso) return
+    setChiamataPiena(false)
+    setMenuSpazioAperto(false)
+    setNavigazioneMobileAperta(true)
     if (ingresso.diretta) {
       setVista('diretti')
       setConversazioneApertaId(ingresso.diretta.conversazione)
@@ -712,8 +761,6 @@ export default function App(): React.JSX.Element {
    * finche' si era alla schermata d'accesso, e al primo disegno da dentro
    * React ne trovava tre in piu' e si fermava — pagina vuota, errore 310.
    */
-  const [chiamataPiena, setChiamataPiena] = useState(false)
-
   // Uscire con Escape, che e' dove la mano va da sola.
   useEffect(() => {
     if (!chiamataPiena) return
@@ -728,6 +775,40 @@ export default function App(): React.JSX.Element {
   useEffect(() => {
     if (!inVoce) setChiamataPiena(false)
   }, [inVoce])
+
+  useEffect(
+    () =>
+      ascoltaIndietroAndroid(() => {
+        if (chiamataPiena || (guardaLaChiamata && !navigazioneMobileAperta)) {
+          lasciaVistaChiamata()
+          return true
+        }
+        if (mostraRicerca) return setMostraRicerca(false), true
+        if (mostraAmici) return setMostraAmici(false), true
+        if (mostraProfilo) return setMostraProfilo(false), true
+        if (mostraImpostazioni) return setMostraImpostazioni(false), true
+        if (impostazioniSpazio !== null) return setImpostazioniSpazio(null), true
+        if (mostraEventi) return setMostraEventi(null), true
+        if (iscrittiDi) return setIscrittiDi(null), true
+        if (cambioVocale) return setCambioVocale(null), true
+        if (!navigazioneMobileAperta) return setNavigazioneMobileAperta(true), true
+        return false
+      }),
+    [
+      chiamataPiena,
+      guardaLaChiamata,
+      lasciaVistaChiamata,
+      mostraRicerca,
+      mostraAmici,
+      mostraProfilo,
+      mostraImpostazioni,
+      impostazioniSpazio,
+      mostraEventi,
+      iscrittiDi,
+      cambioVocale,
+      navigazioneMobileAperta
+    ]
+  )
 
   // -- Le schermate che vengono prima ----------------------------------------
 
@@ -813,7 +894,7 @@ export default function App(): React.JSX.Element {
   // -- Le tre colonne ---------------------------------------------------------
 
   return (
-    <div className="relative flex h-full">
+    <div className="relative flex h-full overflow-hidden">
       {!chiamataPiena && (
       <BarraSpazi
         spazi={spazi}
@@ -824,6 +905,7 @@ export default function App(): React.JSX.Element {
           setSpazioApertoId(id)
           setCanaleApertoId(null)
           setMenuSpazioAperto(false)
+          setNavigazioneMobileAperta(true)
         }}
         crea={async (nome) => {
           await api.creaSpazio({ nome })
@@ -835,11 +917,13 @@ export default function App(): React.JSX.Element {
         apriDiretti={() => {
           setVista('diretti')
           setMenuSpazioAperto(false)
+          setNavigazioneMobileAperta(true)
         }}
         direttiAperti={vista === 'diretti'}
         direttiNonLetti={diretti.nonLetti}
         inVoce={inVoce}
         profili={profili}
+        className={navigazioneMobileAperta ? '' : 'hidden md:flex'}
       />
       )}
 
@@ -852,7 +936,9 @@ export default function App(): React.JSX.Element {
           il pannello si restringe sulla sola barra. */}
       {inVoce && utente && !chiamataPiena && (
         <div
-          className={`absolute bottom-0 left-0 z-20 ${spazioAperto ? 'w-[19rem]' : 'w-16'}`}
+          className={`absolute bottom-0 left-0 z-20 ${
+            navigazioneMobileAperta ? 'block' : 'hidden md:block'
+          } ${spazioAperto ? 'w-full md:w-[19rem]' : 'w-16'}`}
         >
           <PannelloVoce
             utente={utente}
@@ -894,6 +980,24 @@ export default function App(): React.JSX.Element {
         </div>
       )}
 
+      {/* Sul telefono e' il filo che riporta alla chiamata mentre si sfogliano
+          server, canali o chat. Attaccato al bordo, non ruba spazio al
+          contenuto e resta riconoscibile come una linguetta di ritorno. */}
+      {inVoce && (navigazioneMobileAperta || !guardaLaChiamata) && (
+        <button
+          type="button"
+          onClick={() => {
+            setChiamataPiena(false)
+            tornaAllaChiamata()
+          }}
+          title="Torna alla chiamata"
+          aria-label="Torna alla chiamata"
+          className="absolute top-1/2 right-0 z-40 flex h-16 w-9 -translate-y-1/2 items-center justify-center rounded-l-2xl border border-r-0 border-bordo bg-fondo-2/95 text-vivo shadow-xl shadow-black/40 backdrop-blur md:hidden"
+        >
+          <Giu className="h-5 w-5 -rotate-90" />
+        </button>
+      )}
+
       {mostraProfilo && utente && (
         <PopupProfilo
           utente={utente}
@@ -920,7 +1024,7 @@ export default function App(): React.JSX.Element {
               della voce. Cambiare geometria fra le due viste vorrebbe dire far
               saltare l'interfaccia a ogni passaggio. */}
           <div
-            className={`flex w-60 shrink-0 flex-col border-r border-bordo bg-fondo-2 ${
+            className={`${navigazioneMobileAperta ? 'flex' : 'hidden'} w-[calc(100%-4rem)] shrink-0 flex-col border-r border-bordo bg-fondo-2 md:flex md:w-60 ${
               chiamataPiena ? 'hidden' : ''
             }`}
           >
@@ -928,15 +1032,30 @@ export default function App(): React.JSX.Element {
               api={api}
               conversazioni={diretti.conversazioni}
               apertaId={conversazioneAperta?.id ?? null}
-              scegli={(c) => setConversazioneApertaId(c.id)}
+              scegli={(c) => {
+                setConversazioneApertaId(c.id)
+                setNavigazioneMobileAperta(false)
+              }}
               apriAmici={() => setMostraAmici(true)}
               quandoApre={(chi) => {
-                void diretti.apriCon(chi).then((c) => c && setConversazioneApertaId(c.id))
+                void diretti.apriCon(chi).then((c) => {
+                  if (!c) return
+                  setConversazioneApertaId(c.id)
+                  setNavigazioneMobileAperta(false)
+                })
               }}
             />
           </div>
 
-          <main className="flex min-w-0 flex-1 flex-col">
+          <main
+            className={`${navigazioneMobileAperta ? 'hidden md:flex' : 'flex'} min-w-0 flex-1 flex-col`}
+          >
+            {!guardaLaChiamata && (
+              <BarraMobile
+                titolo={conversazioneAperta?.con.nome ?? 'Messaggi diretti'}
+                apri={() => setNavigazioneMobileAperta(true)}
+              />
+            )}
             {avviso && (
               <div className="p-3">
                 <Avviso tono="attenzione">
@@ -983,6 +1102,7 @@ export default function App(): React.JSX.Element {
                   attivo: chiamataPiena,
                   alterna: () => setChiamataPiena((v) => !v)
                 }}
+                tornaAiServer={lasciaVistaChiamata}
                 condivisioneRichiesta={richiestaCondivisione}
                 condivisioneServita={condivisioneServita}
                 esci={esciDallaVoce}
@@ -1017,7 +1137,7 @@ export default function App(): React.JSX.Element {
               deve correre dall'alto al basso senza spezzarsi dove finisce
               l'elenco dei canali e comincia la barra della voce. */}
           <div
-            className={`flex w-60 shrink-0 flex-col border-r border-bordo bg-fondo-2 ${
+            className={`${navigazioneMobileAperta ? 'flex' : 'hidden'} w-[calc(100%-4rem)] shrink-0 flex-col border-r border-bordo bg-fondo-2 md:flex md:w-60 ${
               chiamataPiena ? 'hidden' : ''
             }`}
           >
@@ -1025,8 +1145,14 @@ export default function App(): React.JSX.Element {
               spazio={spazioAperto}
               apertoId={canaleAperto?.id ?? null}
               inVoce={inVoce}
-              scegli={(canale) => setCanaleApertoId(canale.id)}
-              entraInVoce={entraInVoce}
+              scegli={(canale) => {
+                setCanaleApertoId(canale.id)
+                setNavigazioneMobileAperta(false)
+              }}
+              entraInVoce={(canale) => {
+                setNavigazioneMobileAperta(false)
+                entraInVoce(canale)
+              }}
               parlanti={sessione.parlanti}
               esciDallaVoce={() => void esciDallaVoce()}
               crea={async (dati) => {
@@ -1072,7 +1198,15 @@ export default function App(): React.JSX.Element {
 
           </div>
 
-          <main className="flex min-w-0 flex-1 flex-col">
+          <main
+            className={`${navigazioneMobileAperta ? 'hidden md:flex' : 'flex'} min-w-0 flex-1 flex-col`}
+          >
+            {!guardaLaChiamata && (
+              <BarraMobile
+                titolo={canaleAperto ? `${canaleAperto.tipo === 'testo' ? '#' : ''}${canaleAperto.nome}` : spazioAperto.nome}
+                apri={() => setNavigazioneMobileAperta(true)}
+              />
+            )}
             <StrisciaProblemi />
             {avviso && (
               <div className="p-3">
@@ -1114,6 +1248,7 @@ export default function App(): React.JSX.Element {
                   attivo: chiamataPiena,
                   alterna: () => setChiamataPiena((v) => !v)
                 }}
+                tornaAiServer={lasciaVistaChiamata}
                 condivisioneRichiesta={richiestaCondivisione}
                 condivisioneServita={condivisioneServita}
                 esci={esciDallaVoce}
@@ -1233,10 +1368,6 @@ export default function App(): React.JSX.Element {
         />
       )}
 
-      {mostraInviti && (
-        <Inviti api={api} server={impostazioni.server} chiudi={() => setMostraInviti(false)} />
-      )}
-
       {/* -- Il server: impostazioni, eventi, uscita --------------------- */}
 
       {impostazioniSpazio !== null && spazioAperto && (
@@ -1263,7 +1394,7 @@ export default function App(): React.JSX.Element {
 
       {mostraEventi && spazioAperto && (
         <div
-          className="absolute inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/70 p-6 backdrop-blur-sm"
+          className="absolute inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/70 p-3 backdrop-blur-sm sm:p-6"
           onClick={() => setMostraEventi(null)}
         >
           <div
@@ -1357,16 +1488,13 @@ export default function App(): React.JSX.Element {
           salva={salva}
           inChiamata={!!inVoce}
           chiudi={() => setMostraImpostazioni(false)}
-          apriInviti={() => {
-            setMostraImpostazioni(false)
-            setMostraInviti(true)
-          }}
           quandoCambiaUtente={(aggiornato) => {
             setUtente(aggiornato)
             void salva({ nome: aggiornato.nome })
           }}
           esciDallAccount={async () => {
             await sessione.esci()
+            await fermaServizioChiamata()
             // Prima si dice al server di chiudere la sessione, poi si dimentica
             // il token: nell'ordine inverso resterebbe una sessione viva sul
             // NAS che nessuno puo' piu' revocare, perche' non si sa piu' quale
@@ -1381,6 +1509,17 @@ export default function App(): React.JSX.Element {
         />
       )}
     </div>
+  )
+}
+
+function BarraMobile({ titolo, apri }: { titolo: string; apri: () => void }): React.JSX.Element {
+  return (
+    <header className="flex h-12 shrink-0 items-center gap-2 border-b border-bordo bg-fondo-2 px-2 md:hidden">
+      <BottoneIcona tono="fantasma" title="Apri spazi e canali" onClick={apri}>
+        <Menu className="h-5 w-5" />
+      </BottoneIcona>
+      <span className="min-w-0 flex-1 truncate font-medium">{titolo}</span>
+    </header>
   )
 }
 

@@ -27,9 +27,12 @@ const MARGINE = 8
  * riquadro non e' — ma per la mano che ci arriva sopra e' la stessa cosa, e
  * due menu diversi per lo stesso gesto sarebbero due menu da imparare.
  *
- * Qui dentro sta anche il cursore del volume, che sopra alle condivisioni non
- * c'e' piu': la' e' rimasto l'interruttore, e il livello preciso si regola da
- * qui.
+ * Qui dentro sta il cursore del volume, e non sta piu' da nessun'altra parte:
+ * sui riquadri — condivisioni e persone — e' rimasto l'interruttore, che e'
+ * cio' che si preme di fretta. Il livello preciso e' una cosa che si regola
+ * una volta e si dimentica, e le cose che si regolano una volta stanno tutte
+ * qui: insieme alla qualita' della propria condivisione, a cosa si sta
+ * mostrando, e a chi si vuole cacciare fuori.
  */
 export default function MenuRiquadro({
   x,

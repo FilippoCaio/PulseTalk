@@ -32,7 +32,7 @@ export default function ChiamataInArrivo({
   const nome = chi?.nome ?? 'Qualcuno'
 
   return (
-    <div className="absolute right-4 bottom-4 z-50 w-72 rounded-2xl border border-bordo bg-fondo-2 p-4 shadow-2xl shadow-black/60">
+    <div className="absolute right-3 bottom-3 left-3 z-50 rounded-2xl border border-bordo bg-fondo-2 p-4 shadow-2xl shadow-black/60 sm:right-4 sm:bottom-4 sm:left-auto sm:w-72">
       <div className="flex items-center gap-3">
         <span className="relative shrink-0">
           {chi?.avatar ? (

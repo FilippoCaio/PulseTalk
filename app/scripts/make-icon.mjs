@@ -285,5 +285,14 @@ writeFileSync(percorsoIco, ico(immagini))
 const percorsoPng = join(cartella, 'icona.png')
 writeFileSync(percorsoPng, png(disegna(256), 256))
 
+// Android usa lo stesso segno, senza mantenere una seconda icona disegnata a
+// mano che prima o poi divergerebbe. Il sistema applica da solo la maschera
+// dell'icona prevista dal launcher del telefono.
+const cartellaAndroid = join(HERE, '..', 'android', 'app', 'src', 'main', 'res', 'drawable')
+mkdirSync(cartellaAndroid, { recursive: true })
+const percorsoAndroid = join(cartellaAndroid, 'ic_launcher_pulsetalk.png')
+writeFileSync(percorsoAndroid, png(disegna(256), 256))
+
 console.log(`icona: ${percorsoIco} (${MISURE.join(', ')} px)`)
 console.log(`png:   ${percorsoPng}`)
+console.log(`android: ${percorsoAndroid}`)

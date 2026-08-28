@@ -15,7 +15,7 @@ import { MAX_CONDIVISIONI_GUARDATE } from '../lib/usaSessione'
 import type { Riquadro as DatiRiquadro, Sessione } from '../lib/usaSessione'
 import { usaMisura } from '../lib/misura'
 import { ponte } from '../ponte'
-import { Chiudi, Pausa, Play, Riavvolgi } from '../icone'
+import { Chiudi, Matita, Pausa, Play, Riavvolgi, SchermoCondividi, SchermoStop } from '../icone'
 import { Avviso } from '../ui'
 import OverlayChiamata from './OverlayChiamata'
 import MenuRiquadro from './MenuRiquadro'
@@ -61,6 +61,7 @@ export default function Sala({
   apriImpostazioni,
   salvaImpostazioni,
   schermoIntero,
+  tornaAiServer,
   chatVocale,
   canaleVocale,
   utente,
@@ -90,6 +91,8 @@ export default function Sala({
    * la cosa chiesta e non puo' fallire.
    */
   schermoIntero: { attivo: boolean; alterna: () => void }
+  /** Sul telefono torna a server e canali senza abbandonare la voce. */
+  tornaAiServer?: () => void
   /**
    * La chat di QUESTO canale vocale, distinta da quella del canale di testo
    * che si sta magari leggendo altrove.
@@ -182,6 +185,8 @@ export default function Sala({
 
   const radice = useRef<HTMLDivElement>(null)
   const [contenitore, spazio] = usaMisura<HTMLDivElement>()
+  /** Lo spazio che resta alla sovraimpressione, tolta la striscia. */
+  const [palco, spazioPalco] = usaMisura<HTMLDivElement>()
 
   const { persone } = sessione
 
@@ -521,11 +526,97 @@ export default function Sala({
   const postiLiberi = sessione.quanteGuardate < MAX_CONDIVISIONI_GUARDATE
   const daSbloccare = (r: DatiRiquadro): boolean => r.tipo === 'schermo' && !r.locale
 
+  /**
+   * Cosa si puo' fare a QUESTO riquadro, e a nessun altro.
+   *
+   * E' la parte del menu del tasto destro che cambia sotto le dita: la propria
+   * condivisione si cambia e si spegne, quella di un altro si apre e si
+   * chiude, una persona non ha niente di suo — la sua voce sta gia' nel
+   * cursore in cima al menu, e cacciarla e' un'altra faccenda, in fondo e in
+   * rosso.
+   *
+   * Aprire e chiudere una condivisione altrui si puo' anche dai pulsantini
+   * che compaiono sul riquadro, e il doppione e' voluto: quelli si trovano
+   * solo passandoci sopra e sapendo gia' che ci sono. Cambiare e spegnere la
+   * PROPRIA, invece, finora si poteva solo dal pannello delle condivisioni in
+   * fondo — cioe' da un'altra parte della stanza rispetto alla cosa da
+   * cambiare.
+   */
+  const azioniDi = (
+    r: DatiRiquadro
+  ): { icona: React.ReactNode; testo: string; fai: () => void; pericolo?: boolean }[] | undefined => {
+    if (r.tipo !== 'schermo') return undefined
+
+    if (r.locale) {
+      return [
+        {
+          icona: <Matita />,
+          testo: 'Cambia cosa sto condividendo',
+          fai: () => setScegliSorgente({ modifica: r.id, soloAudio: false })
+        },
+        {
+          icona: <SchermoStop />,
+          testo: 'Smetti di condividere',
+          pericolo: true,
+          fai: () => void sessione.smettiDiCondividere(r.id)
+        }
+      ]
+    }
+
+    if (r.bloccato) {
+      // Senza posti liberi non c'e' niente da mettere: una riga di menu che si
+      // preme e non fa niente e' peggio di una riga che non c'e'. Il perche'
+      // sta gia' scritto sul riquadro, sotto al lucchetto, in caratteri ben
+      // piu' grandi di questi.
+      return postiLiberi
+        ? [
+            {
+              icona: <SchermoCondividi />,
+              testo: 'Guarda questa condivisione',
+              fai: () => sessione.guarda(r.id)
+            }
+          ]
+        : undefined
+    }
+
+    return [
+      {
+        icona: <SchermoStop />,
+        testo: 'Smetti di guardare — libera un posto',
+        fai: () => sessione.nonGuardare(r.id)
+      }
+    ]
+  }
+
   // La combinazione richiesta per la vera superficie video: chiamata a tutta
   // applicazione, un riquadro in primo piano e la striscia degli altri
   // nascosta. In tutti gli altri casi restano i margini che separano le
   // tessere e fanno posto alle barre dell'overlay.
   const aTuttaSuperficie = schermoIntero.attivo && inPrimoPiano && soloGrande
+
+  /**
+   * La misura della sovraimpressione, in 16:9 come tutti gli altri riquadri.
+   *
+   * Il posto che le tocca e' quello che avanza dopo la striscia, ed e' di
+   * forma qualunque: su una finestra larga diventa un rettangolo lungo e
+   * basso, e il riquadro dentro ci si stirava. Una faccia veniva tagliata ai
+   * lati — `object-cover` — e uno schermo condiviso restava della misura di
+   * prima con due fasce nere sempre piu' larghe intorno: spazio buttato via
+   * che sembrava un difetto.
+   *
+   * Il conto e' quello di `tessere()` con una tessera sola, e sta qui e non
+   * nel CSS per lo stesso motivo: `aspect-ratio` sa vincolare un asse, non sa
+   * scegliere quale dei due comanda.
+   *
+   * A tutta superficie no: li' si e' chiesto esplicitamente di riempire la
+   * finestra, e i bordi neri sono il prezzo che si e' accettato di pagare.
+   */
+  const misuraGrande = useMemo(() => {
+    const { larghezza, altezza } = spazioPalco
+    if (larghezza <= 0 || altezza <= 0) return null
+    const l = Math.floor(Math.min(larghezza, altezza * RAPPORTO))
+    return { larghezza: l, altezza: Math.floor(l / RAPPORTO) }
+  }, [spazioPalco])
 
   // `relative` sulla radice qui sotto e l ancora della barra dei comandi.
   // Senza, quella si aggrappava alla radice dell applicazione — che comprende
@@ -559,7 +650,7 @@ export default function Sala({
             riquadro. Uguale a `pb-20` perche' le due barre sono alte uguali. */}
         <main
           className={`group/sala relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden ${
-            aTuttaSuperficie ? 'gap-0 p-0' : 'gap-2 px-3 pt-20 pb-20'
+            aTuttaSuperficie ? 'gap-0 p-0' : 'gap-2 px-1 pt-14 pb-18 sm:px-3 sm:pt-20 sm:pb-20'
           }`}
         >
           {sessione.audioBloccato && (
@@ -579,7 +670,7 @@ export default function Sala({
               e che dopo averli letti una volta non si dimenticano piu'. */}
           {grande?.tipo === 'schermo' && (
             <p className="pointer-events-none absolute right-4 bottom-2 z-10 text-[11px] text-testo-3 opacity-0 transition-opacity duration-200 group-hover/sala:opacity-100">
-              rotella per ingrandire · clic per indicare · icona in alto a destra per la
+              rotella per ingrandire · clic per indicare · icona in basso a destra per la
               sovraimpressione
             </p>
           )}
@@ -604,57 +695,71 @@ export default function Sala({
                     aTuttaSuperficie ? 'gap-0' : 'gap-2'
                   } ${VERSO[aggancio]}`}
                 >
-                  <div className="min-h-0 min-w-0 flex-1">
-                    {youtubeGrande && youtube && media ? (
-                      <RiquadroYouTube
-                        key={youtube.id}
-                        sessione={youtube}
-                        media={media}
-                        puoComandare={
-                          media.puoComandare && ingresso.permessi.puoCondividere !== false
-                        }
-                        aFuoco
-                        quandoScelto={() => setYoutubeAFuoco(false)}
-                        volume={volumeYoutube}
-                        muto={youtubeMuto}
-                        cambiaVolume={(volume) => {
-                          setVolumeYoutube(volume)
-                          if (volume > 0) setYoutubeMuto(false)
-                        }}
-                        alternaMuto={() => setYoutubeMuto((muto) => !muto)}
-                        quandoMenu={(x, y) => setMenu({ x, y, id: MENU_YOUTUBE })}
-                        senzaCornice={aTuttaSuperficie}
-                      />
-                    ) : grande ? (
-                      <Riquadro
-                        dati={grande}
-                        foto={fotoDi(grande.identita)}
-                        mostraStatistiche={impostazioni.mostraStatistiche}
-                        specchiaCamera={impostazioni.specchiaCamera ?? true}
-                        aFuoco
-                        volumi={vociDi(grande)}
-                        puntatori={puntatoriDi(grande)}
-                        quandoPunta={
-                          grande.tipo === 'schermo' && !grande.locale
-                            ? (x, y) => sessione.punta(grande.id, x, y)
-                            : undefined
-                        }
-                        quandoTiene={
-                          grande.tipo === 'schermo' && !grande.locale
-                            ? (x, y) => sessione.punta(grande.id, x, y, true)
-                            : undefined
-                        }
-                        quandoLascia={() => sessione.lascia(grande.id)}
-                        quandoMenu={(x, y) => setMenu({ x, y, id: grande.id })}
-                        quandoScelto={togli}
-                        guarda={daSbloccare(grande) ? () => sessione.guarda(grande.id) : undefined}
-                        nonGuardare={
-                          daSbloccare(grande) ? () => sessione.nonGuardare(grande.id) : undefined
-                        }
-                        puoiGuardare={postiLiberi}
-                        senzaCornice={aTuttaSuperficie}
-                      />
-                    ) : null}
+                  <div
+                    ref={palco}
+                    className="flex min-h-0 min-w-0 flex-1 items-center justify-center overflow-hidden"
+                  >
+                    <div
+                      className="overflow-hidden"
+                      style={
+                        aTuttaSuperficie || !misuraGrande
+                          ? { width: '100%', height: '100%' }
+                          : { width: misuraGrande.larghezza, height: misuraGrande.altezza }
+                      }
+                    >
+                      {youtubeGrande && youtube && media ? (
+                        <RiquadroYouTube
+                          key={youtube.id}
+                          sessione={youtube}
+                          media={media}
+                          puoComandare={
+                            media.puoComandare && ingresso.permessi.puoCondividere !== false
+                          }
+                          aFuoco
+                          quandoScelto={() => setYoutubeAFuoco(false)}
+                          volume={volumeYoutube}
+                          muto={youtubeMuto}
+                          cambiaVolume={(volume) => {
+                            setVolumeYoutube(volume)
+                            if (volume > 0) setYoutubeMuto(false)
+                          }}
+                          alternaMuto={() => setYoutubeMuto((muto) => !muto)}
+                          quandoMenu={(x, y) => setMenu({ x, y, id: MENU_YOUTUBE })}
+                          senzaCornice={aTuttaSuperficie}
+                        />
+                      ) : grande ? (
+                        <Riquadro
+                          dati={grande}
+                          foto={fotoDi(grande.identita)}
+                          mostraStatistiche={impostazioni.mostraStatistiche}
+                          specchiaCamera={impostazioni.specchiaCamera ?? true}
+                          aFuoco
+                          volumi={vociDi(grande)}
+                          puntatori={puntatoriDi(grande)}
+                          quandoPunta={
+                            grande.tipo === 'schermo' && !grande.locale
+                              ? (x, y) => sessione.punta(grande.id, x, y)
+                              : undefined
+                          }
+                          quandoTiene={
+                            grande.tipo === 'schermo' && !grande.locale
+                              ? (x, y) => sessione.punta(grande.id, x, y, true)
+                              : undefined
+                          }
+                          quandoLascia={() => sessione.lascia(grande.id)}
+                          quandoMenu={(x, y) => setMenu({ x, y, id: grande.id })}
+                          quandoScelto={togli}
+                          guarda={
+                            daSbloccare(grande) ? () => sessione.guarda(grande.id) : undefined
+                          }
+                          nonGuardare={
+                            daSbloccare(grande) ? () => sessione.nonGuardare(grande.id) : undefined
+                          }
+                          puoiGuardare={postiLiberi}
+                          senzaCornice={aTuttaSuperficie}
+                        />
+                      ) : null}
+                    </div>
                   </div>
 
                   {striscia.length > 0 && !soloGrande && (
@@ -677,22 +782,14 @@ export default function Sala({
                               aFuoco={false}
                               volumi={vociDi(riquadro)}
                               puntatori={puntatoriDi(riquadro)}
-                              // Anche qui, e non solo sul grande: su una
-                              // condivisione il clic indica sempre, in qualunque
-                              // punto della stanza si trovi il riquadro. Una
-                              // regola che vale a meta' e' una regola che
-                              // bisogna ricordarsi, e nessuno se la ricorda.
-                              quandoPunta={
-                                riquadro.tipo === 'schermo' && !riquadro.locale
-                                  ? (x, y) => sessione.punta(riquadro.id, x, y)
-                                  : undefined
-                              }
-                              quandoTiene={
-                                riquadro.tipo === 'schermo' && !riquadro.locale
-                                  ? (x, y) => sessione.punta(riquadro.id, x, y, true)
-                                  : undefined
-                              }
-                              quandoLascia={() => sessione.lascia(riquadro.id)}
+                              // Niente `quandoPunta` qui: da piccolo un
+                              // riquadro non si indica. I "guarda qui" degli
+                              // altri si vedono lo stesso — arrivano da
+                              // `puntatori` — ma mandarne uno vuole
+                              // l'immagine grande, dove si vede davvero cosa
+                              // si sta toccando. Da qui il clic serve a
+                              // portarsi la condivisione davanti, che e' cio'
+                              // che uno intende facendolo.
                               quandoMenu={(x, y) => setMenu({ x, y, id: riquadro.id })}
                               quandoScelto={() => metti(riquadro)}
                               guarda={
@@ -786,17 +883,7 @@ export default function Sala({
                             aFuoco={false}
                             volumi={vociDi(riquadro)}
                             puntatori={puntatoriDi(riquadro)}
-                            quandoPunta={
-                              riquadro.tipo === 'schermo' && !riquadro.locale
-                                ? (x, y) => sessione.punta(riquadro.id, x, y)
-                                : undefined
-                            }
-                            quandoTiene={
-                              riquadro.tipo === 'schermo' && !riquadro.locale
-                                ? (x, y) => sessione.punta(riquadro.id, x, y, true)
-                                : undefined
-                            }
-                            quandoLascia={() => sessione.lascia(riquadro.id)}
+                            // Come nella striscia: si indica solo da grandi.
                             quandoMenu={(x, y) => setMenu({ x, y, id: riquadro.id })}
                             quandoScelto={() => metti(riquadro)}
                             guarda={
@@ -861,7 +948,7 @@ export default function Sala({
         {/* La chat, a destra dei riquadri e non sopra: sovrapposta coprirebbe
             proprio le persone che si stanno guardando mentre si scrive. */}
         {mostraChat && canaleVocale && (
-          <aside className="flex w-[clamp(14rem,28vw,20rem)] min-w-0 shrink-0 flex-col border-l border-bordo bg-fondo-2">
+          <aside className="absolute inset-0 z-40 flex min-w-0 flex-col border-l border-bordo bg-fondo-2 md:static md:w-[clamp(14rem,28vw,20rem)] md:shrink-0">
             <Chat
               api={api}
               canale={canaleVocale}
@@ -874,7 +961,7 @@ export default function Sala({
         )}
 
         {mostraInsieme && media && (
-          <aside className="flex w-[clamp(18rem,34vw,26rem)] min-w-0 shrink-0 flex-col border-l border-bordo bg-fondo-2">
+          <aside className="absolute inset-0 z-40 flex min-w-0 flex-col border-l border-bordo bg-fondo-2 md:static md:w-[clamp(18rem,34vw,26rem)] md:shrink-0">
             <PannelloInsieme
               api={api}
               media={media}
@@ -953,6 +1040,7 @@ export default function Sala({
         invita={puoInvitare && !invitoInGriglia ? () => setMostraInvito(true) : undefined}
         impostazioni={impostazioni}
         schermoIntero={schermoIntero}
+        tornaAiServer={tornaAiServer}
         alternaMicrofono={() => void sessione.alternaMicrofono()}
         alternaCamera={() => void sessione.alternaCamera()}
         apriCondivisione={() => setScegliSorgente({ modifica: null, soloAudio: false })}
@@ -1048,6 +1136,7 @@ export default function Sala({
             aFuoco={grande?.id === suo.id}
             metti={() => (grande?.id === suo.id ? togli() : metti(suo))}
             schermoIntero={grande?.id === suo.id ? schermoIntero : undefined}
+            azioni={azioniDi(suo)}
             caccia={
               moderatore && !suo.locale
                 ? async () => {
@@ -1384,11 +1473,21 @@ const VERSO: Record<PosizioneStriscia, string> = {
   destra: 'flex-row'
 }
 
+/**
+ * `center-safe` e non `center`: la striscia scorre.
+ *
+ * Con il centraggio normale, tre riquadri in una finestra stretta non
+ * traboccano solo a destra — traboccano di meta' per parte, e la meta' di
+ * sinistra finisce a coordinate negative, dove lo scorrimento non arriva. Il
+ * centraggio "sicuro" centra finche' il contenuto ci sta e allinea all'inizio
+ * appena non ci sta piu', che e' esattamente la regola giusta per una striscia
+ * che puo' scorrere.
+ */
 const STRISCIA: Record<PosizioneStriscia, string> = {
-  sotto: 'h-28 w-full flex-row overflow-x-auto overflow-y-hidden',
-  sopra: 'h-28 w-full flex-row overflow-x-auto overflow-y-hidden',
-  sinistra: 'w-52 flex-col overflow-y-auto overflow-x-hidden',
-  destra: 'w-52 flex-col overflow-y-auto overflow-x-hidden'
+  sotto: 'h-28 w-full flex-row justify-center-safe overflow-x-auto overflow-y-hidden',
+  sopra: 'h-28 w-full flex-row justify-center-safe overflow-x-auto overflow-y-hidden',
+  sinistra: 'w-52 flex-col justify-center-safe overflow-y-auto overflow-x-hidden',
+  destra: 'w-52 flex-col justify-center-safe overflow-y-auto overflow-x-hidden'
 }
 
 /**

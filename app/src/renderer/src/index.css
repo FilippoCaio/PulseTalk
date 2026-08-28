@@ -28,6 +28,7 @@ html,
 body,
 #radice {
   height: 100%;
+  height: 100dvh;
 }
 
 body {
@@ -38,6 +39,41 @@ body {
     'Segoe UI Variable Text', 'Segoe UI', system-ui, -apple-system, sans-serif;
   font-size: 14px;
   overflow: hidden;
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* La WebView Android puo' arrivare sotto notch e barre di sistema. Le pagine
+   principali consumano questi inset senza cambiare la geometria desktop. */
+#radice {
+  padding-top: env(safe-area-inset-top);
+  padding-right: env(safe-area-inset-right);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+}
+
+@media (max-width: 767px) {
+  body {
+    font-size: 15px;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    touch-action: manipulation;
+  }
+
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+
+  ::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
 }
 
 /* I numeri delle statistiche cambiano dieci volte al secondo: senza cifre di

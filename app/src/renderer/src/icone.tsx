@@ -722,6 +722,15 @@ export function Chevron(props: Props): React.JSX.Element {
   )
 }
 
+/** Tre righe: apre la navigazione sui telefoni. */
+export function Menu(props: Props): React.JSX.Element {
+  return (
+    <Base {...props}>
+      <path d="M4 6.5h16M4 12h16M4 17.5h16" />
+    </Base>
+  )
+}
+
 /** Le tre righe di una cartella: le categorie. */
 export function Cartella(props: Props): React.JSX.Element {
   return (

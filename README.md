@@ -307,10 +307,12 @@ lasciato arancione, o di un port forward che non e' mai stato salvato.
 
 ## Dare l'accesso a qualcuno
 
-**Dall'app**, che e' il modo normale: il pulsante **Invita** nell'atrio, visibile
-solo agli admin. Si sceglie il ruolo, per quante persone e per quanti giorni, e
-si ottiene un codice piu' un link pronto da mandare — che apre PulseTalk con il
-codice gia' compilato.
+**Dall'app**, che e' il modo normale: *Impostazioni -> Server -> Inviti*,
+pagina visibile solo agli admin. Si sceglie il ruolo, per quante persone e per
+quanti giorni, e si ottiene un codice piu' un link pronto da mandare — che apre
+PulseTalk con il codice gia' compilato. Sta li' e non sotto al proprio account
+perche' e' amministrazione dell'istanza: chi crea un invito decide chi entra e
+con quali poteri, ed e' la stessa materia delle chiavi dei servizi.
 
 **Dalla riga di comando**, se si e' gia' dentro al NAS:
 
@@ -368,6 +370,56 @@ npm --prefix app run dist:installer
 ```
 
 L'installer esce in `app/release/`.
+
+**Installata (Android):** usa lo stesso server, account, messaggi, spazi,
+allegati e chiamate voce/video dell'app desktop. Sui telefoni la navigazione diventa un
+pannello a tutta larghezza, chat e sala occupano lo schermo disponibile e il
+tasto Indietro chiude prima pannelli e chiamate. Una chiamata attiva resta
+segnalata da una notifica anche quando PulseTalk passa in secondo piano.
+
+Per compilare l'APK servono Android Studio (con Android SDK 36) e Java 17. Metti
+l'indirizzo pubblico HTTPS del server in `app/server.local`, una riga sola e
+senza barra finale, poi esegui:
+
+```powershell
+npm --prefix app install
+npm --prefix app run android:apk
+```
+
+L'APK di prova esce in
+`app/android/app/build/outputs/apk/debug/app-debug.apk`. E' una build debug:
+serve per provarla sui tuoi dispositivi, non per pubblicarla sul Play Store.
+
+Per l'emulatore, apri il progetto Android e premi **Run** su un telefono
+virtuale:
+
+```powershell
+npm --prefix app run android:open
+```
+
+Per un telefono vero, abilita *Opzioni sviluppatore → Debug USB*, collegalo e
+installa l'APK con:
+
+```powershell
+adb install -r app/android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+In alternativa puoi copiare l'APK sul telefono e aprirlo, autorizzando per
+quella volta l'installazione da origine sconosciuta. Alla prima apertura Android
+puo' chiedere l'accesso ai dispositivi vicini; microfono e fotocamera vengono
+chiesti quando li usi.
+
+Per una prova completa conviene controllare, nell'ordine: accesso; invio e
+ricezione di messaggi e allegati; messaggi diretti; ingresso in un canale
+vocale; muto e uscita audio; videocamera; passaggio a un'altra app mentre la
+chiamata continua; rientro tramite notifica; condivisione dello schermo.
+Quest'ultima usa `MediaProjection`: Android mostra ogni volta il proprio
+consenso e mantiene una notifica finche' la cattura e' attiva. Viene condiviso
+il video dello schermo, non l'audio riprodotto dalle altre app.
+
+Sul telefono `localhost` indica il telefono stesso, non il PC. Usa quindi il
+dominio HTTPS pubblico di PulseTalk; per un server di sviluppo in LAN usa
+l'indirizzo del PC e un certificato considerato valido dal dispositivo.
 
 **Prima di compilarla per gli altri**, conviene scriverci dentro il tuo server.
 In [`app/src/shared/predefiniti.ts`](app/src/shared/predefiniti.ts) c'e' una

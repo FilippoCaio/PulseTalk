@@ -1498,13 +1498,13 @@ describe('dialetti del provider AI', () => {
     });
     const provider = creaProviderAi(conAi({ baseUrl: 'http://192.168.1.10:11434/v1' }));
 
-    const riassunto = await provider.riassumi({ trascrizione: 'Filippo: sistemiamo il menu.' });
+    const riassunto = await provider.riassumi({ trascrizione: 'Marco: sistemiamo il menu.' });
     assert.deepEqual(riassunto.argomenti, ['menu']);
     assert.deepEqual(riassunto.problemi, [], 'le chiavi mancanti diventano elenchi vuoti');
 
     const messaggi = chiamate[0].corpo.messages;
     assert.equal(messaggi[0].role, 'system');
-    assert.equal(messaggi[1].content, 'Filippo: sistemiamo il menu.');
+    assert.equal(messaggi[1].content, 'Marco: sistemiamo il menu.');
   });
 });
 

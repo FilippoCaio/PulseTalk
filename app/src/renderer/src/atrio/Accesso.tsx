@@ -124,8 +124,8 @@ export default function Accesso({
   }
 
   return (
-    <div className="flex h-full items-center justify-center overflow-y-auto p-8">
-      <div className="w-full max-w-md py-8">
+    <div className="flex h-full items-center justify-center overflow-y-auto p-4 sm:p-8">
+      <div className="w-full max-w-md py-4 sm:py-8">
         <div className="mb-8">
           <h1 className="text-2xl font-semibold tracking-tight">PulseTalk</h1>
           <p className="mt-1.5 text-sm leading-relaxed text-testo-2">
@@ -260,11 +260,17 @@ export default function Accesso({
           </button>
         </p>
 
-        {!ponte.elettrone && (
+        {!ponte.elettrone && !ponte.android && (
           <p className="mt-6 text-center text-xs leading-relaxed text-testo-3">
             Stai usando la versione web. Funziona, ma l'app installata sa mandare anche l'audio di
             sistema insieme allo schermo, e tiene il token cifrato invece che nella memoria del
             browser.
+          </p>
+        )}
+        {ponte.android && (
+          <p className="mt-6 text-center text-xs leading-relaxed text-testo-3">
+            App Android. Microfono, camera, messaggi e chiamate usano direttamente il tuo server
+            PulseTalk.
           </p>
         )}
       </div>

@@ -43,7 +43,7 @@ export function coloreDi(identita: string): string {
 /**
  * Una o due lettere.
  *
- * "Filippo Caio" -> FC, "Marco" -> M. Con i nomi che cominciano per emoji o
+ * "Marco Rossi" -> MR, "Ada" -> A. Con i nomi che cominciano per emoji o
  * per simbolo non resta niente da mostrare: in quel caso meglio un punto
  * interrogativo di un riquadro vuoto che sembra rotto.
  */

@@ -29,7 +29,8 @@ export default function BarraSpazi({
   direttiAperti = false,
   direttiNonLetti = 0,
   inVoce = null,
-  profili
+  profili,
+  className = ''
 }: {
   spazi: Spazio[]
   aperto: number | null
@@ -54,6 +55,7 @@ export default function BarraSpazi({
    */
   inVoce?: number | null
   profili?: Map<number, { nome: string; avatar: string | null }>
+  className?: string
 }): React.JSX.Element {
   const [creando, setCreando] = useState(false)
   const [nome, setNome] = useState('')
@@ -73,7 +75,7 @@ export default function BarraSpazi({
   }
 
   return (
-    <nav className="flex w-16 shrink-0 flex-col items-center gap-2 border-r border-bordo bg-fondo py-3">
+    <nav className={`flex w-16 shrink-0 flex-col items-center gap-2 overflow-y-auto border-r border-bordo bg-fondo py-3 ${className}`}>
       {/* I messaggi diretti stanno in cima, sopra alla riga: non sono un
           server, e metterli in mezzo agli altri li farebbe sembrare tali. */}
       <button

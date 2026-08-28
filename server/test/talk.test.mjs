@@ -378,7 +378,7 @@ describe('account nati prima delle password', () => {
   function vecchioStile(talk) {
     const ins = talk.db.sql
       .prepare('INSERT INTO utenti (nome, ruolo, creato) VALUES (?, ?, ?)')
-      .run('Filippo', 'admin', Math.floor(Date.now() / 1000));
+      .run('Marco', 'admin', Math.floor(Date.now() / 1000));
     const id = Number(ins.lastInsertRowid);
     return { id, token: talk.db.creaSessione(id, 'prima') };
   }
@@ -1503,7 +1503,7 @@ describe('migrazione dalle stanze', () => {
       CREATE TABLE stanze (id INTEGER PRIMARY KEY, chiave TEXT NOT NULL UNIQUE, nome TEXT NOT NULL,
                            descrizione TEXT NOT NULL DEFAULT '', creata INTEGER NOT NULL,
                            creataDa INTEGER, soloAscolto INTEGER NOT NULL DEFAULT 0);
-      INSERT INTO utenti (id, nome, ruolo, creato) VALUES (1, 'Filippo', 'admin', 0);
+      INSERT INTO utenti (id, nome, ruolo, creato) VALUES (1, 'Marco', 'admin', 0);
       INSERT INTO stanze (chiave, nome, descrizione, creata, soloAscolto)
              VALUES ('officina', 'Officina', 'si lavora', 0, 0),
                     ('palco', 'Palco', '', 0, 1);

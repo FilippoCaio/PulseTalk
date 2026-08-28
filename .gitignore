@@ -38,6 +38,9 @@ _nas/
 app/build/icon.ico
 app/build/icona.png
 
+# Indice locale usato per orientarsi nel progetto; si rigenera dal sorgente.
+/graphify-out/
+
 # L'indirizzo del proprio server, cotto dentro alle build fatte in casa.
 # Fuori dal repo di proposito: la versione pubblica resta neutra.
 app/server.local

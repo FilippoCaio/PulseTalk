@@ -22,6 +22,7 @@ import { richiedeRuolo } from '../auth.mjs';
 import { leggiConfig } from '../config.mjs';
 import {
   CAMPI_ISTANZA,
+  CATEGORIE_ISTANZA,
   GRUPPI_ISTANZA,
   ambienteEffettivo,
   campoIstanza,
@@ -67,7 +68,12 @@ export function rotteAdmin(app, { db, servizi, ambiente = process.env }) {
       };
     });
 
-    return { gruppi: GRUPPI_ISTANZA, campi, capacita: capacita() };
+    return {
+      categorie: CATEGORIE_ISTANZA,
+      gruppi: GRUPPI_ISTANZA,
+      campi,
+      capacita: capacita(),
+    };
   };
 
   /** Cosa e' acceso davvero, adesso. E' la verifica che il salvataggio ha fatto effetto. */

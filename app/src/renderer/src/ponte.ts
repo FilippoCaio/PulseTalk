@@ -9,6 +9,10 @@ import {
   type Sorgente,
   type StatoAggiornamento
 } from '@shared/tipi'
+import { Browser } from '@capacitor/browser'
+import { Preferences } from '@capacitor/preferences'
+import { suAndroid } from './lib/android'
+import { SERVER_PREDEFINITO } from '@shared/predefiniti'
 
 /**
  * La stessa interfaccia, due case.
@@ -27,6 +31,8 @@ import {
 export interface Ponte {
   /** Vero dentro l'app installata. */
   elettrone: boolean
+  /** Vero dentro il contenitore Android. */
+  android: boolean
 
   /**
    * Gli aggiornamenti. Nel browser non esistono: la pagina e' sempre l'ultima
@@ -86,6 +92,7 @@ export interface Ponte {
 function ponteElettrone(api: NonNullable<Window['pulsetalk']>): Ponte {
   return {
     elettrone: true,
+    android: false,
     audioDiSistema: true,
     aggiornamenti: api.aggiornamento,
     informazioniClient: async () => {
@@ -116,10 +123,13 @@ const CHIAVE = 'pulsetalk.impostazioni'
 function ponteBrowser(): Ponte {
   const ascoltatori = new Set<(i: Impostazioni) => void>()
 
-  const leggi = (): Impostazioni => {
+  const leggi = async (): Promise<Impostazioni> => {
     let salvate: Partial<Impostazioni> = {}
     try {
-      salvate = JSON.parse(localStorage.getItem(CHIAVE) ?? '{}')
+      const grezze = suAndroid
+        ? (await Preferences.get({ key: CHIAVE })).value
+        : localStorage.getItem(CHIAVE)
+      salvate = JSON.parse(grezze ?? '{}')
     } catch {
       // Un valore illeggibile non deve impedire di entrare in una stanza.
     }
@@ -128,7 +138,7 @@ function ponteBrowser(): Ponte {
       // Il server e' quello che ha servito questa pagina: chi apre
       // talk.<dominio> non deve digitare di nuovo l'indirizzo da cui e'
       // appena arrivato.
-      server: location.origin,
+      server: suAndroid ? SERVER_PREDEFINITO : location.origin,
       ...salvate
     }
   }
@@ -140,6 +150,7 @@ function ponteBrowser(): Ponte {
 
   return {
     elettrone: false,
+    android: suAndroid,
     aggiornamenti: null,
     informazioniClient: async () => null,
 
@@ -151,11 +162,15 @@ function ponteBrowser(): Ponte {
     sorgenti: async () => [],
     preparaCattura: async () => {},
 
-    leggiImpostazioni: async () => leggi(),
+    leggiImpostazioni: () => leggi(),
 
     scriviImpostazioni: async (modifiche) => {
-      const prossime = { ...leggi(), ...modifiche }
-      localStorage.setItem(CHIAVE, JSON.stringify(prossime))
+      const prossime = { ...(await leggi()), ...modifiche }
+      if (suAndroid) {
+        await Preferences.set({ key: CHIAVE, value: JSON.stringify(prossime) })
+      } else {
+        localStorage.setItem(CHIAVE, JSON.stringify(prossime))
+      }
       for (const ascoltatore of ascoltatori) ascoltatore(prossime)
       return {
         impostazioni: prossime,
@@ -163,7 +178,7 @@ function ponteBrowser(): Ponte {
         // localStorage perche' non c'e' altro posto: chi ha accesso a questo
         // profilo di Chrome ce l'ha. Nell'app installata e' cifrato con la
         // DPAPI dell'utente di Windows.
-        errore: modifiche.token
+        errore: modifiche.token && !suAndroid
           ? 'Il browser tiene il token in chiaro nella memoria del sito. Per un accesso permanente conviene l\'app installata.'
           : undefined
       }
@@ -192,7 +207,8 @@ function ponteBrowser(): Ponte {
     },
 
     apriEsterno: (url) => {
-      window.open(url, '_blank', 'noopener,noreferrer')
+      if (suAndroid) void Browser.open({ url })
+      else window.open(url, '_blank', 'noopener,noreferrer')
     },
 
     // Nel browser il puntatore resta dentro al riquadro e la notifica non

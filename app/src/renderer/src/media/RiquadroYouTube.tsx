@@ -384,16 +384,6 @@ export default function RiquadroYouTube({
             centimetro l'uno dall'altro non danno una scelta, danno il dubbio
             che facciano cose diverse. */}
         <BottoneMuto voci={[voceVolume]} titolo="il video" />
-        <Comando
-          titolo={aFuoco ? 'Rimetti nella griglia' : 'Metti a fuoco'}
-          premi={quandoScelto}
-        >
-          {aFuoco ? (
-            <Rimpicciolisci className="h-4 w-4" />
-          ) : (
-            <Ingrandisci className="h-4 w-4" />
-          )}
-        </Comando>
       </div>
 
       <div className="pointer-events-none absolute right-3 bottom-3 left-3 z-20 space-y-2 opacity-0 transition-opacity group-hover/youtube:opacity-100 focus-within:opacity-100">
@@ -456,12 +446,32 @@ export default function RiquadroYouTube({
             <Video className="h-4 w-4 text-vivo" />
             YouTube · Guarda insieme
           </span>
-          <span className="numeri rounded-lg bg-fondo/90 px-2 py-1 text-[11px] text-testo-3 shadow-lg backdrop-blur">
-            {ripiego
-              ? 'player standard'
-              : Math.abs(scarto) < 250
-              ? 'in pari'
-              : `${scarto > 0 ? '−' : '+'}${(Math.abs(scarto) / 1000).toFixed(1)}s`}
+          {/* La sovraimpressione sta in basso a destra come su ogni altro
+              riquadro. Non poteva restare in alto insieme all'altoparlante e
+              basta: in una griglia mista — facce, schermi, il video — l'occhio
+              impara un angolo solo, e un box che fa eccezione e' un box che
+              ogni volta si cerca due volte. Qui in fondo divide la riga con la
+              spia del sincronismo, che non ne occupa mezza. */}
+          <span className="flex items-end gap-2">
+            <span className="numeri rounded-lg bg-fondo/90 px-2 py-1 text-[11px] text-testo-3 shadow-lg backdrop-blur">
+              {ripiego
+                ? 'player standard'
+                : Math.abs(scarto) < 250
+                ? 'in pari'
+                : `${scarto > 0 ? '−' : '+'}${(Math.abs(scarto) / 1000).toFixed(1)}s`}
+            </span>
+            <span className="pointer-events-auto" onClick={(evento) => evento.stopPropagation()}>
+              <Comando
+                titolo={aFuoco ? 'Rimetti nella griglia' : 'Metti a fuoco'}
+                premi={quandoScelto}
+              >
+                {aFuoco ? (
+                  <Rimpicciolisci className="h-4 w-4" />
+                ) : (
+                  <Ingrandisci className="h-4 w-4" />
+                )}
+              </Comando>
+            </span>
           </span>
         </div>
       </div>

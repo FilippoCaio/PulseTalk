@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { Utente } from '@shared/tipi'
 import type { Api, InvitoAperto } from '../lib/api'
-import { Avviso, Bottone, Campo, classiInput } from '../ui'
+import { Avviso, Bottone, Campo, classiInput, Sezione } from '../ui'
 
 /**
  * Far entrare qualcuno, da qui invece che da SSH.
@@ -12,16 +12,19 @@ import { Avviso, Bottone, Campo, classiInput } from '../ui'
  * non apre nessuna porta. Per questo appena creato viene mostrato in grande
  * con un pulsante per copiarlo, e l'elenco qui sotto mostra che *esiste* un
  * invito ma non puo' ripescarlo.
+ *
+ * Vive dentro alle impostazioni del server e non in una finestra sua. Chi
+ * crea un invito sta amministrando l'istanza — decide chi ci entra e con quali
+ * poteri — ed e' la stessa materia delle chiavi dei servizi, non un accessorio
+ * del proprio account. Sotto "Account" ci era finito perche' li' c'era spazio.
  */
-export default function Inviti({
+export function ContenutoInviti({
   api,
-  server,
-  chiudi
+  /** L'indirizzo pubblico: serve a comporre il link pronto da mandare. */
+  server
 }: {
   api: Api
-  /** L'indirizzo pubblico: serve a comporre il link pronto da mandare. */
   server: string
-  chiudi: () => void
 }): React.JSX.Element {
   const [ruolo, setRuolo] = useState<Utente['ruolo']>('membro')
   const [giorni, setGiorni] = useState(14)
@@ -72,148 +75,132 @@ export default function Inviti({
     new Date(t * 1000).toLocaleDateString('it-IT', { day: 'numeric', month: 'long' })
 
   return (
-    <div
-      className="absolute inset-0 z-20 flex items-start justify-center overflow-y-auto bg-black/70 p-6 backdrop-blur-sm"
-      onClick={chiudi}
-    >
-      <div
-        className="w-full max-w-lg overflow-hidden rounded-2xl border border-bordo bg-fondo-2"
-        onClick={(e) => e.stopPropagation()}
+    <>
+      <Sezione
+        titolo="Una chiave d'invito"
+        sotto="Chi ce l'ha entra in questo server e si sceglie nome utente e password. Senza, non entra nessuno."
       >
-        <header className="flex items-center justify-between border-b border-bordo px-5 py-4">
-          <h2 className="font-semibold">Invita qualcuno</h2>
-          <Bottone tono="fantasma" onClick={chiudi}>
-            Chiudi
-          </Bottone>
-        </header>
+        {nato ? (
+          <div className="space-y-4">
+            <Avviso tono="neutro">
+              Questo codice si vede <strong>adesso e mai piu&apos;</strong>. Il server ne conserva
+              solo l&apos;impronta: se lo perdi, se ne fa un altro.
+            </Avviso>
 
-        <div className="space-y-5 p-5">
-          {nato ? (
-            <div className="space-y-4">
-              <Avviso tono="neutro">
-                Questo codice si vede <strong>adesso e mai piu'</strong>. Il server ne conserva solo
-                l'impronta: se lo perdi, se ne fa un altro.
-              </Avviso>
-
-              <div className="rounded-lg border border-vivo/40 bg-vivo/5 p-4 text-center">
-                <p className="numeri text-lg font-medium break-all select-all">{nato.codice}</p>
-                <p className="mt-1 text-xs text-testo-3">
-                  {nato.usi === 1 ? 'per una persona' : `per ${nato.usi} persone`}
-                </p>
-              </div>
-
-              <div className="flex flex-wrap gap-2">
-                <Bottone tono="vivo" onClick={() => void copia(nato.codice, 'codice')}>
-                  {copiato === 'codice' ? 'copiato' : 'Copia il codice'}
-                </Bottone>
-                <Bottone onClick={() => void copia(link, 'link')}>
-                  {copiato === 'link' ? 'copiato' : 'Copia il link pronto'}
-                </Bottone>
-              </div>
-
-              <p className="text-xs leading-relaxed text-testo-3">
-                Il link apre PulseTalk nel browser con il codice gia' compilato: chi lo riceve deve
-                solo scegliersi nome utente e password. Il codice nudo serve invece a chi ha l'app
-                installata.
+            <div className="rounded-lg border border-vivo/40 bg-vivo/5 p-4 text-center">
+              <p className="numeri text-lg font-medium break-all select-all">{nato.codice}</p>
+              <p className="mt-1 text-xs text-testo-3">
+                {nato.usi === 1 ? 'per una persona' : `per ${nato.usi} persone`}
               </p>
+            </div>
 
-              <Bottone tono="fantasma" onClick={() => setNato(null)}>
-                Fanne un altro
+            <div className="flex flex-wrap gap-2">
+              <Bottone tono="vivo" onClick={() => void copia(nato.codice, 'codice')}>
+                {copiato === 'codice' ? 'copiato' : 'Copia il codice'}
+              </Bottone>
+              <Bottone onClick={() => void copia(link, 'link')}>
+                {copiato === 'link' ? 'copiato' : 'Copia il link pronto'}
               </Bottone>
             </div>
-          ) : (
-            <div className="space-y-4">
-              <Campo etichetta="Cosa potra' fare">
-                <select
+
+            <p className="text-xs leading-relaxed text-testo-3">
+              Il link apre PulseTalk nel browser con il codice gia&apos; compilato: chi lo riceve
+              deve solo scegliersi nome utente e password. Il codice nudo serve invece a chi ha
+              l&apos;app installata.
+            </p>
+
+            <Bottone tono="fantasma" onClick={() => setNato(null)}>
+              Fanne un altro
+            </Bottone>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <Campo etichetta="Cosa potra' fare">
+              <select
+                className={classiInput}
+                value={ruolo}
+                onChange={(e) => setRuolo(e.target.value as Utente['ruolo'])}
+              >
+                <option value="ospite">Ospite — entra e ascolta, non trasmette</option>
+                <option value="membro">Membro — voce, camera e schermo</option>
+                <option value="admin">Admin — crea stanze, modera, invita</option>
+              </select>
+            </Campo>
+
+            <div className="grid grid-cols-2 gap-3">
+              <Campo etichetta="Per quante persone">
+                <input
+                  type="number"
                   className={classiInput}
-                  value={ruolo}
-                  onChange={(e) => setRuolo(e.target.value as Utente['ruolo'])}
-                >
-                  <option value="ospite">Ospite — entra e ascolta, non trasmette</option>
-                  <option value="membro">Membro — voce, camera e schermo</option>
-                  <option value="admin">Admin — crea stanze, modera, invita</option>
-                </select>
+                  min={1}
+                  max={50}
+                  value={usi}
+                  onChange={(e) => setUsi(Math.max(1, Number(e.target.value) || 1))}
+                />
               </Campo>
-
-              <div className="grid grid-cols-2 gap-3">
-                <Campo etichetta="Per quante persone">
-                  <input
-                    type="number"
-                    className={classiInput}
-                    min={1}
-                    max={50}
-                    value={usi}
-                    onChange={(e) => setUsi(Math.max(1, Number(e.target.value) || 1))}
-                  />
-                </Campo>
-                <Campo etichetta="Valido per (giorni)">
-                  <input
-                    type="number"
-                    className={classiInput}
-                    min={1}
-                    max={30}
-                    value={giorni}
-                    onChange={(e) => setGiorni(Math.max(1, Number(e.target.value) || 1))}
-                  />
-                </Campo>
-              </div>
-
-              {usi > 1 && (
-                <Avviso tono="attenzione">
-                  Un codice per piu' persone entra chiunque ce l'abbia, finche' non si esaurisce o
-                  scade. Inoltrato in una chat di gruppo, ci entra il gruppo.
-                </Avviso>
-              )}
-
-              {errore && <Avviso>{errore}</Avviso>}
-
-              <Bottone tono="vivo" className="w-full" disabled={inCorso} onClick={() => void crea()}>
-                {inCorso ? 'un momento…' : 'Crea il codice'}
-              </Bottone>
+              <Campo etichetta="Valido per (giorni)">
+                <input
+                  type="number"
+                  className={classiInput}
+                  min={1}
+                  max={30}
+                  value={giorni}
+                  onChange={(e) => setGiorni(Math.max(1, Number(e.target.value) || 1))}
+                />
+              </Campo>
             </div>
-          )}
 
-          {/* -- Quelli ancora aperti ------------------------------------- */}
-          {aperti && aperti.length > 0 && (
-            <div className="border-t border-bordo pt-4">
-              <p className="mb-2 text-xs font-medium tracking-wide text-testo-2 uppercase">
-                Inviti ancora validi
-              </p>
-              <div className="space-y-1.5">
-                {aperti.map((invito) => (
-                  <div
-                    key={invito.id}
-                    className="flex items-center gap-3 rounded-lg border border-bordo bg-fondo px-3 py-2 text-sm"
-                  >
-                    <span className="min-w-0 flex-1 truncate">
-                      {invito.ruolo}
-                      <span className="numeri text-testo-3">
-                        {' · '}
-                        {invito.usi}/{invito.usiMax} usati · scade il {quando(invito.scade)}
-                      </span>
-                    </span>
-                    <button
-                      className="shrink-0 text-xs text-male hover:underline"
-                      onClick={() => {
-                        void api
-                          .eliminaInvito(invito.id)
-                          .then(carica)
-                          .catch((e) => setErrore((e as Error).message))
-                      }}
-                    >
-                      annulla
-                    </button>
-                  </div>
-                ))}
+            {usi > 1 && (
+              <Avviso tono="attenzione">
+                Un codice per piu&apos; persone entra chiunque ce l&apos;abbia, finche&apos; non si
+                esaurisce o scade. Inoltrato in una chat di gruppo, ci entra il gruppo.
+              </Avviso>
+            )}
+
+            {errore && <Avviso>{errore}</Avviso>}
+
+            <Bottone tono="vivo" disabled={inCorso} onClick={() => void crea()}>
+              {inCorso ? 'un momento…' : 'Crea il codice'}
+            </Bottone>
+          </div>
+        )}
+      </Sezione>
+
+      {/* -- Quelli ancora aperti ------------------------------------------- */}
+      {aperti && aperti.length > 0 && (
+        <Sezione
+          titolo="Inviti ancora validi"
+          sotto="Il codice non compare: il server non ce l'ha. Annullarne uno lo rende inservibile subito, anche per chi lo aveva gia' ricevuto."
+        >
+          <div className="space-y-1.5">
+            {aperti.map((invito) => (
+              <div
+                key={invito.id}
+                className="flex items-center gap-3 rounded-lg border border-bordo bg-fondo px-3 py-2 text-sm"
+              >
+                <span className="min-w-0 flex-1 truncate">
+                  {invito.ruolo}
+                  <span className="numeri text-testo-3">
+                    {' · '}
+                    {invito.usi}/{invito.usiMax} usati · scade il {quando(invito.scade)}
+                  </span>
+                </span>
+                <button
+                  className="shrink-0 text-xs text-male hover:underline"
+                  onClick={() => {
+                    void api
+                      .eliminaInvito(invito.id)
+                      .then(carica)
+                      .catch((e) => setErrore((e as Error).message))
+                  }}
+                >
+                  annulla
+                </button>
               </div>
-              <p className="mt-2 text-[11px] text-testo-3">
-                Il codice non compare: il server non ce l'ha. Annullarne uno lo rende inservibile
-                subito, anche per chi lo aveva gia' ricevuto.
-              </p>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
+            ))}
+          </div>
+        </Sezione>
+      )}
+    </>
   )
 }

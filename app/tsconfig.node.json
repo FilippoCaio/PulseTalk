@@ -23,6 +23,8 @@
   "include": [
     "electron.vite.config.ts",
     "vite.web.config.ts",
+    "vite.android.config.ts",
+    "capacitor.config.ts",
     "src/main/**/*",
     "src/preload/**/*",
     "src/shared/**/*"

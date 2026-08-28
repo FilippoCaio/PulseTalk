@@ -102,7 +102,8 @@ export interface AnteprimaLink {
 /** Un campo del pannello di amministrazione, con la sua storia. */
 export interface CampoIstanza {
   chiave: string
-  gruppo: string
+  /** Null quando il campo non sta in un gruppo: e' l'interruttore di una categoria. */
+  gruppo: string | null
   etichetta: string
   aiuto: string
   tipo: 'testo' | 'url' | 'scelta' | 'interruttore'
@@ -120,8 +121,43 @@ export interface CampoIstanza {
   da: number | null
 }
 
+/**
+ * Una funzione intera: l'AI, le GIF, la musica.
+ *
+ * O ha `personale` — e allora esiste un interruttore per far portare a ognuno
+ * la propria chiave — o ha `senzaPersonale`, che e' la riga con scritto
+ * perche' qui quell'interruttore non avrebbe senso.
+ */
+export interface CategoriaIstanza {
+  id: string
+  nome: string
+  sotto: string
+  personale: {
+    /** Il campo che tiene la scelta. */
+    chiave: string
+    titolo: string
+    sotto: string
+    /** Il valore da scrivere quando l'interruttore e' spento. */
+    spento: string
+    /** I modi che l'interruttore acceso puo' avere. */
+    acceso: { valore: string; nome: string; sotto: string }[]
+    /** In quale pagina va, chi vuole collegare la sua. */
+    dove: string
+  } | null
+  senzaPersonale: string | null
+}
+
+/** Una manciata di campi che si compilano insieme, dentro a una categoria. */
+export interface GruppoIstanza {
+  id: string
+  categoria: string
+  nome: string
+  sotto: string
+}
+
 export interface StatoIstanza {
-  gruppi: { id: string; nome: string; sotto: string }[]
+  categorie: CategoriaIstanza[]
+  gruppi: GruppoIstanza[]
   campi: CampoIstanza[]
   capacita: Record<string, unknown>
 }

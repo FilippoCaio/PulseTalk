@@ -42,7 +42,6 @@ export default function PannelloImpostazioni({
   chiudi,
   esciDallAccount,
   quandoCambiaUtente,
-  apriInviti,
   paginaIniziale
 }: {
   api: Api
@@ -53,7 +52,6 @@ export default function PannelloImpostazioni({
   chiudi: () => void
   esciDallAccount: () => Promise<void>
   quandoCambiaUtente: (utente: Utente) => void
-  apriInviti: () => void
   /** Con quale sezione aprirsi. Senza, quella di sempre. */
   paginaIniziale?: Pagina
 }): React.JSX.Element {
@@ -73,23 +71,23 @@ export default function PannelloImpostazioni({
 
   return (
     <div
-      className="absolute inset-0 z-30 flex items-center justify-center bg-black/70 p-6 backdrop-blur-sm"
+      className="absolute inset-0 z-30 flex items-center justify-center bg-black/70 p-0 backdrop-blur-sm sm:p-6"
       onClick={chiudi}
     >
       <div
-        className="flex h-[min(46rem,88vh)] w-full max-w-4xl overflow-hidden rounded-2xl border border-bordo bg-fondo-2"
+        className="flex h-full w-full max-w-4xl flex-col overflow-hidden border border-bordo bg-fondo-2 sm:h-[min(46rem,88vh)] sm:flex-row sm:rounded-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* La colonna delle sezioni.
             Qui le parole restano parole: un elenco di sezioni fatto di sole
             icone si impara a memoria, e le impostazioni si aprono una volta al
             mese — il tempo esatto per dimenticarsele. */}
-        <nav className="w-52 shrink-0 space-y-0.5 overflow-y-auto border-r border-bordo bg-fondo p-2">
+        <nav className="flex w-full shrink-0 gap-1 overflow-x-auto border-b border-bordo bg-fondo p-2 sm:block sm:w-52 sm:space-y-0.5 sm:overflow-y-auto sm:border-r sm:border-b-0">
           {PAGINE.filter((p) => !p.soloAdmin || utente.ruolo === 'admin').map(({ id, nome, Icona }) => (
             <button
               key={id}
               onClick={() => setPagina(id)}
-              className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm transition-colors ${
+              className={`flex shrink-0 items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm transition-colors sm:w-full ${
                 pagina === id
                   ? 'bg-fondo-3 text-testo'
                   : 'text-testo-2 hover:bg-fondo-3/60 hover:text-testo'
@@ -109,7 +107,7 @@ export default function PannelloImpostazioni({
             </BottoneIcona>
           </header>
 
-          <div className="min-h-0 flex-1 space-y-7 overflow-y-auto p-5">
+          <div className="min-h-0 flex-1 space-y-7 overflow-y-auto p-4 sm:p-5">
             {pagina === 'audio' && (
               <>
                 <Sezione
@@ -475,20 +473,13 @@ export default function PannelloImpostazioni({
 
             {pagina === 'ai' && <MiaAi api={api} />}
 
-            {pagina === 'server' && utente.ruolo === 'admin' && <ImpostazioniServer api={api} />}
+            {pagina === 'server' && utente.ruolo === 'admin' && (
+              <ImpostazioniServer api={api} server={impostazioni.server} />
+            )}
 
             {pagina === 'account' && (
               <>
                 <Sessioni api={api} />
-
-                {utente.ruolo === 'admin' && (
-                  <Sezione
-                    titolo="Invita"
-                    sotto="Fai entrare qualcuno, senza passare dalla riga di comando."
-                  >
-                    <Bottone onClick={apriInviti}>Crea un codice di invito</Bottone>
-                  </Sezione>
-                )}
 
                 <Sezione titolo="Accesso">
                   <p className="text-sm text-testo-2">

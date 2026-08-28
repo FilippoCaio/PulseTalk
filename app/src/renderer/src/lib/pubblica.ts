@@ -22,6 +22,7 @@ import {
 import type { ModoAudioSistema, Sorgente } from '@shared/tipi'
 import { ponte } from '../ponte'
 import { apriMicrofonoScelto, idDaAprire } from './usaDispositivi'
+import { catturaSchermoAndroid } from './android'
 
 /**
  * Dove i tetti vengono tolti davvero.
@@ -152,12 +153,22 @@ export async function catturaSchermo(
     vincoliVideo.width = { max: Math.ceil((preset.altezza * 16) / 9) }
   }
 
-  const stream = await navigator.mediaDevices.getDisplayMedia({
-    video: vincoliVideo,
-    // Nel browser questo diventa la spunta "condividi l'audio"; dentro
-    // Electron e' il loopback di Windows, gia' deciso da preparaCattura.
-    audio: audioSistema !== 'niente'
-  })
+  let stream: MediaStream
+  if (ponte.android) {
+    const latoMassimo = preset.altezza > 0 ? Math.round((preset.altezza * 16) / 9) : 1600
+    stream = await catturaSchermoAndroid(latoMassimo, preset.fps, preset.indizio)
+  } else if (typeof navigator.mediaDevices.getDisplayMedia !== 'function') {
+    throw new Error(
+      'La condivisione dello schermo non e\' disponibile in questo browser.'
+    )
+  } else {
+    stream = await navigator.mediaDevices.getDisplayMedia({
+      video: vincoliVideo,
+      // Nel browser questo diventa la spunta "condividi l'audio"; dentro
+      // Electron e' il loopback di Windows, gia' deciso da preparaCattura.
+      audio: audioSistema !== 'niente'
+    })
+  }
 
   const video = stream.getVideoTracks()[0]
   if (video) {

@@ -1,10 +1,10 @@
 {
   "name": "pulse-talk",
-  "version": "0.4.9",
+  "version": "0.5.2",
   "description": "Voce, video e schermo senza i tetti di Discord, sul tuo NAS",
   "type": "module",
   "main": "./out/main/index.js",
-  "author": "Filippo Caio",
+  "author": "Pulse",
   "license": "MIT",
   "scripts": {
     "dev": "electron-vite dev",
@@ -13,12 +13,17 @@
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "build:web": "vite build --config vite.web.config.ts",
     "dev:web": "vite --config vite.web.config.ts",
+    "build:android:web": "vite build --config vite.android.config.ts",
+    "android:sync": "npm run build:android:web && cap sync android",
+    "android:open": "npm run android:sync && cap open android",
+    "android:apk": "npm run android:sync && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-android.ps1",
     "icon": "node scripts/make-icon.mjs",
     "dist": "npm run build && npm run icon && electron-builder --win --dir",
     "dist:installer": "npm run build && npm run icon && electron-builder --win",
     "postinstall": "electron-builder install-app-deps"
   },
   "devDependencies": {
+    "@capacitor/cli": "6.2.1",
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^26.2.0",
     "@types/react": "^19.2.18",
@@ -35,6 +40,11 @@
     "vite": "^7.3.6"
   },
   "dependencies": {
+    "@capacitor/android": "6.2.1",
+    "@capacitor/app": "6.0.3",
+    "@capacitor/browser": "6.0.6",
+    "@capacitor/core": "6.2.1",
+    "@capacitor/preferences": "6.0.4",
     "electron-updater": "^6.8.9"
   }
 }

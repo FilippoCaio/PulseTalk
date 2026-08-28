@@ -137,16 +137,16 @@ export default function PannelloSpazio({
   }, [chiudi])
 
   return (
-    <div className="absolute inset-0 z-40 flex bg-fondo">
-      <nav className="flex w-56 shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-bordo bg-fondo-2 p-3">
-        <p className="mb-2 truncate px-2 text-[11px] font-semibold tracking-wider text-testo-3 uppercase">
+    <div className="absolute inset-0 z-40 flex flex-col bg-fondo sm:flex-row">
+      <nav className="flex w-full shrink-0 gap-1 overflow-x-auto border-b border-bordo bg-fondo-2 p-2 sm:w-56 sm:flex-col sm:gap-0.5 sm:overflow-y-auto sm:border-r sm:border-b-0 sm:p-3">
+        <p className="hidden mb-2 truncate px-2 text-[11px] font-semibold tracking-wider text-testo-3 uppercase sm:block">
           {spazio.nome}
         </p>
         {visibili.map(({ id, nome, Icona }) => (
           <button
             key={id}
             onClick={() => setSezione(id)}
-            className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm transition-colors ${
+            className={`flex shrink-0 items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm transition-colors ${
               sezione === id
                 ? 'bg-fondo-3 text-testo'
                 : 'text-testo-2 hover:bg-fondo-3/60 hover:text-testo'
@@ -166,7 +166,7 @@ export default function PannelloSpazio({
           </BottoneIcona>
         </header>
 
-        <div className="min-h-0 flex-1 space-y-7 overflow-y-auto p-5">
+        <div className="min-h-0 flex-1 space-y-7 overflow-y-auto p-4 sm:p-5">
           {errore && <p className="text-sm text-male">{errore}</p>}
 
           {sezione === 'panoramica' && (

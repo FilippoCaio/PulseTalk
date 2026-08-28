@@ -102,6 +102,8 @@ export default function SceltaSorgente({
   // Nel browser il selettore e' quello di Chrome: qui si sceglie solo la
   // qualita', e la sorgente la chiede il browser un istante dopo.
   const nelBrowser = !ponte.elettrone
+  const catturaWebDisponibile =
+    ponte.android || typeof navigator.mediaDevices?.getDisplayMedia === 'function'
 
   const diCategoria = (id: Categoria): Sorgente[] =>
     id === 'dispositivi'
@@ -110,6 +112,7 @@ export default function SceltaSorgente({
         [])
 
   const parti = (): void => {
+    if (nelBrowser && !catturaWebDisponibile) return
     const sorgente = nelBrowser
       ? null
       : (sorgenti?.find((s) => s.id === scelta) ?? dispositivi.find((d) => d.id === scelta) ?? null)
@@ -126,11 +129,11 @@ export default function SceltaSorgente({
     // schiacciata fra le colonne, con le anteprime grandi come francobolli
     // proprio nel momento in cui bisogna riconoscere una finestra fra venti.
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-6 backdrop-blur-sm"
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-0 backdrop-blur-sm sm:p-6"
       onClick={chiudi}
     >
       <div
-        className="flex h-full max-h-[46rem] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-bordo bg-fondo-2"
+        className="flex h-full max-h-[46rem] w-full max-w-5xl flex-col overflow-hidden border border-bordo bg-fondo-2 sm:rounded-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Titolo e schede sulla stessa riga: due righe separate costavano
@@ -170,9 +173,9 @@ export default function SceltaSorgente({
         <div className="min-h-0 flex-1 overflow-y-auto p-5">
           {nelBrowser ? (
             <Avviso tono="neutro">
-              Nel browser la scelta di cosa mostrare la fa Chrome, un istante dopo aver premuto
-              Condividi. L&apos;audio di sistema c&apos;e&apos; solo se lo spunti nella sua finestra,
-              e su Windows solo condividendo uno schermo intero.
+              {ponte.android
+                ? 'Android mostrera\' la conferma di sistema dopo aver premuto Condividi. Viene trasmesso il video dello schermo; l\'audio delle altre app non e\' incluso.'
+                : 'Nel browser la scelta di cosa mostrare la fa Chrome, un istante dopo aver premuto Condividi. L\'audio di sistema c\'e\' solo se lo spunti nella sua finestra, e su Windows solo condividendo uno schermo intero.'}
             </Avviso>
           ) : sorgenti === null ? (
             <p className="respiro text-testo-3">guardo cosa c&apos;e&apos; aperto…</p>
@@ -268,7 +271,10 @@ export default function SceltaSorgente({
             <Bottone tono="fantasma" onClick={chiudi}>
               Annulla
             </Bottone>
-            <Bottone onClick={parti} disabled={!nelBrowser && !scelta}>
+            <Bottone
+              onClick={parti}
+              disabled={(!nelBrowser && !scelta) || (nelBrowser && !catturaWebDisponibile)}
+            >
               {modalita === 'nuova' ? 'Condividi' : 'Cambia'}
             </Bottone>
           </div>

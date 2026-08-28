@@ -24,7 +24,7 @@ import {
   SchermoStop,
   Stella
 } from '../icone'
-import { BottoneMuto, BottoneVolume, type VoceVolume } from './Volume'
+import { BottoneMuto, type VoceVolume } from './Volume'
 
 /**
  * Un riquadro: una persona, o uno schermo.
@@ -159,8 +159,16 @@ export default function Riquadro({
     }
   }, [dati.traccia])
 
+  // Numeri senza traccia non sono numeri vecchi: sono numeri falsi. Chi spegne
+  // la camera lascerebbe li' l'ultima risoluzione e l'ultimo bitrate, e
+  // passandoci sopra si leggerebbe la descrizione di qualcosa che non sta piu'
+  // trasmettendo — per sempre, perche' il riquadro della persona resta e con
+  // lui lo stato. Si azzerano appena la traccia se ne va.
   useEffect(() => {
-    if (!mostraStatistiche || !dati.traccia) return
+    if (!mostraStatistiche || !dati.traccia) {
+      setStatistiche(null)
+      return
+    }
     return osserva(dati.traccia, setStatistiche)
   }, [dati.traccia, mostraStatistiche])
 
@@ -328,13 +336,18 @@ export default function Riquadro({
   }
 
   /**
-   * Cosa vuol dire un clic, e dipende da cosa c'e' sotto.
+   * Cosa vuol dire un clic, e dipende da dove sta il riquadro.
    *
-   * Su una persona mette a fuoco, come sempre. Su uno schermo condiviso
-   * **indica**: e' il gesto che si fa dieci volte in una sessione, e mettere
-   * a fuoco — che si fa una volta — se lo prendeva tutto. La
-   * sovraimpressione e' rimasta, ma sull'icona in alto a destra, dove sta
-   * una cosa che si preme di rado.
+   * Su uno schermo **in sovraimpressione** indica: e' il gesto che si fa dieci
+   * volte in una sessione, e la' c'e' l'immagine grande su cui indicare un
+   * punto ha senso. Ovunque altro — nella striscia, nella griglia, su una
+   * persona — il clic mette a fuoco.
+   *
+   * Prima indicava anche da piccolo, per non avere una regola che vale a
+   * meta'. Ma su una tessera da duecento pixel un pixel di riquadro sono dieci
+   * pixel di schermo vero: si indicava a caso, e soprattutto si indicava
+   * *senza volerlo*, perche' li' il clic che uno intende e' "portamelo
+   * davanti". La regola non e' a meta': si indica dove si sta guardando.
    *
    * Dopo un trascinamento non succede niente: si stava spostando l'immagine,
    * non indicando un punto.
@@ -457,30 +470,28 @@ export default function Riquadro({
         </div>
       )}
 
-      {/* I comandi, in alto a destra e solo passandoci sopra: un riquadro che
-          mostra sempre tre pulsanti e' un riquadro che mostra meno video.
-          `focus-within` li tiene visibili mentre il fumetto del volume e'
-          aperto, altrimenti sparirebbero da sotto al puntatore. */}
+      {/* I comandi che lasciano la stanza com'e': zittisci, chiudi la
+          condivisione, riporta lo zoom a uno. In alto a destra e solo
+          passandoci sopra, perche' un riquadro che mostra sempre tre pulsanti
+          e' un riquadro che mostra meno video. */}
       <div
         onClick={(evento) => evento.stopPropagation()}
         className="absolute top-2 right-2 z-20 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100"
       >
-        {/* Sulle condivisioni l'altoparlante e' un interruttore e basta; sulle
-            persone resta il cursore. Non e' un capriccio: la voce di qualcuno
-            si abbassa, uno schermo che suona si spegne. Il livello preciso di
-            una condivisione sta nel menu del tasto destro, dove stanno le
-            cose che si toccano una volta per sessione. */}
+        {/* L'altoparlante e' un interruttore, e lo e' su tutto: sulle
+            condivisioni e sulle persone.
+            Era un fumetto col cursore, e il cursore era la risposta a una
+            domanda che nessuno fa di fretta. Quello che si fa di fretta e' far
+            tacere qualcosa — una notifica, uno che ha lasciato acceso un
+            video, uno che sta mangiando — e un fumetto lo fa costare due clic
+            coprendo intanto un pezzo di riquadro. Il livello preciso non
+            sparisce: sta nel menu del tasto destro, insieme a tutto il resto
+            che si regola una volta per sessione. */}
         {volumi && volumi.length > 0 && (
-          dati.tipo === 'schermo' ? (
-            <BottoneMuto voci={volumi} titolo={`l'audio di ${dati.nome}`} />
-          ) : (
-            <BottoneVolume
-              voci={volumi}
-              titolo={`Volume di ${dati.nome}`}
-              verso="sotto"
-              variante="riquadro"
-            />
-          )
+          <BottoneMuto
+            voci={volumi}
+            titolo={dati.tipo === 'schermo' ? `l'audio di ${dati.nome}` : `la voce di ${dati.nome}`}
+          />
         )}
 
         {/* Solo su una condivisione altrui che si sta ricevendo: e' il modo di
@@ -496,13 +507,26 @@ export default function Riquadro({
             <Lente className="h-4 w-4" />
           </Comando>
         )}
+      </div>
 
+      {/* La sovraimpressione, da sola e in basso a destra.
+          Sta lontana dagli altri comandi apposta. Gli altri si premono col
+          riquadro dove sta — zittisci, chiudi, riporta lo zoom a uno — e
+          lasciano la stanza com'e'; questo la ribalta, e un pulsante che
+          ribalta la stanza non va messo a un centimetro da quello che
+          silenzia una notifica. In basso a destra e' anche dove sta il
+          tutto-schermo dell'overlay: due comandi che parlano di quanto e'
+          grande una cosa, nello stesso angolo. */}
+      <div
+        onClick={(evento) => evento.stopPropagation()}
+        className="absolute right-2 bottom-2 z-20 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100"
+      >
         <Comando
           titolo={
             aFuoco
               ? 'Rimetti nella griglia'
-              : quandoPunta
-                ? 'Metti a fuoco — sullo schermo il clic serve a indicare'
+              : dati.tipo === 'schermo'
+                ? "Metti in sovraimpressione — da li' il clic indica"
                 : 'Metti a fuoco'
           }
           premi={quandoScelto}
@@ -573,7 +597,10 @@ export default function Riquadro({
           </div>
         )}
 
-        {mostraStatistiche && statistiche && (
+        {/* `dati.traccia` anche qui e non solo nell'effetto: l'azzeramento
+            arriva dopo che il browser ha gia' disegnato, e ci starebbe un
+            fotogramma con i numeri di prima addosso all'avatar. */}
+        {mostraStatistiche && dati.traccia && statistiche && (
           <Numeri statistiche={statistiche} locale={dati.locale} />
         )}
       </div>
@@ -590,7 +617,11 @@ export default function Riquadro({
           altrui e' esattamente il posto dove passa la barra delle
           applicazioni. */}
       {dati.tipo === 'persona' && (
-        <div className="pointer-events-none absolute bottom-2 left-2 max-w-[calc(100%-1rem)]">
+        // Il tetto si stringe solo mentre i comandi ci sono: adesso in basso a
+        // destra c'e' la sovraimpressione, e su un riquadro da duecento pixel
+        // un nome lungo ci finiva sotto. A riposo la targhetta si riprende
+        // tutto lo spazio, perche' a riposo li' non c'e' niente.
+        <div className="pointer-events-none absolute bottom-2 left-2 max-w-[calc(100%-1rem)] transition-[max-width] group-hover:max-w-[calc(100%-3.5rem)]">
           <div className="flex items-center gap-1.5 rounded-lg bg-black/60 px-2 py-1 text-xs backdrop-blur-sm">
             {dati.moderatore && (
               <span title="Modera questa stanza" className="shrink-0 text-attenzione">
