@@ -156,7 +156,11 @@ try {
     Git commit -m $testo | Out-Null
     Bene "commit: $testo"
 
-    Git tag $tag | Out-Null
+    # -a e non un tag secco: `push --follow-tags` piu' avanti spinge soltanto i
+    # tag annotati, e con uno leggero il commit saliva da solo lasciando il tag
+    # qui. E' il motivo per cui sul remoto l'ultimo tag era v0.3.1 con l'app
+    # arrivata alla 0.5.2 — nessuno se n'era accorto perche' la push riusciva.
+    Git tag -a $tag -m $testo | Out-Null
     Bene "tag: $tag"
 
     # -- 6. La spinta -------------------------------------------------------
