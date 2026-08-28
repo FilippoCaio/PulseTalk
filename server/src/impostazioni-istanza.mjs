@@ -39,6 +39,62 @@
  * a una categoria, e il pannello lo pesca per nome.
  */
 export const CAMPI_ISTANZA = [
+  // -- La posta: dove ci si appoggia ----------------------------------------
+  {
+    chiave: 'TALK_SMTP_HOST',
+    gruppo: 'posta-server',
+    etichetta: 'Indirizzo del server',
+    aiuto:
+      "Il server SMTP a cui consegnare. Senza questo la posta e' spenta, e con lei la conferma dell'indirizzo e il recupero della password.",
+    tipo: 'testo',
+    esempio: 'smtp.dominio.it',
+  },
+  {
+    chiave: 'TALK_SMTP_PORTA',
+    gruppo: 'posta-server',
+    etichetta: 'Porta',
+    aiuto:
+      "587 e' quella normale: si parte in chiaro e si passa a TLS appena il server lo offre. Usa 465 solo con l'interruttore qui sotto acceso.",
+    tipo: 'testo',
+    esempio: '587',
+  },
+  {
+    chiave: 'TALK_SMTP_TLS',
+    gruppo: 'posta-server',
+    etichetta: 'Cifrato dal primo byte (porta 465)',
+    aiuto:
+      "Acceso solo per la porta 465, dove il canale e' cifrato da subito. Sulla 587 lascialo spento: il passaggio a TLS avviene lo stesso, un momento dopo, e accenderlo qui farebbe fallire il collegamento.",
+    tipo: 'interruttore',
+  },
+  {
+    chiave: 'TALK_SMTP_UTENTE',
+    gruppo: 'posta-server',
+    etichetta: 'Utente',
+    aiuto: "Di solito e' la casella stessa. Lascialo vuoto solo per un server che non chiede di autenticarsi.",
+    tipo: 'testo',
+    esempio: 'talk@dominio.it',
+  },
+  {
+    chiave: 'TALK_SMTP_PASSWORD',
+    gruppo: 'posta-server',
+    etichetta: 'Password',
+    aiuto:
+      "Quella della casella. Se il tuo servizio le offre, usa una password dedicata alle applicazioni invece di quella dell'account: si revoca da sola senza toccare il resto.",
+    tipo: 'testo',
+    segreta: true,
+  },
+
+  // -- La posta: da chi arrivano --------------------------------------------
+  {
+    chiave: 'TALK_SMTP_MITTENTE',
+    gruppo: 'posta-mittente',
+    etichetta: 'Mittente',
+    aiuto:
+      "Come compare a chi riceve. Va bene il solo indirizzo, oppure «PulseTalk <talk@dominio.it>» per dargli anche un nome.",
+    tipo: 'testo',
+    esempio: 'PulseTalk <talk@dominio.it>',
+  },
+
   // -- L'AI: chi porta la chiave --------------------------------------------
   {
     chiave: 'TALK_AI_CHIAVI',
@@ -246,6 +302,14 @@ export const CATEGORIE_ISTANZA = [
     senzaPersonale:
       "Client ID e secret sono l'applicazione registrata su Spotify, e ne serve una per server — non una per persona. L'account personale si collega gia' da se': ognuno entra con il proprio quando avvia l'ascolto.",
   },
+  {
+    id: 'posta',
+    nome: 'Posta',
+    sotto:
+      "Serve per confermare l'indirizzo di chi lo aggiunge al proprio account, e per rimettere in piedi una password dimenticata. Senza, quelle due cose restano spente e chi si dimentica la password la chiede a un admin.",
+    senzaPersonale:
+      "Qui una casella sola e' il punto: i messaggi partono dal server e devono arrivare da un indirizzo che chi riceve riconosce come tuo. Una casella per persona vorrebbe dire che il codice per rientrare arriva dall'indirizzo di qualcun altro, che e' esattamente la forma di una truffa.",
+  },
 ];
 
 /**
@@ -298,6 +362,20 @@ export const GRUPPI_ISTANZA = [
     nome: 'Applicazione Spotify',
     sotto:
       "I tre valori del cruscotto per sviluppatori. Vanno insieme: uno solo sbagliato e l'autorizzazione non torna indietro.",
+  },
+  {
+    id: 'posta-server',
+    categoria: 'posta',
+    nome: 'Server di posta',
+    sotto:
+      "Quello del tuo dominio, o di un servizio di invio. Un NAS che spedisce per conto proprio finisce quasi sempre nello spam: conviene appoggiarsi a chi tiene gia' la tua posta.",
+  },
+  {
+    id: 'posta-mittente',
+    categoria: 'posta',
+    nome: 'Da chi arrivano',
+    sotto:
+      "Il nome e l'indirizzo che compaiono nella casella di chi riceve. Deve essere una casella che quel server e' autorizzato a usare, o il messaggio viene rifiutato senza che nessuno se ne accorga.",
   },
 ];
 

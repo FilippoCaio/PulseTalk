@@ -765,7 +765,7 @@ export class Api {
   }
 
   /** Chiede davvero qualcosa al servizio, invece di dire che la chiave sembra a posto. */
-  provaImpostazioniIstanza(cosa: 'chat' | 'trascrizione'): Promise<Prova> {
+  provaImpostazioniIstanza(cosa: 'chat' | 'trascrizione' | 'posta'): Promise<Prova> {
     return this.chiama('/api/admin/impostazioni/prova', {
       method: 'POST',
       body: JSON.stringify({ cosa })

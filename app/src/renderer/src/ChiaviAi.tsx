@@ -178,29 +178,27 @@ export function ImpostazioniServer({
               </Sezione>
             ))}
 
-          {/* La prova sta in fondo all'AI, e solo li': e' l'unica categoria a
-              cui si possa chiedere qualcosa e sentirsi rispondere. Una chiave
-              si scrive giusta e non funziona lo stesso — credito finito,
-              modello che non esiste, indirizzo che parla un altro dialetto — e
-              sono tutti casi che si vedono solo chiedendo. */}
-          {categoria.id === 'ai' && (
+          {/* La prova sta in fondo alle categorie a cui si possa chiedere
+              qualcosa e sentirsi rispondere. Una chiave si scrive giusta e non
+              funziona lo stesso — credito finito, modello che non esiste,
+              indirizzo che parla un altro dialetto, password della casella
+              cambiata il mese scorso — e sono tutti casi che si vedono solo
+              chiedendo. */}
+          {PROVE[categoria.id] && (
             <Sezione
               titolo="Prova"
               sotto="Chiede davvero qualcosa al servizio, con la configurazione gia' pubblicata."
             >
               <div className="flex flex-wrap items-center gap-2">
-                <Bottone
-                  tono="fantasma"
-                  onClick={() => void chiedi(api.provaImpostazioniIstanza('chat'), setProva)}
-                >
-                  Prova la chat
-                </Bottone>
-                <Bottone
-                  tono="fantasma"
-                  onClick={() => void chiedi(api.provaImpostazioniIstanza('trascrizione'), setProva)}
-                >
-                  Prova la trascrizione
-                </Bottone>
+                {PROVE[categoria.id].map(({ cosa, etichetta }) => (
+                  <Bottone
+                    key={cosa}
+                    tono="fantasma"
+                    onClick={() => void chiedi(api.provaImpostazioniIstanza(cosa), setProva)}
+                  >
+                    {etichetta}
+                  </Bottone>
+                ))}
               </div>
               <EsitoProva prova={prova} />
             </Sezione>
@@ -659,6 +657,26 @@ export function MiaAi({ api }: { api: Api }): React.JSX.Element {
 }
 
 // -- I pezzi in comune --------------------------------------------------------
+
+/**
+ * Cosa si puo' provare, categoria per categoria.
+ *
+ * Una tabella e non una catena di `if`: quando si aggiunge un servizio a cui
+ * si possa chiedere qualcosa, si aggiunge una riga qui e il pulsante compare
+ * da solo nel posto giusto.
+ *
+ * La posta si ferma prima di spedire. Un messaggio vero vorrebbe un
+ * destinatario, e l'unico a portata sarebbe l'admin che sta premendo — che
+ * proprio in quel momento non ha ancora confermato il suo indirizzo. Host,
+ * porta, TLS e credenziali sono comunque dove sbaglia quasi tutto.
+ */
+const PROVE: Record<string, { cosa: 'chat' | 'trascrizione' | 'posta'; etichetta: string }[]> = {
+  ai: [
+    { cosa: 'chat', etichetta: 'Prova la chat' },
+    { cosa: 'trascrizione', etichetta: 'Prova la trascrizione' }
+  ],
+  posta: [{ cosa: 'posta', etichetta: 'Prova il collegamento' }]
+}
 
 async function chiedi(promessa: Promise<Prova>, mostra: (p: Prova) => void): Promise<void> {
   try {

@@ -32,6 +32,7 @@ import { creaStati } from './stati.mjs';
 import { creaRegistroMusica } from './provider/musica.mjs';
 import { creaAnteprimeLink } from './provider/anteprime-link.mjs';
 import { creaGif } from './provider/gif.mjs';
+import { creaPosta } from './posta.mjs';
 import { creaSpotify } from './provider/spotify.mjs';
 import { creaProviderAi } from './provider/ai.mjs';
 import { creaGeneratoreImmagini, elencoGeneratori } from './provider/generazione-immagini.mjs';
@@ -114,6 +115,7 @@ function montaServizi(config) {
     // su OpenAI e le immagini da una Stable Diffusion in casa, o il contrario.
     generatoreImmagini: creaGeneratoreImmagini(config),
     generatori: elencoGeneratori(config),
+    posta: creaPosta(config),
   };
 }
 

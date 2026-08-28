@@ -84,6 +84,7 @@ export function rotteAdmin(app, { db, servizi, ambiente = process.env }) {
     immagini: servizi.generatoreImmagini.disponibile,
     gif: servizi.gif.disponibile,
     ricercaImmagini: servizi.immagini.disponibile,
+    posta: servizi.posta.disponibile,
   });
 
   app.get('/api/admin/impostazioni', { onRequest: richiedeRuolo('admin') }, async () => stato());
@@ -174,7 +175,20 @@ export function rotteAdmin(app, { db, servizi, ambiente = process.env }) {
         return { ok: true, cosa: 'trascrizione', risposta: String(esito ?? '').slice(0, 200) };
       }
 
-      return risposta.code(400).send({ errore: 'si puo\' provare «chat» o «trascrizione»' });
+      if (quale === 'posta') {
+        if (!servizi.posta.disponibile) {
+          return risposta.code(501).send({ errore: 'manca l\'indirizzo del server di posta o il mittente' });
+        }
+        // Si arriva fino all'autenticazione e ci si ferma li'. Spedire un
+        // messaggio vero vorrebbe dire scegliere a chi mandarlo: all'admin che
+        // preme, e allora la prova fallisce per chi non ha ancora confermato
+        // il proprio indirizzo — cioe' proprio mentre lo sta configurando.
+        // Host, porta, TLS e credenziali sono dove sbaglia quasi tutto.
+        const esito = await servizi.posta.prova();
+        return { ok: true, cosa: 'posta', risposta: esito.avviso ?? 'il server di posta risponde e accetta le credenziali' };
+      }
+
+      return risposta.code(400).send({ errore: 'si puo\' provare «chat», «trascrizione» o «posta»' });
     } catch (errore) {
       // Non e' un guasto del server: e' la risposta alla domanda che e' stata
       // fatta. Duecento, con dentro cosa non ha funzionato.

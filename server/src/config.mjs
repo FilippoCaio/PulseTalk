@@ -8,6 +8,7 @@
 
 import { resolve } from 'node:path';
 
+import { indirizzoValido } from './posta.mjs';
 import { confrontaVersioni, versioneValida } from './versione.mjs';
 
 const RUOLI = ['ospite', 'membro', 'admin'];
@@ -37,6 +38,32 @@ function versione(env, nome, fallback) {
     throw new Error(`${nome} deve essere una versione semver completa (per esempio 0.3.6), non "${valore}"`);
   }
   return valore;
+}
+
+/**
+ * Il mittente, che deve contenere un indirizzo vero.
+ *
+ * Si valida qui e non al primo invio perche' un mittente storto non si
+ * manifesta come errore: il relay accetta la connessione, rifiuta il
+ * messaggio, e chi aspetta il codice non riceve niente — senza che nessuno
+ * abbia visto un errore. Meglio rifiutarlo mentre qualcuno sta guardando il
+ * pannello.
+ *
+ * Si accettano le due forme in cui la gente lo scrive: l'indirizzo nudo, e
+ * `Nome <indirizzo>` per decidere cosa compare nella casella di chi riceve.
+ */
+function mittentePosta(env) {
+  const grezzo = (env.TALK_SMTP_MITTENTE ?? '').trim();
+  if (!grezzo) return '';
+
+  const dentro = grezzo.match(/<([^>]+)>/);
+  const indirizzo = (dentro ? dentro[1] : grezzo).trim();
+  if (!indirizzoValido(indirizzo)) {
+    throw new Error(
+      `TALK_SMTP_MITTENTE deve contenere un indirizzo valido — "indirizzo@dominio.it" o "Nome <indirizzo@dominio.it>" — non "${grezzo}"`,
+    );
+  }
+  return grezzo;
 }
 
 function urlAggiornamenti(env) {
@@ -280,6 +307,32 @@ export function leggiConfig(env = process.env) {
 
     unsplash: {
       accessKey: env.TALK_UNSPLASH_ACCESS_KEY ?? '',
+    },
+
+    /**
+     * Il server di posta, per la conferma dell'indirizzo e il recupero.
+     *
+     * Assente su quasi tutte le installazioni, e va bene: senza, chi si
+     * dimentica la password chiede a un admin, che e' la strada che c'era
+     * prima e resta. Cio' che non deve succedere e' che l'assenza si presenti
+     * come un pulsante che poi fallisce — per quello `creaPosta` espone
+     * `disponibile`, e ogni cosa che dipende dalla posta guarda li'.
+     *
+     * `tls` acceso vuol dire cifrato dal primo byte, che e' la porta 465. Sulla
+     * 587 si parte in chiaro e si passa a TLS con STARTTLS appena il server lo
+     * offre: e' il modo normale, ed e' il motivo per cui il valore di serie e'
+     * spento con la porta 587.
+     */
+    posta: {
+      host: (env.TALK_SMTP_HOST ?? '').trim(),
+      porta: intero(env, 'TALK_SMTP_PORTA', 587, { min: 1, max: 65535 }),
+      utente: env.TALK_SMTP_UTENTE ?? '',
+      password: env.TALK_SMTP_PASSWORD ?? '',
+      // Va scritto come lo leggera' chi riceve: "PulseTalk <talk@dominio.it>"
+      // oppure il solo indirizzo. Il comando MAIL FROM prende solo la parte
+      // fra parentesi angolari, il resto e' il nome che compare nella casella.
+      mittente: mittentePosta(env),
+      tls: booleano(env, 'TALK_SMTP_TLS', false),
     },
 
     /**

@@ -149,6 +149,55 @@ describe('impostazioni dell\'istanza', () => {
     assert.equal(talk.db.impostazioniIstanza().TALK_AI_CHIAVI, undefined);
   });
 
+  it('rifiuta un mittente di posta storto, che fallirebbe in silenzio', async (t) => {
+    const { talk, base } = await conServer(t);
+    const capo = await accesso(talk, base, { nome: 'Capo', ruolo: 'admin' });
+
+    // Un mittente senza indirizzo dentro non da' errore al salvataggio ne'
+    // all'avvio: da' un relay che accetta il collegamento e poi rifiuta ogni
+    // messaggio. Chi aspetta il codice non riceve niente, e nessuno ha visto
+    // un errore. Va fermato qui, mentre il pannello e' ancora aperto.
+    for (const storto of ['nessun-indirizzo', 'PulseTalk <>', 'due @@ chiocciole']) {
+      const r = await capo.chiama('/api/admin/impostazioni', {
+        method: 'PUT',
+        body: JSON.stringify({ impostazioni: { TALK_SMTP_MITTENTE: storto } }),
+      });
+      assert.equal(r.status, 400, `"${storto}" non doveva essere accettato`);
+      assert.equal(talk.db.impostazioniIstanza().TALK_SMTP_MITTENTE, undefined);
+    }
+
+    // Le due forme buone passano entrambe: l'indirizzo nudo e quello col nome.
+    for (const buono of ['talk@esempio.it', 'PulseTalk <talk@esempio.it>']) {
+      const r = await capo.chiama('/api/admin/impostazioni', {
+        method: 'PUT',
+        body: JSON.stringify({ impostazioni: { TALK_SMTP_MITTENTE: buono } }),
+      });
+      assert.equal(r.status, 200, `"${buono}" doveva essere accettato`);
+    }
+  });
+
+  it('la posta risulta spenta finche\' non ci sono server e mittente', async (t) => {
+    const { talk, base } = await conServer(t);
+    const capo = await accesso(talk, base, { nome: 'Capo', ruolo: 'admin' });
+
+    const capacita = async () => (await (await capo.chiama('/api/admin/impostazioni')).json()).capacita.posta;
+    assert.equal(await capacita(), false);
+
+    // Solo l'host non basta: senza mittente non si puo' spedire, e dichiararsi
+    // accesi a meta' vorrebbe dire offrire il recupero password e poi fallire.
+    await capo.chiama('/api/admin/impostazioni', {
+      method: 'PUT',
+      body: JSON.stringify({ impostazioni: { TALK_SMTP_HOST: 'smtp.esempio.it' } }),
+    });
+    assert.equal(await capacita(), false);
+
+    await capo.chiama('/api/admin/impostazioni', {
+      method: 'PUT',
+      body: JSON.stringify({ impostazioni: { TALK_SMTP_MITTENTE: 'talk@esempio.it' } }),
+    });
+    assert.equal(await capacita(), true);
+  });
+
   it('non lascia scrivere cio' + '\' che non e\' del pannello', async (t) => {
     const { talk, base } = await conServer(t);
     const capo = await accesso(talk, base, { nome: 'Capo', ruolo: 'admin' });
