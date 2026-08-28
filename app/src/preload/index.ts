@@ -36,6 +36,22 @@ const api = {
   ): Promise<{ impostazioni: Impostazioni; errore?: string }> =>
     ipcRenderer.invoke(IPC.scriviImpostazioni, modifiche),
 
+  /** Collegarsi a un server (o rifare l'accesso a uno gia' collegato). */
+  collegaServer: (dati: {
+    indirizzo: string
+    token?: string | null
+    nome?: string | null
+    utente?: string | null
+    nomeVisibile?: string | null
+  }): Promise<{ impostazioni: Impostazioni; errore?: string }> =>
+    ipcRenderer.invoke(IPC.collegaServer, dati),
+
+  passaAServer: (indirizzo: string): Promise<{ impostazioni: Impostazioni }> =>
+    ipcRenderer.invoke(IPC.passaAServer, indirizzo),
+
+  scollegaServer: (indirizzo: string): Promise<{ impostazioni: Impostazioni }> =>
+    ipcRenderer.invoke(IPC.scollegaServer, indirizzo),
+
   onImpostazioniCambiate: (callback: (impostazioni: Impostazioni) => void) => {
     const gestore = (_evento: unknown, impostazioni: Impostazioni): void => callback(impostazioni)
     ipcRenderer.on(IPC.impostazioniCambiate, gestore)

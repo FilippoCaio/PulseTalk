@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { Impostazioni, Utente } from '@shared/tipi'
+import { nomiVicini, nomeDaIndirizzo, normalizzaIndirizzo } from '@shared/collegamenti'
 import { Api, ErroreApi } from '../lib/api'
 import { ponte } from '../ponte'
 import { Avviso, Bottone, Campo, classiInput } from '../ui'
@@ -11,7 +12,7 @@ import { Avviso, Bottone, Campo, classiInput } from '../ui'
  *
  *   accedi     nome utente e password. E' quella di tutti i giorni, quindi e'
  *              quella che si vede per prima.
- *   registra   un codice di invito, una volta sola nella vita. Da li' escono
+ *   registra   un codice di invito, una volta sola per server. Da li' escono
  *              le credenziali con cui si entrera' da qualunque dispositivo.
  *
  * L'indirizzo del server sta nascosto sotto a "Cambia server": chi riceve
@@ -20,66 +21,107 @@ import { Avviso, Bottone, Campo, classiInput } from '../ui'
  */
 type Modo = 'accedi' | 'registra'
 
-export default function Accesso({
-  impostazioni,
-  salva,
-  quandoEntra,
-  motivo = null
+/** Cosa esce da un accesso riuscito. */
+export interface Entrata {
+  indirizzo: string
+  token: string
+  utente: Utente
+}
+
+/**
+ * Il modulo vero e proprio, senza la pagina intorno.
+ *
+ * Sta a parte perche' lo stesso modulo serve due volte: alla schermata di
+ * accesso, che occupa tutta la finestra, e al pannello dei server, dove si
+ * aggiunge un secondo server senza uscire da quello in cui si sta. Erano due
+ * copie fino a ieri, e la seconda e' quella che sarebbe rimasta indietro.
+ */
+export function ModuloAccesso({
+  serverIniziale,
+  utenteIniziale,
+  codiceIniziale = null,
+  modoIniziale,
+  motivo = null,
+  bloccaServer = false,
+  etichettaAzione,
+  quandoCambiaModo,
+  quandoEntra
 }: {
-  impostazioni: Impostazioni
-  salva: (modifiche: Partial<Impostazioni>) => Promise<Impostazioni>
-  quandoEntra: (utente: Utente) => void
-  /**
-   * Perche' si e' finiti qui invece che dentro.
-   *
-   * Vuoto quando si apre l'applicazione senza aver mai fatto l'accesso. Pieno
-   * quando una sessione che c'era non vale piu': senza questa riga, chi viene
-   * buttato fuori da una revoca si ritrova davanti al modulo di accesso senza
-   * sapere se ha sbagliato qualcosa lui.
-   */
+  serverIniziale: string
+  /** Il nome che si usa altrove: qui e' una proposta, non un obbligo. */
+  utenteIniziale: string | null
+  codiceIniziale?: string | null
+  modoIniziale?: Modo
   motivo?: string | null
+  /** Vero dove l'indirizzo non si tocca: il modulo dentro a un server gia' scelto. */
+  bloccaServer?: boolean
+  etichettaAzione?: { accedi: string; registra: string }
+  /** Per chi disegna la frase in cima, che cambia con la strada scelta. */
+  quandoCambiaModo?: (modo: Modo) => void
+  quandoEntra: (entrata: Entrata) => Promise<void> | void
 }): React.JSX.Element {
-  // Un link di invito porta il codice nella query: `?invito=...`. Se c'e', si
-  // parte gia' sul modulo di registrazione con il codice dentro — chi ha
-  // ricevuto un link non deve capire che esistono due modi di entrare.
-  const invitoDalLink =
-    typeof location !== 'undefined' ? new URLSearchParams(location.search).get('invito') : null
+  const [modo, setModo] = useState<Modo>(modoIniziale ?? (codiceIniziale ? 'registra' : 'accedi'))
+  const [server, setServer] = useState(serverIniziale)
+  const [mostraServer, setMostraServer] = useState(!bloccaServer && !serverIniziale)
 
-  const [modo, setModo] = useState<Modo>(invitoDalLink ? 'registra' : 'accedi')
-  const [server, setServer] = useState(impostazioni.server)
-  const [mostraServer, setMostraServer] = useState(!impostazioni.server)
-
-  const [utente, setUtente] = useState(impostazioni.utenteRicordato ?? '')
+  const [utente, setUtente] = useState(utenteIniziale ?? '')
   const [password, setPassword] = useState('')
 
-  const [codice, setCodice] = useState(invitoDalLink ?? '')
+  const [codice, setCodice] = useState(codiceIniziale ?? '')
   const [nome, setNome] = useState('')
   const [conferma, setConferma] = useState('')
 
   const [inCorso, setInCorso] = useState(false)
   const [errore, setErrore] = useState<string | null>(null)
-  const [avvertenza, setAvvertenza] = useState<string | null>(null)
 
-  const indirizzo = (grezzo: string): string => {
-    const pulito = grezzo.trim().replace(/\/+$/, '')
-    if (!pulito) return ''
-    // Chi incolla "talk.casa.it" intende https, non un errore di analisi
-    // dell'indirizzo. Restare rigidi qui non insegna niente a nessuno.
-    return /^https?:\/\//.test(pulito) ? pulito : `https://${pulito}`
-  }
+  /**
+   * Se il nome scelto e' gia' di qualcun altro **su questo server**.
+   *
+   * E' la cosa che rende sopportabile avere piu' server: il nome con cui si
+   * entra e' una faccenda del singolo server, e due server che non si
+   * conoscono possono benissimo avere due `marco` diversi. Si chiede appena
+   * c'e' un codice e un nome, invece di scoprirlo da un 409 dopo aver scelto
+   * la password — che era il modo peggiore, perche' costringe a rifare tutto
+   * il modulo per cambiare una parola.
+   */
+  const [preso, setPreso] = useState<{ nome: string; proposte: string[] } | null>(null)
 
-  async function conservaEEntra(base: string, token: string, chi: Utente): Promise<void> {
-    const { errore: avviso } = await ponte.scriviImpostazioni({ server: base, token })
-    await salva({ server: base, nome: chi.nome, utenteRicordato: chi.utente })
-    if (avviso) setAvvertenza(avviso)
-    quandoEntra(chi)
-  }
+  useEffect(() => {
+    if (modo !== 'registra') return setPreso(null)
+    const base = normalizzaIndirizzo(server)
+    const scelto = utente.trim().toLowerCase()
+    if (!base || !codice.trim() || scelto.length < 3) return setPreso(null)
+
+    let vivo = true
+    // Mezzo secondo di silenzio prima di chiedere: senza, si manderebbe una
+    // richiesta per ogni lettera digitata.
+    const attesa = window.setTimeout(() => {
+      void new Api(base, null)
+        .nomeLibero(codice.trim(), scelto)
+        .then(({ libero }) => {
+          if (!vivo) return
+          setPreso(
+            libero ? null : { nome: scelto, proposte: nomiVicini(scelto, nomeDaIndirizzo(base)) }
+          )
+        })
+        .catch(() => {
+          // Il codice non vale, o il server e' rimasto indietro e la rotta non
+          // ce l'ha: in entrambi i casi non si sa niente, e non sapere niente
+          // si dice non dicendo niente. Il riscatto poi rispondera' comunque.
+          if (vivo) setPreso(null)
+        })
+    }, 500)
+
+    return () => {
+      vivo = false
+      window.clearTimeout(attesa)
+    }
+  }, [modo, server, codice, utente])
 
   const prova = async (): Promise<void> => {
     setErrore(null)
-    setAvvertenza(null)
 
-    const base = indirizzo(server)
+    const base = normalizzaIndirizzo(server)
     if (!base) {
       setMostraServer(true)
       return setErrore('Serve l\'indirizzo del server.')
@@ -106,14 +148,24 @@ export default function Accesso({
               nome: nome.trim() || undefined
             })
 
-      await conservaEEntra(base, esito.token, esito.utente)
+      await quandoEntra({ indirizzo: base, token: esito.token, utente: esito.utente })
     } catch (e) {
       const problema = e as ErroreApi
-      setErrore(
-        problema.stato === 403 && modo === 'registra'
-          ? 'Il codice non e\' valido, o e\' gia\' stato usato. I codici valgono una volta sola: fattene dare un altro.'
-          : problema.message
-      )
+
+      // 409 sul riscatto vuol dire una cosa sola: il nome e' gia' di qualcuno
+      // qui. Non e' un errore da leggere e basta — e' una domanda, e la si fa
+      // con le proposte accanto invece di lasciare il campo com'e'.
+      if (problema.stato === 409 && modo === 'registra') {
+        const scelto = utente.trim().toLowerCase()
+        setPreso({ nome: scelto, proposte: nomiVicini(scelto, nomeDaIndirizzo(base)) })
+        setErrore(null)
+      } else {
+        setErrore(
+          problema.stato === 403 && modo === 'registra'
+            ? 'Il codice non e\' valido, o e\' gia\' stato usato. I codici valgono una volta sola: fattene dare un altro.'
+            : problema.message
+        )
+      }
     } finally {
       setInCorso(false)
     }
@@ -123,101 +175,120 @@ export default function Accesso({
     if (e.key === 'Enter' && !inCorso) void prova()
   }
 
+  const azione =
+    etichettaAzione ?? { accedi: 'Entra', registra: 'Crea l\'account' }
+  const nomePreso = preso?.nome === utente.trim().toLowerCase() ? preso : null
+
   return (
-    <div className="flex h-full items-center justify-center overflow-y-auto p-4 sm:p-8">
-      <div className="w-full max-w-md py-4 sm:py-8">
-        <div className="mb-8">
-          <h1 className="text-2xl font-semibold tracking-tight">PulseTalk</h1>
-          <p className="mt-1.5 text-sm leading-relaxed text-testo-2">
-            {modo === 'accedi'
-              ? 'Bentornato.'
-              : 'Un codice di invito, e poi le credenziali sono tue.'}
-          </p>
-        </div>
+    <>
+      <div className="space-y-4 rounded-xl border border-bordo bg-fondo-2 p-5">
+        {motivo && <Avviso tono="attenzione">{motivo}</Avviso>}
 
-        <div className="space-y-4 rounded-xl border border-bordo bg-fondo-2 p-5">
-          {motivo && <Avviso tono="attenzione">{motivo}</Avviso>}
-
-          {modo === 'registra' && (
-            <Campo
-              etichetta="Codice di invito"
-              aiuto="Te lo da' chi amministra il server. Vale una volta sola."
-            >
-              <input
-                className={classiInput}
-                value={codice}
-                onChange={(e) => setCodice(e.target.value)}
-                onKeyDown={alInvio}
-                placeholder="incolla qui"
-                autoFocus
-                spellCheck={false}
-              />
-            </Campo>
-          )}
-
+        {modo === 'registra' && (
           <Campo
-            etichetta="Nome utente"
-            aiuto={
-              modo === 'registra'
-                ? 'Minuscolo, senza spazi. E\' quello con cui entrerai d\'ora in poi.'
-                : undefined
-            }
+            etichetta="Codice di invito"
+            aiuto="Te lo da' chi amministra il server. Vale una volta sola."
           >
             <input
               className={classiInput}
-              value={utente}
-              onChange={(e) => setUtente(e.target.value)}
+              value={codice}
+              onChange={(e) => setCodice(e.target.value)}
               onKeyDown={alInvio}
-              placeholder="marco"
-              autoFocus={modo === 'accedi'}
-              autoComplete="username"
+              placeholder="incolla qui"
+              autoFocus
               spellCheck={false}
             />
           </Campo>
+        )}
 
-          {modo === 'registra' && (
-            <Campo
-              etichetta="Nome visibile"
-              aiuto="Come ti vedono gli altri. Facoltativo: senza, usa il nome utente."
-            >
-              <input
-                className={classiInput}
-                value={nome}
-                onChange={(e) => setNome(e.target.value)}
-                onKeyDown={alInvio}
-                placeholder="Marco Rossi"
-              />
-            </Campo>
-          )}
+        <Campo
+          etichetta="Nome utente"
+          aiuto={
+            modo === 'registra'
+              ? 'Minuscolo, senza spazi. E\' quello con cui entrerai qui d\'ora in poi.'
+              : undefined
+          }
+        >
+          <input
+            className={`${classiInput} ${nomePreso ? 'border-attenzione focus:border-attenzione' : ''}`}
+            value={utente}
+            onChange={(e) => setUtente(e.target.value)}
+            onKeyDown={alInvio}
+            placeholder="marco"
+            autoFocus={modo === 'accedi'}
+            autoComplete="username"
+            spellCheck={false}
+          />
+        </Campo>
 
+        {nomePreso && (
+          <div className="riga-comparsa space-y-2 rounded-lg border border-attenzione/40 bg-attenzione/10 p-3">
+            <p className="text-sm leading-relaxed text-attenzione">
+              Su questo server <strong>{nomePreso.nome}</strong> e' gia' di qualcun altro. Non e'
+              un problema del tuo account: ogni server ha il suo elenco di nomi, e qui questo e'
+              occupato. Scegline un altro — resta il tuo solo per questo server.
+            </p>
+            {nomePreso.proposte.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {nomePreso.proposte.map((proposta) => (
+                  <button
+                    key={proposta}
+                    type="button"
+                    onClick={() => {
+                      setUtente(proposta)
+                      setPreso(null)
+                    }}
+                    className="rounded-lg border border-bordo bg-fondo px-2.5 py-1 text-xs text-testo-2 transition-colors hover:border-vivo hover:text-vivo"
+                  >
+                    {proposta}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {modo === 'registra' && (
           <Campo
-            etichetta="Password"
-            aiuto={modo === 'registra' ? 'Almeno 10 caratteri.' : undefined}
+            etichetta="Nome visibile"
+            aiuto="Come ti vedono gli altri. Facoltativo: senza, usa il nome utente."
           >
             <input
               className={classiInput}
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              value={nome}
+              onChange={(e) => setNome(e.target.value)}
               onKeyDown={alInvio}
-              autoComplete={modo === 'accedi' ? 'current-password' : 'new-password'}
+              placeholder="Marco Rossi"
             />
           </Campo>
+        )}
 
-          {modo === 'registra' && (
-            <Campo etichetta="Ripeti la password">
-              <input
-                className={classiInput}
-                type="password"
-                value={conferma}
-                onChange={(e) => setConferma(e.target.value)}
-                onKeyDown={alInvio}
-                autoComplete="new-password"
-              />
-            </Campo>
-          )}
+        <Campo etichetta="Password" aiuto={modo === 'registra' ? 'Almeno 10 caratteri.' : undefined}>
+          <input
+            className={classiInput}
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            onKeyDown={alInvio}
+            autoComplete={modo === 'accedi' ? 'current-password' : 'new-password'}
+          />
+        </Campo>
 
-          {mostraServer ? (
+        {modo === 'registra' && (
+          <Campo etichetta="Ripeti la password">
+            <input
+              className={classiInput}
+              type="password"
+              value={conferma}
+              onChange={(e) => setConferma(e.target.value)}
+              onKeyDown={alInvio}
+              autoComplete="new-password"
+            />
+          </Campo>
+        )}
+
+        {!bloccaServer &&
+          (mostraServer ? (
             <Campo etichetta="Server" aiuto="L'indirizzo del NAS che ospita le stanze.">
               <input
                 className={classiInput}
@@ -235,30 +306,108 @@ export default function Accesso({
             >
               Server: {server || 'da scegliere'} — cambia
             </button>
-          )}
+          ))}
 
-          {errore && <Avviso>{errore}</Avviso>}
-          {avvertenza && <Avviso tono="attenzione">{avvertenza}</Avviso>}
+        {errore && <Avviso>{errore}</Avviso>}
 
-          <Bottone tono="vivo" className="w-full" disabled={inCorso} onClick={() => void prova()}>
-            {inCorso ? 'un momento…' : modo === 'accedi' ? 'Entra' : 'Crea l\'account'}
-          </Bottone>
+        <Bottone
+          tono="vivo"
+          className="w-full"
+          disabled={inCorso || !!nomePreso}
+          onClick={() => void prova()}
+        >
+          {inCorso ? 'un momento…' : modo === 'accedi' ? azione.accedi : azione.registra}
+        </Bottone>
+      </div>
+
+      <p className="mt-4 text-center text-sm text-testo-3">
+        {modo === 'accedi' ? 'Hai un codice di invito?' : 'Hai gia\' un account qui?'}{' '}
+        <button
+          onClick={() => {
+            const prossimo = modo === 'accedi' ? 'registra' : 'accedi'
+            setModo(prossimo)
+            quandoCambiaModo?.(prossimo)
+            setErrore(null)
+            setPreso(null)
+            setPassword('')
+            setConferma('')
+          }}
+          className="text-vivo underline underline-offset-2 hover:text-vivo-2"
+        >
+          {modo === 'accedi' ? 'Crea un account' : 'Entra'}
+        </button>
+      </p>
+    </>
+  )
+}
+
+export default function Accesso({
+  impostazioni,
+  salva,
+  quandoEntra,
+  motivo = null
+}: {
+  impostazioni: Impostazioni
+  salva: (modifiche: Partial<Impostazioni>) => Promise<Impostazioni>
+  quandoEntra: (utente: Utente) => void
+  /**
+   * Perche' si e' finiti qui invece che dentro.
+   *
+   * Vuoto quando si apre l'applicazione senza aver mai fatto l'accesso. Pieno
+   * quando una sessione che c'era non vale piu': senza questa riga, chi viene
+   * buttato fuori da una revoca si ritrova davanti al modulo di accesso senza
+   * sapere se ha sbagliato qualcosa lui.
+   */
+  motivo?: string | null
+}): React.JSX.Element {
+  // Un link di invito porta il codice nella query: `?invito=...`. Se c'e', si
+  // parte gia' sul modulo di registrazione con il codice dentro — chi ha
+  // ricevuto un link non deve capire che esistono due modi di entrare.
+  const invitoDalLink =
+    typeof location !== 'undefined' ? new URLSearchParams(location.search).get('invito') : null
+
+  const [avvertenza, setAvvertenza] = useState<string | null>(null)
+  const [modo, setModo] = useState<Modo>(invitoDalLink ? 'registra' : 'accedi')
+
+  return (
+    <div className="flex h-full items-center justify-center overflow-y-auto p-4 sm:p-8">
+      <div className="pannello w-full max-w-md py-4 sm:py-8">
+        <div className="mb-8">
+          <h1 className="text-2xl font-semibold tracking-tight">PulseTalk</h1>
+          <p className="mt-1.5 text-sm leading-relaxed text-testo-2">
+            {modo === 'accedi' ? 'Bentornato.' : 'Un codice di invito, e poi le credenziali sono tue.'}
+          </p>
         </div>
 
-        <p className="mt-4 text-center text-sm text-testo-3">
-          {modo === 'accedi' ? 'Hai un codice di invito?' : 'Hai gia\' un account?'}{' '}
-          <button
-            onClick={() => {
-              setModo(modo === 'accedi' ? 'registra' : 'accedi')
-              setErrore(null)
-              setPassword('')
-              setConferma('')
-            }}
-            className="text-vivo underline underline-offset-2 hover:text-vivo-2"
-          >
-            {modo === 'accedi' ? 'Crea un account' : 'Entra'}
-          </button>
-        </p>
+        <ModuloAccesso
+          modoIniziale={modo}
+          quandoCambiaModo={setModo}
+          serverIniziale={impostazioni.server}
+          utenteIniziale={impostazioni.utenteRicordato}
+          codiceIniziale={invitoDalLink}
+          motivo={motivo}
+          quandoEntra={async ({ indirizzo, token, utente }) => {
+            // Il server entra nell'elenco dei collegati e diventa quello
+            // attivo, con il suo token accanto. Una chiamata sola: separarla
+            // in due vorrebbe dire un istante in cui il token appena ottenuto
+            // sta sotto l'indirizzo di un altro server.
+            const { errore: avviso } = await ponte.collegaServer({
+              indirizzo,
+              token,
+              utente: utente.utente,
+              nomeVisibile: utente.nome
+            })
+            await salva({ nome: utente.nome, utenteRicordato: utente.utente })
+            if (avviso) setAvvertenza(avviso)
+            quandoEntra(utente)
+          }}
+        />
+
+        {avvertenza && (
+          <div className="mt-4">
+            <Avviso tono="attenzione">{avvertenza}</Avviso>
+          </div>
+        )}
 
         {!ponte.elettrone && !ponte.android && (
           <p className="mt-6 text-center text-xs leading-relaxed text-testo-3">
@@ -316,7 +465,7 @@ export function Completa({
 
   return (
     <div className="flex h-full items-center justify-center p-8">
-      <div className="w-full max-w-md">
+      <div className="pannello w-full max-w-md">
         <div className="mb-8">
           <h1 className="text-2xl font-semibold tracking-tight">Scegli le tue credenziali</h1>
           <p className="mt-1.5 text-sm leading-relaxed text-testo-2">

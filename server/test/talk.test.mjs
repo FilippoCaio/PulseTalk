@@ -450,20 +450,61 @@ describe('profilo', () => {
 });
 
 describe('spazi e canali', () => {
-  it('li crea solo un admin, e nasce con un canale di ognuno', async (t) => {
+  it('lo crea chiunque, e nasce con un canale di ognuno', async (t) => {
     const { talk, base } = await conServer(t);
-    const membro = await accesso(talk, base, { nome: 'Marco', ruolo: 'membro' });
     const admin = await accesso(talk, base, { nome: 'Capo', ruolo: 'admin' });
-
-    assert.equal(
-      (await membro.chiama('/api/spazi', { method: 'POST', body: JSON.stringify({ nome: 'Casa' }) })).status,
-      403,
-    );
 
     const { spazio, testo, voce } = await conSpazio(admin.chiama, 'Casa');
     assert.equal(spazio.chiave, 'casa');
     assert.ok(testo, 'uno spazio vuoto non si sa da dove cominciare a usarlo');
     assert.ok(voce);
+  });
+
+  it('lo crea anche un membro, e nasce privato', async (t) => {
+    const { talk, base } = await conServer(t);
+    const marco = await accesso(talk, base, { nome: 'Marco', ruolo: 'membro' });
+    const altro = await accesso(talk, base, { nome: 'Altro', ruolo: 'membro' });
+
+    const r = await marco.chiama('/api/spazi', {
+      method: 'POST',
+      body: JSON.stringify({ nome: 'Musica' }),
+    });
+    assert.equal(r.status, 201, 'per farsi un posto dove parlare non si chiede il permesso');
+
+    const suoi = await (await marco.chiama('/api/spazi')).json();
+    assert.equal(suoi.spazi.length, 1);
+    assert.equal(suoi.spazi[0].ruoloMio, 'admin', 'chi lo crea ne e\' padrone');
+
+    const altrui = await (await altro.chiama('/api/spazi')).json();
+    assert.equal(altrui.spazi.length, 0, 'privato vuol dire che gli altri non lo vedono');
+  });
+
+  it('un membro non puo\' farlo comparire nella barra di tutti', async (t) => {
+    const { talk, base } = await conServer(t);
+    const marco = await accesso(talk, base, { nome: 'Marco', ruolo: 'membro' });
+
+    const r = await marco.chiama('/api/spazi', {
+      method: 'POST',
+      body: JSON.stringify({ nome: 'Ovunque', impostazioni: { apertoATutti: true } }),
+    });
+    assert.equal(r.status, 403);
+  });
+
+  it('due spazi con lo stesso nome convivono', async (t) => {
+    const { talk, base } = await conServer(t);
+    const uno = await accesso(talk, base, { nome: 'Uno', ruolo: 'membro' });
+    const due = await accesso(talk, base, { nome: 'Due', ruolo: 'membro' });
+
+    const crea = (chi) =>
+      chi.chiama('/api/spazi', { method: 'POST', body: JSON.stringify({ nome: 'Musica' }) });
+
+    assert.equal((await crea(uno)).status, 201);
+    // Non 409: rifiutare direbbe a chi prova che uno spazio con quel nome
+    // esiste gia', e quasi tutti sono privati.
+    const seconda = await crea(due);
+    assert.equal(seconda.status, 201);
+    const { spazio } = await seconda.json();
+    assert.equal(spazio.chiave, 'musica-2');
   });
 
   it('ci mette dentro tutti quelli che gia\' esistono', async (t) => {
@@ -1307,7 +1348,74 @@ describe('il flusso degli eventi', () => {
     assert.equal(evento.canale, testo.id);
     assert.equal(evento.messaggio.testo, 'arrivo');
 
+    // E leggendolo, il numero blu si spegne: l'evento va a chi ha letto, e va
+    // a *tutte* le sue sessioni. Senza, la lettura finiva nel database e
+    // nessuno lo diceva all'elenco dei canali, che restava fermo al conteggio
+    // dell'ultima GET /api/spazi.
+    await marco.chiama(`/api/canali/${testo.id}/letto`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+    const letto = await prossimo('letto');
+    assert.equal(letto.canale, testo.id);
+    assert.equal(letto.fino, evento.messaggio.id);
+
     await lettore.cancel();
+  });
+});
+
+describe('nomi utente fra server diversi', () => {
+  it('dice se un nome e\' gia\' preso, ma solo a chi ha un invito', async (t) => {
+    const { talk, base } = await conServer(t);
+    await accesso(talk, base, { nome: 'Marco', utente: 'marco', ruolo: 'membro' });
+
+    const codice = talk.db.creaInvito({ nome: 'Nuovo', ruolo: 'membro' });
+
+    const preso = await (
+      await fetch(`${base}/api/auth/nome-libero`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ codice, utente: 'marco' }),
+      })
+    ).json();
+    assert.equal(preso.libero, false, 'su questo server un marco esiste gia');
+
+    const libero = await (
+      await fetch(`${base}/api/auth/nome-libero`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ codice, utente: 'marco.casa' }),
+      })
+    ).json();
+    assert.equal(libero.libero, true);
+
+    // Senza un codice valido non si risponde: sarebbe un elenco di nomi utente
+    // veri consegnato a chiunque passi.
+    const senza = await fetch(`${base}/api/auth/nome-libero`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ codice: 'inventato', utente: 'marco' }),
+    });
+    assert.equal(senza.status, 403);
+  });
+
+  it('riscattare con un nome preso da\' 409, e con un altro passa', async (t) => {
+    const { talk, base } = await conServer(t);
+    await accesso(talk, base, { nome: 'Marco', utente: 'marco', ruolo: 'membro' });
+
+    const riscatta = (utente) =>
+      fetch(`${base}/api/auth/riscatta`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          codice: talk.db.creaInvito({ nome: 'Nuovo', ruolo: 'membro' }),
+          utente,
+          password: 'unapasswordlunga',
+        }),
+      });
+
+    assert.equal((await riscatta('marco')).status, 409);
+    assert.equal((await riscatta('marco.ufficio')).status, 200);
   });
 });
 

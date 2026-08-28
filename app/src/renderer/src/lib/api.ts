@@ -321,6 +321,27 @@ export class Api {
     return this.chiama('/api/auth/invito', { method: 'POST', body: JSON.stringify({ codice }) })
   }
 
+  /**
+   * Questo nome utente e' libero *su questo server*?
+   *
+   * Serve collegandosi a un server nuovo: il nome che si usa altrove puo'
+   * essere gia' di qualcun altro qui, e i due server non hanno modo di
+   * saperlo l'uno dell'altro. Si chiede prima di scegliere una password,
+   * invece di scoprirlo da un 409 dopo aver compilato tutto.
+   *
+   * Il codice di invito serve al server per rispondere: senza, sarebbe una
+   * rotta aperta che dice quali nomi utente esistono.
+   */
+  nomeLibero(
+    codice: string,
+    utente: string
+  ): Promise<{ libero: boolean; problema: string | null }> {
+    return this.chiama('/api/auth/nome-libero', {
+      method: 'POST',
+      body: JSON.stringify({ codice, utente })
+    })
+  }
+
   /** Il codice diventa un account: da qui in poi si entra con utente e password. */
   riscatta(dati: {
     codice: string

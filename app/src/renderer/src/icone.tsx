@@ -758,6 +758,24 @@ export function Letto(props: Props): React.JSX.Element {
  * accanto all'altra con dentro un numero — se differissero solo per la tinta
  * sarebbero due numeri senza etichetta.
  */
+/**
+ * La macchina vera: due unita' impilate con la loro spia.
+ *
+ * Serve a distinguerla dallo *spazio*, che nel resto dell'interfaccia si
+ * disegna con le sue iniziali colorate. Sono due cose che l'abitudine di
+ * Discord porta a chiamare tutte e due "server", e l'unico modo per non
+ * confonderle e' che non si somiglino.
+ */
+export function Macchina(props: Props): React.JSX.Element {
+  return (
+    <Base {...props}>
+      <rect x="3" y="4" width="18" height="7" rx="2" />
+      <rect x="3" y="13" width="18" height="7" rx="2" />
+      <path d="M7 7.5h.01M7 16.5h.01" />
+    </Base>
+  )
+}
+
 export function Attenzione(props: Props): React.JSX.Element {
   return (
     <Base {...props}>

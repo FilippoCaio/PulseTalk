@@ -58,11 +58,11 @@ export default function Ricerca({
 
   return (
     <div
-      className="absolute inset-0 z-30 flex items-start justify-center bg-black/70 p-0 backdrop-blur-sm sm:p-6 sm:pt-20"
+      className="velo absolute inset-0 z-30 flex items-start justify-center bg-black/70 p-0 backdrop-blur-sm sm:p-6 sm:pt-20"
       onClick={chiudi}
     >
       <div
-        className="flex h-full max-h-full w-full max-w-2xl flex-col overflow-hidden border border-bordo bg-fondo-2 sm:h-auto sm:rounded-2xl"
+        className="pannello flex h-full max-h-full w-full max-w-2xl flex-col overflow-hidden border border-bordo bg-fondo-2 sm:h-auto sm:rounded-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="border-b border-bordo p-3">

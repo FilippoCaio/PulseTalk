@@ -36,7 +36,7 @@ export default function OverlaySpazio({
       // pointer-events-none e' la riga che lo rende innocuo: il mouse ci passa
       // attraverso, quindi non copre le icone sotto e non interrompe l'hover
       // che lo ha fatto comparire.
-      className="pointer-events-none absolute left-full z-40 ml-2 w-max max-w-64 -translate-y-1/2 rounded-xl border border-bordo bg-fondo-2 px-3 py-2 shadow-lg shadow-black/40"
+      className="cartellino-comparsa pointer-events-none absolute left-full z-40 ml-2 w-max max-w-64 -translate-y-1/2 rounded-xl border border-bordo bg-fondo-2 px-3 py-2 shadow-lg shadow-black/40"
       style={{ top: '50%' }}
       role="tooltip"
     >

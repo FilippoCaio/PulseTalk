@@ -49,6 +49,24 @@ export function rotteMessaggi(app, { db, eventi }) {
   };
 
   /**
+   * "Fin qui l'ho letto", detto a chi ha letto.
+   *
+   * Va soltanto alle sue sessioni, ed e' voluto: e' l'unica persona per cui
+   * questo fatto cambia qualcosa da disegnare. A tutte le sue sessioni pero',
+   * non solo a quella che ha chiesto — letto sul telefono e' letto anche sul
+   * computer, e un numero blu che resta acceso su un apparecchio e spento
+   * sull'altro e' peggio di uno che resta acceso su entrambi.
+   */
+  const annunciaLettura = (esito, utenteId, fino) => {
+    eventi.aUtenti([utenteId], {
+      tipo: 'letto',
+      ...dove(esito),
+      canale: esito.canale.id,
+      fino,
+    });
+  };
+
+  /**
    * Le due spunte, dette a chi ha scritto.
    *
    * Solo per le conversazioni dirette. In un canale di spazio "gli e' arrivato"
@@ -152,6 +170,9 @@ export function rotteMessaggi(app, { db, eventi }) {
       // Chi scrive ha letto fin qui per definizione: senza questo, il proprio
       // messaggio comparirebbe fra i non letti.
       db.segnaLetto(esito.canale.id, richiesta.utente.id, id);
+      // Anche sugli altri suoi apparecchi: scritto dal telefono, il computer
+      // non deve accendere un numero blu per una frase che ha scritto lui.
+      annunciaLettura(esito, richiesta.utente.id, id);
 
       const messaggio = db.messaggi(esito.canale.id, { prima: id + 1, quanti: 1 })[0];
       eventi.aUtenti(destinatari(esito), {
@@ -298,6 +319,11 @@ export function rotteMessaggi(app, { db, eventi }) {
       // farebbe comparire "letto" senza che sia mai comparso "consegnato".
       db.segnaConsegnato(esito.canale.id, richiesta.utente.id, fino);
       annunciaRicevute(esito);
+      // E il numero blu si spegne. Prima questa riga non c'era: la lettura
+      // finiva nel database e nessuno lo diceva all'elenco dei canali, che
+      // restava fermo al conteggio dell'ultima `GET /api/spazi`. Il pallino si
+      // accendeva da solo e non si spegneva mai, se non ricaricando per caso.
+      annunciaLettura(esito, richiesta.utente.id, fino);
       return { fino };
     },
   );

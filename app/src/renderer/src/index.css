@@ -224,3 +224,201 @@ textarea {
     opacity: 0;
   }
 }
+
+/* ---------------------------------------------------------------------------
+ * Come si muovono le cose
+ *
+ * Tre curve e tre durate, e non una a caso per ogni componente. Il vocabolario
+ * ristretto e' il motivo per cui l'insieme sembra una cosa sola invece che
+ * dieci animazioni scritte in dieci momenti diversi.
+ *
+ * `--molla` supera di poco il punto d'arrivo e ci torna: e' quel filo di
+ * rimbalzo che fa sembrare un pannello una cosa che si e' posata li' invece di
+ * una che e' apparsa. Sotto i 200 millisecondi non si legge come lentezza, si
+ * legge come materia.
+ *
+ * `--dolce` non rimbalza e serve a cio' che copre lo schermo: un velo che
+ * rimbalza sembra un difetto.
+ * ------------------------------------------------------------------------- */
+
+:root {
+  --molla: cubic-bezier(0.22, 1.24, 0.36, 1);
+  --dolce: cubic-bezier(0.32, 0.72, 0, 1);
+  --uscita: cubic-bezier(0.4, 0, 0.9, 0.35);
+
+  --tempo-lampo: 120ms;
+  --tempo-corto: 180ms;
+  --tempo: 240ms;
+}
+
+/* Il velo scuro dietro a un pannello. Solo opacita': muovere anche lui
+   farebbe sembrare che si stia spostando la finestra intera. */
+@keyframes velo-entra {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.velo {
+  animation: velo-entra var(--tempo-corto) var(--dolce);
+}
+
+/* Il pannello sopra al velo: sale di poco, cresce di poco, e si ferma un
+   capello oltre. Il `translateZ(0)` non e' superstizione — tiene il testo su
+   un livello suo mentre la scala e' in corso, e senza si vede sfarfallare. */
+@keyframes pannello-entra {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 14px, 0) scale(0.965);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+.pannello {
+  animation: pannello-entra var(--tempo) var(--molla);
+}
+
+/* Un pannello che entra da un lato: le colonne, i cassetti, i menu agganciati
+   a un bordo. La direzione la sceglie chi lo usa. */
+@keyframes lato-entra {
+  from {
+    opacity: 0;
+    transform: translate3d(-10px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.da-sinistra {
+  animation: lato-entra var(--tempo-corto) var(--molla);
+}
+.da-destra {
+  animation: lato-entra-destra var(--tempo-corto) var(--molla);
+}
+@keyframes lato-entra-destra {
+  from {
+    opacity: 0;
+    transform: translate3d(10px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Il cartellino agganciato a un'icona della barra: entra dal lato, e i suoi
+   fotogrammi si portano dietro il `-translate-y-1/2` che lo centra. Senza,
+   l'animazione sostituirebbe quel `transform` per il tempo in cui dura e il
+   cartellino salterebbe di mezza altezza prima di rimettersi a posto. */
+@keyframes cartellino-entra {
+  from {
+    opacity: 0;
+    transform: translate3d(-8px, -50%, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, -50%, 0);
+  }
+}
+.cartellino-comparsa {
+  animation: cartellino-entra var(--tempo-lampo) var(--molla);
+}
+
+/* Un menu che si apre da sotto al pulsante che l'ha chiamato: nasce piccolo
+   dall'angolo in alto, non dal centro. L'origine la mette chi lo usa quando
+   l'angolo e' un altro. */
+@keyframes menu-entra {
+  from {
+    opacity: 0;
+    transform: scale(0.94) translate3d(0, -6px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.menu-comparsa {
+  transform-origin: top center;
+  animation: menu-entra var(--tempo-lampo) var(--molla);
+}
+
+/* Un riquadro che compare: qualcuno e' entrato, o ha messo su uno schermo.
+   E' l'unica animazione qui dentro con un rimbalzo che si vede davvero, ed e'
+   voluto — sono le due cose che si vogliono notare mentre si sta guardando
+   altro. */
+@keyframes scheda-entra {
+  0% {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.012);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+.scheda {
+  animation: scheda-entra 0.28s var(--molla);
+}
+
+/* Una riga di elenco che arriva: piccola, e da sinistra come si legge. */
+@keyframes riga-entra {
+  from {
+    opacity: 0;
+    transform: translate3d(-6px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.riga-comparsa {
+  animation: riga-entra var(--tempo-corto) var(--dolce) both;
+}
+
+/* Le sfumature a scaglioni per un elenco che entra tutto insieme. Cinque
+   gradini e poi si ferma: oltre, l'ultima riga arriverebbe quando chi guarda
+   ha gia' smesso di aspettare. */
+.scaglione-1 {
+  animation-delay: 25ms;
+}
+.scaglione-2 {
+  animation-delay: 50ms;
+}
+.scaglione-3 {
+  animation-delay: 75ms;
+}
+.scaglione-4 {
+  animation-delay: 100ms;
+}
+.scaglione-5 {
+  animation-delay: 125ms;
+}
+
+/*
+ * Tutto quanto sopra, spento.
+ *
+ * Non e' una spunta di conformita': `prefers-reduced-motion` la accendono le
+ * persone a cui il movimento fa venire il mal di mare, e un'interfaccia che si
+ * muove comunque e' un'interfaccia che quella persona chiude.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .velo,
+  .pannello,
+  .da-sinistra,
+  .da-destra,
+  .menu-comparsa,
+  .cartellino-comparsa,
+  .scheda,
+  .riga-comparsa {
+    animation: none;
+  }
+}

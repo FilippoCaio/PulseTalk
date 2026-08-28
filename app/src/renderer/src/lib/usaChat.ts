@@ -133,18 +133,60 @@ export function usaChat(
 
   // -- Segnare come letto ----------------------------------------------------
 
-  useEffect(() => {
-    if (!api || !idCanale || messaggi.length === 0) return
+  /**
+   * Letto vuol dire guardato.
+   *
+   * La condizione non e' "il canale e' aperto" ma "il canale e' aperto e la
+   * finestra si vede". Sono due cose diverse: chi lascia PulseTalk aperto su
+   * un canale e va a lavorare altrove non sta leggendo niente, e segnare come
+   * letto in quel caso vuol dire che il numero blu non comparira' mai — cioe'
+   * esattamente il difetto opposto a quello che si vuole togliere.
+   *
+   * Tornando a guardare, si segna: e' il `visibilitychange` qui sotto.
+   */
+  const visibile = (): boolean =>
+    typeof document === 'undefined' || document.visibilityState !== 'hidden'
 
-    const ultimo = messaggi[messaggi.length - 1].id
-    if (ultimo <= lettoFino.current) return
+  // L'ultimo id sta in un ref e non fra le dipendenze: serve al gestore della
+  // visibilita', che vive quanto il canale e non quanto l'elenco dei messaggi.
+  const ultimoId = useRef(0)
+  ultimoId.current = messaggi.length ? messaggi[messaggi.length - 1].id : 0
+
+  const segnaFinQui = useCallback(() => {
+    if (!api || !idCanale || !visibile()) return
+    const ultimo = ultimoId.current
+    if (!ultimo || ultimo <= lettoFino.current) return
+
+    // Si segna prima e si disfa in caso di errore, invece di segnare dopo la
+    // risposta: senza, ogni ridisegno mentre la richiesta e' in volo ne
+    // manderebbe un'altra uguale.
+    const prima = lettoFino.current
     lettoFino.current = ultimo
 
     void api.segnaLetto(idCanale, ultimo).catch(() => {
-      // Un pallino di non letti che resta acceso e' fastidioso, non grave:
-      // non vale un errore in faccia a chi sta leggendo.
+      // Un pallino che resta acceso e' fastidioso, non grave: non vale un
+      // errore in faccia a chi sta leggendo. Si rimette pero' il segnaposto
+      // dov'era, cosi' il prossimo messaggio riprova invece di lasciarlo
+      // acceso per sempre.
+      if (lettoFino.current === ultimo) lettoFino.current = prima
     })
-  }, [api, idCanale, messaggi])
+  }, [api, idCanale])
+
+  useEffect(() => {
+    if (messaggi.length === 0) return
+    segnaFinQui()
+  }, [messaggi, segnaFinQui])
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return
+    const quando = (): void => segnaFinQui()
+    document.addEventListener('visibilitychange', quando)
+    window.addEventListener('focus', quando)
+    return () => {
+      document.removeEventListener('visibilitychange', quando)
+      window.removeEventListener('focus', quando)
+    }
+  }, [segnaFinQui])
 
   // -- Le azioni -------------------------------------------------------------
 

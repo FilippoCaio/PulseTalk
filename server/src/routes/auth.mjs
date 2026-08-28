@@ -69,6 +69,39 @@ export function rotteAuth(app, { db, config, stati }) {
     return esito.invito;
   });
 
+  /**
+   * Questo nome utente, su questo server, e' libero?
+   *
+   * Esiste per il caso che nasce collegandosi a piu' server: uno si chiama
+   * `marco` sul NAS di casa, arriva sul server dell'ufficio, e li' `marco` e'
+   * un altro Marco. I due server non si conoscono e non possono conoscersi —
+   * ognuno ha il suo elenco di utenti — quindi l'unico posto dove la domanda
+   * ha una risposta e' qui, e va fatta *prima* di scegliere una password.
+   *
+   * Senza questa rotta la risposta arrivava lo stesso, ma come un 409 dopo
+   * aver compilato tutto il modulo: si scopriva che il nome era preso dopo
+   * aver scelto la password, e si ricominciava.
+   *
+   * **Vuole un codice di invito valido, e non e' zelo.** Una rotta aperta che
+   * dice se un nome esiste e' un elenco di nomi utente veri consegnato a
+   * chiunque passi, cioe' meta' del lavoro di chi vuole provare le password.
+   * Con il codice il conto non cambia: chi ce l'ha ottiene gia' la stessa
+   * risposta chiedendo di riscattarlo.
+   */
+  app.post('/api/auth/nome-libero', async (richiesta, risposta) => {
+    const { codice, utente } = richiesta.body ?? {};
+    if (typeof codice !== 'string' || !codice.trim()) {
+      return risposta.code(400).send({ errore: 'serve un codice di invito' });
+    }
+    const invito = db.guardaInvito(codice.trim());
+    if (invito.errore) return risposta.code(403).send({ errore: invito.errore });
+
+    const problema = problemaConIlNomeUtente(utente);
+    if (problema) return { libero: false, problema };
+
+    return { libero: !db.utentePerNomeUtente(utente), problema: null };
+  });
+
   app.post('/api/auth/riscatta', async (richiesta, risposta) => {
     const { codice, utente, password, nome } = richiesta.body ?? {};
 

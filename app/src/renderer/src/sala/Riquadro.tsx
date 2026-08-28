@@ -365,6 +365,15 @@ export default function Riquadro({
     quandoScelto()
   }
 
+  /*
+   * `scheda` fa comparire il riquadro invece di farlo apparire.
+   *
+   * La stessa animazione per tutte e tre le posizioni — grande, striscia,
+   * griglia — perche' e' lo stesso fatto: qualcuno e' entrato, o ha messo su
+   * uno schermo. Un riquadro che spunta gia' fatto in mezzo agli altri si nota
+   * meno di uno che arriva, ed e' proprio la cosa che si vuole notare mentre
+   * si sta guardando altro.
+   */
   return (
     <div
       ref={scatola}
@@ -382,7 +391,7 @@ export default function Riquadro({
       onPointerUp={lasciato}
       onPointerCancel={lasciato}
       onDoubleClick={() => !quandoPunta && ingrandibile && setZoom(FERMO)}
-      className={`group relative h-full w-full overflow-hidden bg-fondo-2 ${
+      className={`scheda group relative h-full w-full overflow-hidden bg-fondo-2 ${
         senzaCornice ? 'rounded-none' : 'rounded-xl'
       } ${
         dati.tipo === 'schermo' ? 'bg-black' : ''

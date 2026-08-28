@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import type { Spazio, Utente } from '@shared/tipi'
 import { coloreDi, inizialiDi } from '../lib/avatar'
 import { PallinoStato } from '../PopupProfilo'
@@ -30,6 +30,7 @@ export default function BarraSpazi({
   direttiNonLetti = 0,
   inVoce = null,
   profili,
+  intestazione,
   className = ''
 }: {
   spazi: Spazio[]
@@ -55,6 +56,14 @@ export default function BarraSpazi({
    */
   inVoce?: number | null
   profili?: Map<number, { nome: string; avatar: string | null }>
+  /**
+   * Cosa sta sopra a tutto: il quadratino del server vero.
+   *
+   * Arriva da fuori invece di essere disegnato qui perche' non riguarda gli
+   * spazi — riguarda la macchina su cui gli spazi stanno, e questa colonna e'
+   * gia' piena di roba che parla di una macchina sola.
+   */
+  intestazione?: ReactNode
   className?: string
 }): React.JSX.Element {
   const [creando, setCreando] = useState(false)
@@ -76,6 +85,12 @@ export default function BarraSpazi({
 
   return (
     <nav className={`flex w-16 shrink-0 flex-col items-center gap-2 overflow-y-auto border-r border-bordo bg-fondo py-3 ${className}`}>
+      {/* Il server vero, sopra a tutto e separato da una riga: cambiarlo
+          cambia *tutto* quello che sta sotto — spazi, canali, persone,
+          messaggi — e una cosa che ha quel peso non sta in mezzo alle altre. */}
+      {intestazione}
+      {intestazione && <span className="my-0.5 h-px w-8 shrink-0 bg-bordo" />}
+
       {/* I messaggi diretti stanno in cima, sopra alla riga: non sono un
           server, e metterli in mezzo agli altri li farebbe sembrare tali. */}
       <button
@@ -174,16 +189,22 @@ export default function BarraSpazi({
         )
       })}
 
-      {utente.ruolo === 'admin' && (
-        <button
-          onClick={() => setCreando(true)}
-          title="Nuovo spazio"
-          aria-label="Nuovo spazio"
-          className="flex h-12 w-12 items-center justify-center rounded-3xl border border-dashed border-bordo text-testo-3 transition-all hover:rounded-2xl hover:border-vivo hover:text-vivo"
-        >
-          <Piu />
-        </button>
-      )}
+      {/* Lo puo' premere chiunque abbia un account.
+          Prima era riservato a chi amministra l'istanza, ed era una regola
+          presa dal caso piu' piccolo — quattro persone in casa, e una sola che
+          crea. Uno spazio nuovo pero' nasce vuoto e invisibile: dentro c'e'
+          chi l'ha fatto e nessun altro, e nella barra degli altri non compare
+          niente finche' non li si invita. Non c'e' quindi niente da
+          proteggere, e c'era da chiedere il permesso per farsi un posto dove
+          parlare in tre. */}
+      <button
+        onClick={() => setCreando(true)}
+        title="Nuovo spazio"
+        aria-label="Nuovo spazio"
+        className="flex h-12 w-12 shrink-0 items-center justify-center rounded-3xl border border-dashed border-bordo text-testo-3 transition-all hover:rounded-2xl hover:border-vivo hover:text-vivo"
+      >
+        <Piu />
+      </button>
 
       <div className="flex-1" />
 
@@ -227,17 +248,17 @@ export default function BarraSpazi({
 
       {creando && (
         <div
-          className="absolute inset-0 z-30 flex items-center justify-center bg-black/70 p-6 backdrop-blur-sm"
+          className="velo absolute inset-0 z-30 flex items-center justify-center bg-black/70 p-6 backdrop-blur-sm"
           onClick={() => setCreando(false)}
         >
           <div
-            className="w-full max-w-sm space-y-4 rounded-2xl border border-bordo bg-fondo-2 p-5"
+            className="pannello w-full max-w-sm space-y-4 rounded-2xl border border-bordo bg-fondo-2 p-5"
             onClick={(e) => e.stopPropagation()}
           >
             <h2 className="font-semibold">Nuovo spazio</h2>
             <Campo
               etichetta="Nome"
-              aiuto="Nasce con un canale di testo e uno vocale, cosi' si puo' cominciare subito."
+              aiuto="Nasce privato e con due canali — uno di testo e uno vocale — cosi' si puo' cominciare subito. Lo vedi solo tu finche' non inviti qualcuno."
             >
               <input
                 className={classiInput}

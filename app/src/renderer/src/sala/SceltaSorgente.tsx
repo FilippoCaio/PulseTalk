@@ -129,11 +129,11 @@ export default function SceltaSorgente({
     // schiacciata fra le colonne, con le anteprime grandi come francobolli
     // proprio nel momento in cui bisogna riconoscere una finestra fra venti.
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-0 backdrop-blur-sm sm:p-6"
+      className="velo fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-0 backdrop-blur-sm sm:p-6"
       onClick={chiudi}
     >
       <div
-        className="flex h-full max-h-[46rem] w-full max-w-5xl flex-col overflow-hidden border border-bordo bg-fondo-2 sm:rounded-2xl"
+        className="pannello flex h-full max-h-[46rem] w-full max-w-5xl flex-col overflow-hidden border border-bordo bg-fondo-2 sm:rounded-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Titolo e schede sulla stessa riga: due righe separate costavano

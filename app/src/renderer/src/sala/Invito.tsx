@@ -111,11 +111,11 @@ export function PannelloInvito({
 
   return (
     <div
-      className="absolute inset-0 z-40 flex items-center justify-center bg-black/70 p-6 backdrop-blur-sm"
+      className="velo absolute inset-0 z-40 flex items-center justify-center bg-black/70 p-6 backdrop-blur-sm"
       onClick={chiudi}
     >
       <div
-        className="flex max-h-full w-full max-w-md flex-col overflow-hidden rounded-2xl border border-bordo bg-fondo-2"
+        className="pannello flex max-h-full w-full max-w-md flex-col overflow-hidden rounded-2xl border border-bordo bg-fondo-2"
         onClick={(evento) => evento.stopPropagation()}
       >
         <header className="flex items-center justify-between gap-2 border-b border-bordo px-5 py-4">

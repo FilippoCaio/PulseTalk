@@ -42,6 +42,7 @@ export default function PannelloImpostazioni({
   chiudi,
   esciDallAccount,
   quandoCambiaUtente,
+  apriServer,
   paginaIniziale
 }: {
   api: Api
@@ -52,6 +53,8 @@ export default function PannelloImpostazioni({
   chiudi: () => void
   esciDallAccount: () => Promise<void>
   quandoCambiaUtente: (utente: Utente) => void
+  /** Apre l'elenco dei server veri. Il pannello vive fuori da qui. */
+  apriServer?: () => void
   /** Con quale sezione aprirsi. Senza, quella di sempre. */
   paginaIniziale?: Pagina
 }): React.JSX.Element {
@@ -71,11 +74,11 @@ export default function PannelloImpostazioni({
 
   return (
     <div
-      className="absolute inset-0 z-30 flex items-center justify-center bg-black/70 p-0 backdrop-blur-sm sm:p-6"
+      className="velo absolute inset-0 z-30 flex items-center justify-center bg-black/70 p-0 backdrop-blur-sm sm:p-6"
       onClick={chiudi}
     >
       <div
-        className="flex h-full w-full max-w-4xl flex-col overflow-hidden border border-bordo bg-fondo-2 sm:h-[min(46rem,88vh)] sm:flex-row sm:rounded-2xl"
+        className="pannello flex h-full w-full max-w-4xl flex-col overflow-hidden border border-bordo bg-fondo-2 sm:h-[min(46rem,88vh)] sm:flex-row sm:rounded-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* La colonna delle sezioni.
@@ -486,6 +489,19 @@ export default function PannelloImpostazioni({
                     {utente.utente ? `@${utente.utente}` : utente.nome} · {utente.ruolo}
                     <span className="mt-0.5 block text-xs text-testo-3">{impostazioni.server}</span>
                   </p>
+
+                  {/* Le credenziali qui sopra valgono per questo server e per
+                      nessun altro: e' il posto giusto per ricordare che ce ne
+                      possono essere altri, e per andarci. */}
+                  {apriServer && (
+                    <div className="flex items-center gap-2">
+                      <Bottone tono="fantasma" onClick={apriServer}>
+                        {impostazioni.serverCollegati.length > 1
+                          ? `Cambia server (${impostazioni.serverCollegati.length} collegati)`
+                          : 'Collega un altro server'}
+                      </Bottone>
+                    </div>
+                  )}
 
                   {confermaUscita ? (
                     <div className="space-y-2">

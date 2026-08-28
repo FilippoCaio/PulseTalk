@@ -55,7 +55,14 @@ export function usaDiretti(api: Api | null, io: number | null, iscrivi: (c: (e: 
       .catch((e) => setErrore((e as Error).message))
   }, [api])
 
-  useEffect(ricarica, [ricarica])
+  // Come per gli spazi: cambiando server le conversazioni di prima non
+  // esistono piu', e lasciarle disegnate mentre arriva l'elenco nuovo vorrebbe
+  // dire mostrare i messaggi di casa dentro al server dell'ufficio.
+  useEffect(() => {
+    setConversazioni([])
+    setChiamata(null)
+    ricarica()
+  }, [ricarica])
 
   useEffect(() => {
     return iscrivi((evento) => {
@@ -78,6 +85,17 @@ export function usaDiretti(api: Api | null, io: number | null, iscrivi: (c: (e: 
         case 'messaggio':
         case 'messaggio-eliminato':
           if (evento.diretto) ricarica()
+          break
+
+        // Letto: il numero blu si spegne subito, senza rileggere l'elenco.
+        // Rileggerlo funzionerebbe uguale e costerebbe un giro di rete proprio
+        // nell'istante in cui si sta scorrendo una conversazione — e' il
+        // momento peggiore per far ridisegnare la colonna accanto.
+        case 'letto':
+          if (!evento.diretto) break
+          setConversazioni((prima) =>
+            prima.map((c) => (c.canale === evento.canale ? { ...c, nonLetti: 0 } : c))
+          )
           break
 
         case 'chiamata-arriva':

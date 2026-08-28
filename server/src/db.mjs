@@ -744,9 +744,20 @@ export class TalkDb {
     impostazioni = {},
     canaliIniziali = true,
   }) {
-    const chiave = chiaveDa(nome);
-    if (this.sql.prepare('SELECT id FROM spazi WHERE chiave = ?').get(chiave)) {
-      return { errore: `esiste gia' uno spazio con la chiave "${chiave}"` };
+    // Come per i canali: un numero in coda invece di un rifiuto.
+    //
+    // Rifiutare aveva senso quando gli spazi li creava solo chi amministra, e
+    // vedeva tutti quelli che c'erano. Adesso li crea chiunque, e quasi tutti
+    // sono privati: un "esiste gia' uno spazio con la chiave musica" sarebbe
+    // insieme un fastidio — chi lo legge non ha nessun modo di sapere quale —
+    // e un modo per scoprire i nomi degli spazi degli altri provando a
+    // crearli. La chiave e' un identificatore interno, il nome resta quello
+    // che si e' scelto.
+    let chiave = chiaveDa(nome);
+    let n = 2;
+    while (this.sql.prepare('SELECT id FROM spazi WHERE chiave = ?').get(chiave)) {
+      chiave = `${chiaveDa(nome)}-${n}`;
+      n += 1;
     }
 
     const crea = this.sql.transaction(() => {

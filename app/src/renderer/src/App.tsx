@@ -10,6 +10,7 @@ import type {
 } from '@shared/tipi'
 import { PERMESSI_DI_GESTIONE, puo, puoQualcosa } from '@shared/permessi'
 import { ponte } from './ponte'
+import { stessoServer } from '@shared/collegamenti'
 import { Api } from './lib/api'
 import { usaChat } from './lib/usaChat'
 import { usaMondo } from './lib/usaMondo'
@@ -19,6 +20,7 @@ import { usaSessioniMedia } from './lib/usaSessioniMedia'
 import { suona } from './lib/suoni'
 import Accesso, { Completa } from './atrio/Accesso'
 import Avvio from './atrio/Avvio'
+import PannelloServer, { BottoneServer } from './atrio/Server'
 import BarraSpazi from './spazi/BarraSpazi'
 import ColonnaCanali from './spazi/ColonnaCanali'
 import PannelloVoce from './spazi/PannelloVoce'
@@ -37,6 +39,7 @@ import PannelloImpostazioni from './Impostazioni'
 import PopupProfilo from './PopupProfilo'
 import { StrisciaProblemi } from './Problemi'
 import { usaProblema } from './lib/diagnostica'
+import { usaComparsa } from './lib/animazioni'
 import { usaInattivita } from './lib/usaInattivita'
 import {
   fraseMancanti,
@@ -106,6 +109,8 @@ export default function App(): React.JSX.Element {
   /** Vero mentre si sta chiedendo la linea a qualcuno: il pulsante non si ripreme. */
   const [chiamando, setChiamando] = useState(false)
 
+  /** L'elenco dei server veri: il NAS di casa, quello dell'ufficio. */
+  const [mostraServer, setMostraServer] = useState(false)
   const [mostraImpostazioni, setMostraImpostazioni] = useState(false)
   const [mostraProfilo, setMostraProfilo] = useState(false)
   /** Con quale sezione aprire le impostazioni. Null: l'ultima usata. */
@@ -262,6 +267,71 @@ export default function App(): React.JSX.Element {
     setVerificaFatta(false)
   }, [])
 
+  /**
+   * Passare a un altro server vero.
+   *
+   * Non e' un cambio di schermata: e' un cambio di *tutto*. Spazi, canali,
+   * persone, messaggi, amicizie e la chiamata in corso appartengono alla
+   * macchina che si sta lasciando, e nessuna di quelle cose ha un
+   * corrispondente di la'. Quindi si smonta prima e si cambia dopo, in
+   * quest'ordine: uscire dal vocale mentre l'indirizzo e' gia' cambiato
+   * vorrebbe dire mandare il "sono uscito" al server sbagliato, e restare
+   * dentro alla stanza di prima con dentro un fantasma.
+   *
+   * `verificaFatta` torna falso: e' cio' che fa ripartire il controllo della
+   * sessione, che sul server nuovo e' una sessione diversa. Se di la' un token
+   * valido c'e', si entra senza accorgersi di niente; se non c'e', compare il
+   * modulo di accesso di quel server.
+   */
+  const smontaTutto = useCallback(async () => {
+    if (ingresso) {
+      await sessione.esci().catch(() => {})
+      await fermaServizioChiamata().catch(() => {})
+    }
+    setIngresso(null)
+    setChiamataPiena(false)
+    setVista('spazi')
+    setSpazioApertoId(null)
+    setCanaleApertoId(null)
+    setConversazioneApertaId(null)
+    setMenuSpazioAperto(false)
+    setImpostazioniSpazio(null)
+    setNavigazioneMobileAperta(true)
+    setAmicizie(null)
+    setProfili(new Map())
+    setAvviso(null)
+    setErroreAvvio(null)
+    setMotivoAccesso(null)
+    setUtente(null)
+    setVerificaFatta(false)
+  }, [ingresso, sessione])
+
+  const cambiaServer = useCallback(
+    async (indirizzo: string) => {
+      await smontaTutto()
+      setImpostazioni(await ponte.passaAServer(indirizzo))
+    },
+    [smontaTutto]
+  )
+
+  /**
+   * Togliere un server dall'elenco.
+   *
+   * Se e' quello in cui si sta, si smonta tutto come per un cambio: il ponte
+   * ha gia' scelto dove si finisce — un altro server collegato, o nessuno, e
+   * in quel caso si torna al modulo dell'accesso con il campo dell'indirizzo
+   * aperto. Se invece si stava altrove, non c'e' niente da smontare: cambia
+   * una riga di un elenco.
+   */
+  const scollegaServer = useCallback(
+    async (indirizzo: string) => {
+      const eraAttivo = stessoServer(indirizzo, impostazioni?.serverAttivo ?? '')
+      if (eraAttivo) await smontaTutto()
+      setImpostazioni(await ponte.scollegaServer(indirizzo))
+    },
+    [smontaTutto, impostazioni?.serverAttivo]
+  )
+
   /** Sbloccarsi entrando con un altro account: si dimentica il token e si va li'. */
   const vaiAllAccesso = useCallback(() => {
     setErroreAvvio(null)
@@ -324,6 +394,14 @@ export default function App(): React.JSX.Element {
   }, [spazi, spazioApertoId])
 
   const chat = usaChat(api, canaleAperto?.tipo === 'testo' ? canaleAperto : null, mondo.iscrivi)
+
+  // Quale canale sta sotto agli occhi, detto a chi tiene i conteggi. Senza,
+  // un messaggio che arriva nel canale aperto accenderebbe il numero blu per
+  // il decimo di secondo che passa fra "e' arrivato" e "l'ho letto".
+  const canaleInLettura = vista === 'spazi' && canaleAperto?.tipo === 'testo' ? canaleAperto.id : null
+  useEffect(() => {
+    mondo.inLettura.current = canaleInLettura
+  }, [mondo.inLettura, canaleInLettura])
 
   // -- I messaggi diretti ----------------------------------------------------
 
@@ -641,6 +719,21 @@ export default function App(): React.JSX.Element {
     ? vista === 'diretti' && conversazioneApertaId === ingresso.diretta.conversazione
     : vista === 'spazi' && spazioAperto?.id === ingresso?.canale.spazio && canaleApertoId === inVoce
 
+  /**
+   * Le due comparse della finestra principale.
+   *
+   * `segnoVista` cambia quando cambia cio' che si sta guardando: il canale, la
+   * conversazione, il passaggio dai server ai diretti, l'entrata in una
+   * chiamata. Non cambia per un messaggio nuovo ne' per uno che entra in un
+   * vocale — quelle sono cose che succedono *dentro* a cio' che si guarda, e
+   * far ripartire l'animazione a ogni frase detta sarebbe insopportabile.
+   */
+  const segnoVista = `${vista}:${spazioAperto?.id ?? 0}:${canaleAperto?.id ?? 0}:${
+    conversazioneAperta?.id ?? 0
+  }:${guardaLaChiamata ? 'sala' : 'testo'}`
+  const finestra = usaComparsa<HTMLElement>(segnoVista)
+  const colonna = usaComparsa<HTMLDivElement>(`${vista}:${spazioAperto?.id ?? 0}`, 'colonna')
+
   const tornaAllaChiamata = useCallback((): void => {
     if (!ingresso) return
     setMenuSpazioAperto(false)
@@ -812,6 +905,7 @@ export default function App(): React.JSX.Element {
 
   // -- Le schermate che vengono prima ----------------------------------------
 
+
   // L'ordine di questi quattro casi e' il flusso di avvio, e conta:
   //
   //   impostazioni non lette  -> avvio
@@ -822,8 +916,40 @@ export default function App(): React.JSX.Element {
     return <Avvio passo="un istante…" />
   }
 
+  /**
+   * L'accesso, con l'elenco dei server sempre a portata.
+   *
+   * Serve per una strada storta che altrimenti non ha uscita: si passa al
+   * server dell'ufficio, di la' il token non vale piu', e si finisce sul
+   * modulo di accesso di *quel* server. Senza questo pulsante l'unico modo per
+   * tornare a casa sarebbe indovinare la password dell'ufficio, cioe' nessuno.
+   *
+   * Sta sotto alla guardia qui sopra e non insieme agli altri `useCallback`
+   * perche' ha bisogno delle impostazioni gia' lette: prima di quella riga
+   * sono ancora `null`.
+   */
+  const impostazioniLette = impostazioni
+  const conScambiatore = (schermata: React.JSX.Element): React.JSX.Element => (
+    <div className="relative h-full">
+      {schermata}
+      {impostazioniLette.serverCollegati.length > 0 && (
+        <div className="absolute top-3 left-3 z-10">
+          <BottoneServer impostazioni={impostazioniLette} apri={() => setMostraServer(true)} />
+        </div>
+      )}
+      {mostraServer && (
+        <PannelloServer
+          impostazioni={impostazioniLette}
+          chiudi={() => setMostraServer(false)}
+          cambiaServer={cambiaServer}
+          scollega={scollegaServer}
+        />
+      )}
+    </div>
+  )
+
   if (!api) {
-    return (
+    return conScambiatore(
       <Accesso
         impostazioni={impostazioni}
         motivo={motivoAccesso}
@@ -840,7 +966,7 @@ export default function App(): React.JSX.Element {
   }
 
   if (erroreAvvio) {
-    return (
+    return conScambiatore(
       <Avvio
         passo="Controllo la sessione…"
         errore={erroreAvvio}
@@ -855,7 +981,7 @@ export default function App(): React.JSX.Element {
   }
 
   if (!utente) {
-    return (
+    return conScambiatore(
       <Accesso
         impostazioni={impostazioni}
         motivo={motivoAccesso}
@@ -923,8 +1049,20 @@ export default function App(): React.JSX.Element {
         direttiNonLetti={diretti.nonLetti}
         inVoce={inVoce}
         profili={profili}
+        intestazione={
+          <BottoneServer impostazioni={impostazioni} apri={() => setMostraServer(true)} />
+        }
         className={navigazioneMobileAperta ? '' : 'hidden md:flex'}
       />
+      )}
+
+      {mostraServer && (
+        <PannelloServer
+          impostazioni={impostazioni}
+          chiudi={() => setMostraServer(false)}
+          cambiaServer={cambiaServer}
+          scollega={scollegaServer}
+        />
       )}
 
       {/* Il pannello della chiamata copre le due colonne insieme.
@@ -1024,6 +1162,7 @@ export default function App(): React.JSX.Element {
               della voce. Cambiare geometria fra le due viste vorrebbe dire far
               saltare l'interfaccia a ogni passaggio. */}
           <div
+            ref={colonna}
             className={`${navigazioneMobileAperta ? 'flex' : 'hidden'} w-[calc(100%-4rem)] shrink-0 flex-col border-r border-bordo bg-fondo-2 md:flex md:w-60 ${
               chiamataPiena ? 'hidden' : ''
             }`}
@@ -1048,6 +1187,7 @@ export default function App(): React.JSX.Element {
           </div>
 
           <main
+            ref={finestra}
             className={`${navigazioneMobileAperta ? 'hidden md:flex' : 'flex'} min-w-0 flex-1 flex-col`}
           >
             {!guardaLaChiamata && (
@@ -1137,6 +1277,7 @@ export default function App(): React.JSX.Element {
               deve correre dall'alto al basso senza spezzarsi dove finisce
               l'elenco dei canali e comincia la barra della voce. */}
           <div
+            ref={colonna}
             className={`${navigazioneMobileAperta ? 'flex' : 'hidden'} w-[calc(100%-4rem)] shrink-0 flex-col border-r border-bordo bg-fondo-2 md:flex md:w-60 ${
               chiamataPiena ? 'hidden' : ''
             }`}
@@ -1199,6 +1340,7 @@ export default function App(): React.JSX.Element {
           </div>
 
           <main
+            ref={finestra}
             className={`${navigazioneMobileAperta ? 'hidden md:flex' : 'flex'} min-w-0 flex-1 flex-col`}
           >
             {!guardaLaChiamata && (
@@ -1292,9 +1434,8 @@ export default function App(): React.JSX.Element {
             <>
               <p className="text-testo-2">Non c'e' ancora nessuno spazio.</p>
               <p className="text-sm text-testo-3">
-                {utente.ruolo === 'admin'
-                  ? 'Creane uno con il + nella colonna a sinistra.'
-                  : 'Chiedi a chi amministra il server di crearne uno.'}
+                Creane uno con il + nella colonna a sinistra: nasce privato, e lo vedi solo tu
+                finche' non inviti qualcuno.
               </p>
             </>
           )}
@@ -1394,11 +1535,11 @@ export default function App(): React.JSX.Element {
 
       {mostraEventi && spazioAperto && (
         <div
-          className="absolute inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/70 p-3 backdrop-blur-sm sm:p-6"
+          className="velo absolute inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/70 p-3 backdrop-blur-sm sm:p-6"
           onClick={() => setMostraEventi(null)}
         >
           <div
-            className="w-full max-w-2xl space-y-6 rounded-2xl border border-bordo bg-fondo-2 p-5"
+            className="pannello w-full max-w-2xl space-y-6 rounded-2xl border border-bordo bg-fondo-2 p-5"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between">
@@ -1487,6 +1628,10 @@ export default function App(): React.JSX.Element {
           utente={utente}
           salva={salva}
           inChiamata={!!inVoce}
+          apriServer={() => {
+            setMostraImpostazioni(false)
+            setMostraServer(true)
+          }}
           chiudi={() => setMostraImpostazioni(false)}
           quandoCambiaUtente={(aggiornato) => {
             setUtente(aggiornato)

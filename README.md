@@ -121,6 +121,55 @@ barretta in basso a sinistra che lo ricorda. E' la cosa che ha richiesto piu'
 lavoro di tutte, perche' vuol dire che la sessione WebRTC non puo' vivere dentro
 alla schermata che la mostra.
 
+**Uno spazio lo apre chiunque.** Non serve essere admin dell'istanza: il `+`
+sotto alle icone a sinistra ce l'hanno tutti. Uno spazio nuovo nasce **privato**
+— dentro c'e' chi l'ha creato e nessun altro, e nella barra degli altri non
+compare niente — e ci si entra per invito, come si entra ovunque qui dentro. Non
+c'e' un elenco pubblico da riempire di rumore, quindi non c'era niente da
+proteggere: c'era solo da chiedere il permesso per farsi un posto dove parlare
+in tre.
+
+Restano dell'admin le due cose che toccano *gli altri*: creare uno spazio
+`apertoATutti`, che comparirebbe nella barra di tutti quanti, e metterci dentro
+delle persone al momento della creazione. Chi non e' admin invita nel modo
+normale — un codice, che si puo' anche ignorare.
+
+---
+
+## Piu' server insieme
+
+Il NAS di casa e la macchina dell'ufficio, nella stessa applicazione, con un
+clic per passare dall'uno all'altro. In cima alla colonna delle icone c'e' un
+quadratino con le iniziali del server in cui si sta: da li' si vede l'elenco, si
+cambia, e se ne collega un altro.
+
+Non e' un dettaglio di comodo, e vale la pena dire cosa **non** e'. I due server
+non si conoscono e non comunicano: hanno database separati, inviti separati,
+account separati. Cambiare server vuol dire cambiare *tutto* — spazi, canali,
+persone, messaggi — e la chiamata in corso si lascia, perche' e' una stanza di
+quella macchina e non c'e' nessun modo di portarsela dietro.
+
+**I nomi duplicati si risolvono dove nascono.** `marco` sul NAS di casa e
+`marco` in ufficio possono benissimo essere due persone diverse, e nessuno dei
+due server puo' accorgersene — quindi non si prova a tenere un'identita' unica
+*fra* i server, che non avrebbe un posto dove vivere, ma la si tiene unica
+*dentro* ciascuno, che e' l'unico posto dove la domanda ha una risposta.
+
+In pratica: collegandosi a un server nuovo, l'applicazione propone il nome che
+si usa gia' altrove. Se li' e' libero non succede niente e si resta la stessa
+persona ovunque. Se e' preso, lo dice **prima** della password — c'e' una rotta
+apposta, `POST /api/auth/nome-libero`, che risponde solo a chi ha in mano un
+codice di invito valido — e propone dei nomi vicini (`marco.casa`, `marco2`). Il
+nome scelto resta salvato accanto a quell'indirizzo, quindi la volta dopo si
+rientra senza ripensarci.
+
+**Dove stanno i token.** Uno per server, e mai nel file delle impostazioni:
+nell'app installata vivono in `gettoni.bin`, cifrato con `safeStorage` (su
+Windows la DPAPI dell'utente); nel browser in una chiave di `localStorage` a
+parte. Chi aggiorna da una versione con un server solo non deve rifare niente:
+il `gettone.bin` di prima viene letto una volta, messo sotto l'indirizzo che era
+configurato, e cancellato.
+
 ## Cosa toglie
 
 |  | Discord | PulseTalk |
@@ -329,8 +378,8 @@ qualunque dispositivo senza piu' codici.
 | Ruolo | Cosa puo' fare |
 |---|---|
 | `ospite` | entra, ascolta, guarda, scrive nei canali di testo |
-| `membro` | anche trasmettere: voce, camera, schermo |
-| `admin` | anche creare spazi e canali, moderare, invitare |
+| `membro` | anche trasmettere — voce, camera, schermo — e aprire spazi propri, che nascono privati |
+| `admin` | anche amministrare l'istanza: inviti, chiavi dei servizi, spazi aperti a tutti |
 
 ```bash
 docker compose exec pulse-talk node src/cli.mjs elenca
@@ -491,7 +540,7 @@ POST   /api/canali/:id/messaggi          {testo, rispondeA, allegati} membro
 PATCH  /api/messaggi/:id                 solo i propri
 DELETE /api/messaggi/:id                 i propri, o da admin
 POST   /api/messaggi/:id/reazioni        {emoji} — due volte toglie
-POST   /api/canali/:id/letto             {fino}
+POST   /api/canali/:id/letto             {fino} -> evento `letto` a chi legge
 GET    /api/spazi/:id/cerca              ?q=&canale=                 ospite
 
 POST   /api/allegati                     corpo grezzo, x-nome        membro
@@ -530,6 +579,21 @@ Chrome, che applica i suoi. Dopo aver pubblicato, `pubblica.ts` prende
 l'`RTCRtpSender` e ci riscrive sopra bitrate, fotogrammi, preferenza di
 degradazione e `scaleResolutionDownBy = 1`. E' l'ultimo anello prima del
 codificatore, ed e' il motivo per cui uno schermo 4K arriva davvero a 4K.
+
+**I non letti si contano nel client, non si rileggono.** Erano l'unica cosa
+dell'elenco degli spazi che cambia a ogni frase detta da chiunque, e il server
+non aveva nessun motivo di annunciare `spazi` — che vuol dire "rileggi tutto" —
+per un numero. Risultato: il pallino blu si accendeva quando capitava di
+ricaricare per un altro motivo, e non si spegneva mai. Adesso il messaggio che
+arriva alza il conteggio in locale, un evento `letto` lo azzera, e la lettura da
+`GET /api/spazi` resta la verita' a cui si torna a ogni ricaricamento.
+
+L'evento `letto` va **solo alle sessioni di chi ha letto**, e a tutte: letto sul
+telefono e' letto anche sul computer. E "letto" vuol dire guardato — la
+condizione non e' "il canale e' aperto" ma "il canale e' aperto e la finestra si
+vede". Chi lascia PulseTalk aperto su un canale e va a lavorare altrove non sta
+leggendo niente, e segnare come letto in quel caso sarebbe il difetto opposto:
+un numero che non compare mai.
 
 **Un flusso solo per persona, e ci passa tutto.** Messaggi, reazioni, canali
 creati, chi entra in un vocale: sono cose diverse che devono arrivare nello

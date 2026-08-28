@@ -126,7 +126,7 @@ export default function MenuRiquadro({
       ref={scatola}
       role="menu"
       onContextMenu={(e) => e.preventDefault()}
-      className={`fixed z-50 w-56 rounded-xl border border-bordo bg-fondo-2 p-2 shadow-xl shadow-black/40 ${
+      className={`menu-comparsa fixed z-50 w-56 rounded-xl border border-bordo bg-fondo-2 p-2 shadow-xl shadow-black/40 ${
         posto.pronto ? 'opacity-100' : 'opacity-0'
       }`}
       style={{ left: posto.sinistra, top: posto.alto }}

@@ -146,14 +146,14 @@ export function Conferma({
     // impostazioni, quelle di uno spazio — lo stesso clic ne chiuderebbe due, e
     // chi voleva solo annullare si ritroverebbe fuori da tutto.
     <div
-      className="absolute inset-0 z-40 flex items-center justify-center bg-black/70 p-3 backdrop-blur-sm sm:p-6"
+      className="velo absolute inset-0 z-40 flex items-center justify-center bg-black/70 p-3 backdrop-blur-sm sm:p-6"
       onClick={(evento) => {
         evento.stopPropagation()
         chiudi()
       }}
     >
       <div
-        className="w-full max-w-md rounded-2xl border border-bordo bg-fondo-2 p-5"
+        className="pannello w-full max-w-md rounded-2xl border border-bordo bg-fondo-2 p-5"
         onClick={(evento) => evento.stopPropagation()}
       >
         <h2 className="font-semibold">{titolo}</h2>

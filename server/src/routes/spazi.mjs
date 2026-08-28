@@ -151,9 +151,30 @@ export function rotteSpazi(app, { db, config, presenze, eventi }) {
 
   // -- Spazi -----------------------------------------------------------------
 
+  /**
+   * Uno spazio nuovo, e chiunque abbia un account puo' farlo.
+   *
+   * Prima ci voleva il ruolo `admin` dell'istanza, ed era una regola presa dal
+   * caso piu' piccolo: quattro persone in casa, e l'unica che crea spazi e'
+   * quella che ha installato il server. Su un'installazione con venti persone
+   * quella stessa regola vuol dire che per farsi un posto dove parlare in tre
+   * bisogna chiedere il permesso a qualcuno.
+   *
+   * Il motivo per cui si puo' aprire senza pentirsene e' che uno spazio nuovo
+   * **non si vede**: nasce con dentro chi l'ha creato e nessun altro, e chi
+   * arriva dopo ci arriva per invito. Non c'e' un elenco pubblico da riempire
+   * di rumore, e la barra a sinistra di chi non e' stato invitato resta come
+   * era.
+   *
+   * Le due cose che restano dell'admin sono quelle che toccano *gli altri*:
+   * `apertoATutti`, che infilerebbe lo spazio nella barra di tutti quanti, e
+   * la lista degli invitati al momento della creazione, che ce li metterebbe
+   * dentro senza che nessuno abbia chiesto niente. Chi non e' admin invita nel
+   * modo normale — un codice — che e' un invito che si puo' anche ignorare.
+   */
   app.post(
     '/api/spazi',
-    { onRequest: richiedeRuolo('admin') },
+    { onRequest: richiedeRuolo('membro') },
     async (richiesta, risposta) => {
       const {
         nome,
@@ -169,12 +190,23 @@ export function rotteSpazi(app, { db, config, presenze, eventi }) {
         return risposta.code(400).send({ errore: 'serve un nome' });
       }
 
+      const amministra = richiesta.utente.ruolo === 'admin';
+      const volute = typeof impostazioni === 'object' && impostazioni ? { ...impostazioni } : {};
+      // Detto e non ignorato in silenzio: chi lo chiede da un client suo deve
+      // sapere perche' non e' successo.
+      if (!amministra && volute.apertoATutti) {
+        return risposta.code(403).send({
+          errore:
+            'uno spazio aperto a tutti lo puo\' creare solo chi amministra il server: il tuo nasce privato, e ci entra chi inviti',
+        });
+      }
+
       const esito = db.creaSpazio({
         nome: nome.trim().slice(0, 60),
         icona: typeof icona === 'string' ? icona.slice(0, 8) : null,
         descrizione: typeof descrizione === 'string' ? descrizione : '',
         regole: typeof regole === 'string' ? regole : '',
-        impostazioni: typeof impostazioni === 'object' && impostazioni ? impostazioni : {},
+        impostazioni: volute,
         creatoDa: richiesta.utente.id,
         // Con una struttura gia' descritta non servono i due canali di serie:
         // nascerebbero accanto a quelli chiesti e andrebbero cancellati subito.
@@ -210,7 +242,7 @@ export function rotteSpazi(app, { db, config, presenze, eventi }) {
       // A porte chiuse, invece, ci entra solo chi viene chiamato per nome.
       if (db.impostazioniSpazio(spazio).apertoATutti) {
         for (const u of db.elencoProfili()) db.aggiungiMembro(spazio.id, u.id);
-      } else {
+      } else if (amministra) {
         for (const chi of Array.isArray(invitati) ? invitati.slice(0, 100) : []) {
           if (db.utente(Number(chi))) db.aggiungiMembro(spazio.id, Number(chi));
         }
@@ -308,7 +340,10 @@ export function rotteSpazi(app, { db, config, presenze, eventi }) {
       }
 
       // Solo a chi ha premuto: i non letti degli altri non sono cambiati.
-      eventi.aUtenti([richiesta.utente.id], { tipo: 'spazi' });
+      // `letto-spazio` e non `spazi`: qui non e' cambiata la struttura, sono
+      // cambiati dei conteggi, e rileggere tutto per azzerarli farebbe
+      // ridisegnare le tre colonne per niente.
+      eventi.aUtenti([richiesta.utente.id], { tipo: 'letto-spazio', spazio: esito.spazio.id });
       return { ok: true };
     },
   );

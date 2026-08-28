@@ -1,6 +1,9 @@
 import type { Codec, Limiti, ModoAudio } from './qualita'
 import type { Permesso } from './permessi'
 import { SERVER_PREDEFINITO } from './predefiniti'
+import type { ServerCollegato } from './collegamenti'
+
+export type { ServerCollegato } from './collegamenti'
 
 /**
  * I nomi dei canali fra la finestra e il processo principale.
@@ -14,6 +17,9 @@ export const IPC = {
   leggiImpostazioni: 'leggi-impostazioni',
   scriviImpostazioni: 'scrivi-impostazioni',
   impostazioniCambiate: 'impostazioni-cambiate',
+  collegaServer: 'collega-server',
+  passaAServer: 'passa-a-server',
+  scollegaServer: 'scollega-server',
   scorciatoia: 'scorciatoia',
   apriEsterno: 'apri-esterno',
   versione: 'versione',
@@ -164,13 +170,32 @@ export interface SceltaCattura {
 
 /** Cosa si ricorda l'app fra un'apertura e l'altra. */
 export interface Impostazioni {
-  /** L'indirizzo del piano di controllo, senza barra finale. */
+  /**
+   * L'indirizzo del server attivo adesso, senza barra finale.
+   *
+   * Resta un campo solo anche adesso che i server collegati possono essere
+   * piu' d'uno: tutto il resto dell'applicazione parla con *un* server per
+   * volta, e farle tenere in mano un elenco vorrebbe dire far scegliere a
+   * ognuno dei venti punti che lo usano. Qui c'e' quello scelto; l'elenco sta
+   * in `serverCollegati`, e cambiarlo cambia questo.
+   */
   server: string
-  /** Il token della sessione, ottenuto entrando o riscattando un invito. */
+  /** Il token della sessione sul server attivo. */
   token: string | null
   nome: string | null
   /** L'ultimo nome utente usato: al prossimo accesso resta solo la password. */
   utenteRicordato: string | null
+
+  /**
+   * I server a cui si e' collegati: il NAS di casa, quello dell'ufficio.
+   *
+   * Ognuno con le sue credenziali, che restano di la'. Il token di ciascuno
+   * non sta qui dentro — nell'app installata vive cifrato accanto agli altri,
+   * e nel browser in `localStorage` come e' sempre stato.
+   */
+  serverCollegati: ServerCollegato[]
+  /** L'indirizzo di quello scelto, fra i collegati. */
+  serverAttivo: string | null
 
   microfonoId: string | null
   cameraId: string | null
@@ -311,6 +336,9 @@ export const IMPOSTAZIONI_INIZIALI: Impostazioni = {
   token: null,
   nome: null,
   utenteRicordato: null,
+
+  serverCollegati: [],
+  serverAttivo: null,
 
   microfonoId: null,
   cameraId: null,
@@ -766,6 +794,30 @@ export type Evento =
       diretto?: boolean
       ricevute: Ricevute
     }
+  /**
+   * "Fin qui l'ho letto io", detto dal server a chi ha letto.
+   *
+   * Va soltanto alle sessioni di quella persona, e serve a spegnere il numero
+   * blu. Prima non esisteva: la lettura si scriveva nel database e nessuno
+   * avvisava l'elenco dei canali, che restava fermo al conteggio dell'ultima
+   * `GET /api/spazi` — cioe' il pallino si accendeva da solo e si spegneva
+   * soltanto ricaricando per un altro motivo.
+   *
+   * Va a tutte le sessioni e non solo a quella che ha chiesto: letto sul
+   * telefono vuol dire letto anche sul computer, che e' la sola cosa che
+   * "letto" possa ragionevolmente voler dire.
+   */
+  | {
+      tipo: 'letto'
+      spazio: number
+      canale: number
+      /** L'id dell'ultimo messaggio considerato letto. */
+      fino: number
+      diretto?: boolean
+      conversazione?: number | null
+    }
+  /** Tutto letto in uno spazio intero: la voce "segna come gia' letto". */
+  | { tipo: 'letto-spazio'; spazio: number }
   | {
       tipo: 'messaggio'
       spazio: number

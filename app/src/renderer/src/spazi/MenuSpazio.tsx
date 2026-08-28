@@ -109,7 +109,7 @@ export default function MenuSpazio({
   return (
     <div
       ref={riquadro}
-      className="absolute top-full right-0 left-0 z-30 mt-1 overflow-hidden rounded-xl border border-bordo bg-fondo-2 py-1.5 shadow-xl shadow-black/50"
+      className="menu-comparsa absolute top-full right-0 left-0 z-30 mt-1 overflow-hidden rounded-xl border border-bordo bg-fondo-2 py-1.5 shadow-xl shadow-black/50"
       role="menu"
     >
       {/* -- Per tutti ------------------------------------------------- */}

@@ -125,12 +125,12 @@ function Pannello({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+      className="velo fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
       onClick={chiudi}
       role="presentation"
     >
       <div
-        className="flex h-[min(92vh,60rem)] w-[min(92vw,64rem)] min-h-0 flex-col overflow-hidden rounded-2xl border border-bordo bg-fondo-2 shadow-2xl"
+        className="pannello flex h-[min(92vh,60rem)] w-[min(92vw,64rem)] min-h-0 flex-col overflow-hidden rounded-2xl border border-bordo bg-fondo-2 shadow-2xl"
         onClick={(evento) => evento.stopPropagation()}
         role="dialog"
         aria-modal="true"

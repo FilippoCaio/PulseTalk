@@ -137,7 +137,7 @@ export default function PannelloSpazio({
   }, [chiudi])
 
   return (
-    <div className="absolute inset-0 z-40 flex flex-col bg-fondo sm:flex-row">
+    <div className="pannello absolute inset-0 z-40 flex flex-col bg-fondo sm:flex-row">
       <nav className="flex w-full shrink-0 gap-1 overflow-x-auto border-b border-bordo bg-fondo-2 p-2 sm:w-56 sm:flex-col sm:gap-0.5 sm:overflow-y-auto sm:border-r sm:border-b-0 sm:p-3">
         <p className="hidden mb-2 truncate px-2 text-[11px] font-semibold tracking-wider text-testo-3 uppercase sm:block">
           {spazio.nome}

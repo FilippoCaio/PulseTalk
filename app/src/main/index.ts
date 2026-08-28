@@ -2,7 +2,15 @@ import { app, BrowserWindow, globalShortcut, ipcMain, Notification, session, she
 import { appendFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { agganciaCattura, elencaSorgenti, ricordaScelta } from './cattura'
-import { dimenticaToken, leggiImpostazioni, scriviImpostazioni, scriviToken } from './impostazioni'
+import {
+  collegaServer,
+  dimenticaToken,
+  leggiImpostazioni,
+  passaAServer,
+  scollegaServer,
+  scriviImpostazioni,
+  scriviToken
+} from './impostazioni'
 import { chiudiPuntatori, mostraPuntatore } from './puntatore'
 import { preparaAggiornamenti } from './aggiorna'
 import { avviaSito, type Sito } from './sito'
@@ -327,6 +335,44 @@ function agganciaCanali(): void {
 
     finestra?.webContents.send(IPC.impostazioniCambiate, impostazioni)
     return { impostazioni, errore }
+  })
+
+  /**
+   * Collegarsi a un server, e passarci sopra.
+   *
+   * Una chiamata sola con dentro indirizzo e token, e non due passaggi da
+   * `scriviImpostazioni`: fra un passaggio e l'altro l'indirizzo attivo e il
+   * token sarebbero stati per un istante di due server diversi, ed e' proprio
+   * la coppia sbagliata che poi si salva sul disco.
+   */
+  ipcMain.handle(
+    IPC.collegaServer,
+    (
+      _evento,
+      dati: {
+        indirizzo: string
+        token?: string | null
+        nome?: string | null
+        utente?: string | null
+        nomeVisibile?: string | null
+      }
+    ) => {
+      const esito = collegaServer(dati)
+      finestra?.webContents.send(IPC.impostazioniCambiate, esito.impostazioni)
+      return esito
+    }
+  )
+
+  ipcMain.handle(IPC.passaAServer, (_evento, indirizzo: string) => {
+    const impostazioni = passaAServer(indirizzo)
+    finestra?.webContents.send(IPC.impostazioniCambiate, impostazioni)
+    return { impostazioni }
+  })
+
+  ipcMain.handle(IPC.scollegaServer, (_evento, indirizzo: string) => {
+    const impostazioni = scollegaServer(indirizzo)
+    finestra?.webContents.send(IPC.impostazioniCambiate, impostazioni)
+    return { impostazioni }
   })
 
   ipcMain.handle(IPC.versione, () => ({

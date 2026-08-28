@@ -532,11 +532,11 @@ function ModuloCanale({
 
   return (
     <div
-      className="absolute inset-0 z-30 flex items-center justify-center bg-black/70 p-6 backdrop-blur-sm"
+      className="velo absolute inset-0 z-30 flex items-center justify-center bg-black/70 p-6 backdrop-blur-sm"
       onClick={chiudi}
     >
       <div
-        className="w-full max-w-sm space-y-4 rounded-2xl border border-bordo bg-fondo-2 p-5"
+        className="pannello w-full max-w-sm space-y-4 rounded-2xl border border-bordo bg-fondo-2 p-5"
         onClick={(e) => e.stopPropagation()}
       >
         <h2 className="font-semibold">
