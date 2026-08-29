@@ -130,7 +130,12 @@ if ($Prova) {
 
 Push-Location $app
 try {
-    & npm version $nuova --no-git-tag-version | Out-Null
+    # `--allow-same-version` perche' i due script di rilascio si usano in
+    # coppia: uno pubblica su GitHub, l'altro sul proprio feed, e il secondo
+    # trova il numero che ha gia' scritto il primo. Senza questo flag `npm
+    # version` si rifiuta di riscrivere lo stesso numero e il giro si ferma a
+    # meta', con il pacchetto costruito e il feed no.
+    & npm version $nuova --no-git-tag-version --allow-same-version | Out-Null
 
     Passo "Compilo"
     & npm run build
