@@ -10,6 +10,11 @@ import type {
 } from '@shared/tipi'
 import { PERMESSI_DI_GESTIONE, puo, puoQualcosa } from '@shared/permessi'
 import { ponte } from './ponte'
+import AvvisoAggiornamento, { BloccoAggiornamento } from './AvvisoAggiornamento'
+import SceltaServer from './atrio/SceltaServer'
+import { usaAggiornamenti } from './lib/usaAggiornamenti'
+import { poteriDaiPermessi, usaRestrizioni, vociModerazione } from './lib/usaRestrizioni'
+import type { PersonaInVoce } from './spazi/personaInVoce'
 import { stessoServer } from '@shared/collegamenti'
 import { Api } from './lib/api'
 import { usaChat } from './lib/usaChat'
@@ -80,6 +85,22 @@ export default function App(): React.JSX.Element {
    * riscrivere la password ogni volta che cade la linea, quindi si resta sulla
    * schermata di avvio con un "riprova" sotto.
    */
+  /**
+   * Il server scelto nella prima schermata, prima di avere un account.
+   *
+   * Non si salva, e non e' una dimenticanza. Nelle impostazioni `server` e' un
+   * campo **derivato**: `riallinea` lo ricava dall'elenco dei server collegati,
+   * e un collegamento e' un indirizzo con accanto un token. Scriverlo da solo
+   * verrebbe scartato al primo salvataggio — e scriverci dentro un indirizzo
+   * senza account vorrebbe dire riempire lo scambiatore di server di posti in
+   * cui non si e' mai entrati.
+   *
+   * Quindi vive qui, per il tempo che passa fra "vado su questo" e "ci sono
+   * dentro". Al primo accesso riuscito e' `collegaServer` a renderlo vero, con
+   * il suo token accanto, e da li' in poi comanda quello.
+   */
+  const [serverScelto, setServerScelto] = useState<string | null>(null)
+
   const [motivoAccesso, setMotivoAccesso] = useState<string | null>(null)
   const [erroreAvvio, setErroreAvvio] = useState<string | null>(null)
 
@@ -172,6 +193,19 @@ export default function App(): React.JSX.Element {
   // cambiati senza che sia cambiato niente: altrimenti il primo avviso della
   // giornata sarebbe sempre per dei dispositivi che stanno al loro posto.
   usaRiallineaDispositivi(impostazioni, salva)
+
+  /**
+   * Gli aggiornamenti, guardati da un posto solo.
+   *
+   * Il controllo all'avvio l'ha gia' fatto il processo principale appena la
+   * finestra e' comparsa; questo hook si limita ad ascoltare lo stato e a
+   * consegnare all'aggiornatore il vincolo che il server dichiara, quando
+   * risponde. Le due cose non si accavallano: il main ha una guardia sola per
+   * entrambe, quindi il secondo che arriva si attacca al primo invece di
+   * aprire un altro download sullo stesso file.
+   */
+  const aggiornamenti = usaAggiornamenti(api)
+
   // Inattivo non e' piu' una voce di menu: lo decide il microfono. `parlanti`
   // contiene chi supera in questo istante la soglia dell'automute, e la propria
   // identita' nella stanza e' sempre `u<id>`.
@@ -674,6 +708,106 @@ export default function App(): React.JSX.Element {
 
   const inVoce = ingresso && sessione.stato !== ConnectionState.Disconnected ? ingresso.canale.id : null
   /**
+   * Le restrizioni vocali del canale in cui si sta parlando.
+   *
+   * Vive qui e non dentro alla sala per lo stesso motivo della sessione: la
+   * colonna dei canali le mostra anche mentre si sta leggendo una chat, e uno
+   * stato tenuto piu' in basso morirebbe a ogni cambio di schermata.
+   */
+  const restrizioni = usaRestrizioni(
+    api,
+    inVoce,
+    utente?.id ?? null,
+    mondo.iscrivi,
+    ingresso?.restrizioni
+  )
+
+  /**
+   * Cosa si puo' fare a chi compare sotto a un canale vocale.
+   *
+   * Costruito qui perche' e' l'unico posto in cui esistono tutte e tre le cose
+   * che servono: la sessione RTC per i volumi, i diretti per scrivere a
+   * qualcuno, e i permessi del canale in cui si sta parlando per i
+   * provvedimenti.
+   *
+   * I provvedimenti compaiono solo nel canale in cui si e' dentro, e non e' una
+   * limitazione arbitraria: i poteri arrivano con l'ingresso — `ingresso.permessi`
+   * li calcola il server per QUEL canale — e per un canale in cui non si e'
+   * entrati non li abbiamo. Il server accetterebbe la richiesta lo stesso;
+   * disegnare voci senza sapere se si possono premere sarebbe un modo di far
+   * scoprire i propri permessi a forza di 403.
+   */
+  const personaInVoce: PersonaInVoce = useMemo(
+    () => ({
+      io: utente?.id ?? null,
+      volumi: (identita) => {
+        const suoi = sessione.volumiDi(identita)
+        return [
+          {
+            chiave: 'voce',
+            nome: 'voce',
+            volume: suoi.voce,
+            muto: suoi.mutoVoce,
+            cambia: (v) => sessione.impostaVolume(identita, 'voce', v),
+            alternaMuto: () => sessione.alternaMuto(identita, 'voce')
+          }
+        ]
+      },
+      /**
+       * I poteri, presi dalla fonte migliore che c'e' per quel canale.
+       *
+       * Dentro alla stanza in cui si sta parlando li dichiara il server
+       * all'ingresso, e li' dentro c'e' anche chi comanda soltanto perche' sta
+       * organizzando un evento adesso. Per gli altri canali si ricavano dai
+       * permessi che `GET /api/spazi` restituisce gia' risolti, canale per
+       * canale: non conoscono l'organizzatore di un evento — quello lo calcola
+       * il server all'ingresso — e bastano per tutto il resto.
+       *
+       * Le voci si disegnano comunque solo dove si ha il diritto: a dire di no
+       * resta il server, su ogni richiesta.
+       */
+      moderazione: (canale, chi) => {
+        const poteri =
+          ingresso && ingresso.canale.id === canale
+            ? ingresso.permessi
+            : poteriDaiPermessi(
+                spazi
+                  .flatMap((s) => s.canali)
+                  .find((c) => c.id === canale)?.permessiMiei
+              )
+        return vociModerazione(poteri, restrizioni, canale, chi, setAvviso)
+      },
+      restrizioni: (canale, chi) => restrizioni.per(canale).get(chi),
+      assicura: restrizioni.assicura,
+      caccia: api
+        ? async (canale, identita) => {
+            try {
+              await api.caccia(canale, identita)
+            } catch (e) {
+              setAvviso((e as Error).message)
+            }
+          }
+        : undefined,
+      scrivi: (chi) => {
+        void diretti.apriCon(chi).then((c) => {
+          if (!c) return
+          setVista('diretti')
+          setConversazioneApertaId(c.id)
+          setNavigazioneMobileAperta(false)
+        })
+      },
+      vaiAiDiretti: (chi) => {
+        void diretti.apriCon(chi).then((c) => {
+          if (!c) return
+          setVista('diretti')
+          setConversazioneApertaId(c.id)
+          setNavigazioneMobileAperta(true)
+        })
+      }
+    }),
+    [utente?.id, sessione, ingresso, api, restrizioni, diretti, spazi]
+  )
+  /**
    * La chat del canale VOCALE, che e' una cosa diversa da quella del canale
    * aperto: mentre si parla si puo' stare a leggere un canale di testo, e le
    * due conversazioni non devono mescolarsi.
@@ -869,6 +1003,17 @@ export default function App(): React.JSX.Element {
     if (!inVoce) setChiamataPiena(false)
   }, [inVoce])
 
+  /**
+   * F11 conta come il pulsante nella sala.
+   *
+   * Era l'unico percorso al tutto schermo che non passava di qui: la finestra
+   * si prendeva lo schermo e le due colonne restavano dov'erano, che e' il
+   * contrario di quello che si sta chiedendo premendo. Il processo principale
+   * ci dice quando succede, e lo stato diventa uno solo per tutti i percorsi —
+   * il pulsante, la voce nel menu del tasto destro, Escape e F11.
+   */
+  useEffect(() => ponte.onSchermoFinestra(setChiamataPiena), [])
+
   useEffect(
     () =>
       ascoltaIndietroAndroid(() => {
@@ -929,9 +1074,34 @@ export default function App(): React.JSX.Element {
    * sono ancora `null`.
    */
   const impostazioniLette = impostazioni
+
+  /**
+   * Il server di questo momento: quello collegato, o quello appena scelto.
+   *
+   * Vuoto vuol dire "non si sa ancora dove", ed e' l'unico caso in cui la
+   * prima schermata e' quella dell'indirizzo invece che quella dell'accesso.
+   */
+  const serverDaUsare = impostazioni.server || serverScelto || ''
   const conScambiatore = (schermata: React.JSX.Element): React.JSX.Element => (
     <div className="relative h-full">
       {schermata}
+      {/* La novita' si vede anche da qui, e non e' un di piu'.
+
+          «All'apertura» per chi non ha ancora fatto l'accesso vuol dire questa
+          schermata: e' la prima cosa che vede, e per un pezzo l'unica. Il
+          controllo parte comunque — l'installer il feed lo conosce gia', e
+          `aggiorna.ts` e' scritto apposta per funzionare prima del login —
+          quindi lo stato c'e' e mancava soltanto un posto in cui mostrarlo.
+
+          Si e' visto solo installando l'applicazione e aprendola: da
+          sviluppatore si arriva alle tre colonne con il token gia' in tasca, e
+          questa schermata non la si attraversa quasi mai. */}
+      <AvvisoAggiornamento
+        stato={aggiornamenti.stato}
+        inVoce={false}
+        scarica={aggiornamenti.scarica}
+        installa={aggiornamenti.installa}
+      />
       {impostazioniLette.serverCollegati.length > 0 && (
         <div className="absolute top-3 left-3 z-10">
           <BottoneServer impostazioni={impostazioniLette} apri={() => setMostraServer(true)} />
@@ -948,10 +1118,30 @@ export default function App(): React.JSX.Element {
     </div>
   )
 
+  /**
+   * Prima di tutto: dove.
+   *
+   * Senza un server non c'e' niente da chiedere a nessuno — non un nome, non
+   * una password, non un codice di invito, perche' un codice di invito vale
+   * per un server solo. Prima si sceglie la macchina, poi ci si entra o ci si
+   * fa un account sopra.
+   *
+   * Nel browser questa schermata non compare mai, ed e' giusto: li' il server
+   * e' l'origine da cui la pagina e' stata servita, e chiederlo vorrebbe dire
+   * far scrivere a qualcuno l'indirizzo che ha appena aperto.
+   *
+   * Non passa da `conScambiatore`: lo scambiatore di server, qui, sarebbe un
+   * secondo modo di fare l'unica cosa che questa schermata gia' fa.
+   */
+  if (!serverDaUsare) {
+    return <SceltaServer impostazioni={impostazioni} quandoScelto={setServerScelto} />
+  }
+
   if (!api) {
     return conScambiatore(
       <Accesso
         impostazioni={impostazioni}
+        serverScelto={serverDaUsare}
         motivo={motivoAccesso}
         salva={salva}
         quandoEntra={(u) => {
@@ -961,6 +1151,27 @@ export default function App(): React.JSX.Element {
           setErroreAvvio(null)
           setVerificaFatta(true)
         }}
+      />
+    )
+  }
+
+  /**
+   * Il server non parla con questa versione: si ferma qui.
+   *
+   * Prima dell'accesso, e prima del controllo della sessione: chiedere una
+   * password a chi comunque non entrera' e' farlo lavorare per niente. Resta
+   * raggiungibile lo scambiatore di server, che e' l'unica strada sensata
+   * quando e' il server a essere indietro.
+   */
+  if (aggiornamenti.vincolo?.obbligatorio) {
+    return conScambiatore(
+      <BloccoAggiornamento
+        stato={aggiornamenti.stato}
+        motivo={aggiornamenti.vincolo.motivo}
+        target={aggiornamenti.vincolo.versioneTarget}
+        troppoNuovo={aggiornamenti.vincolo.azione === 'clientTroppoNuovo'}
+        scarica={aggiornamenti.scarica}
+        installa={aggiornamenti.installa}
       />
     )
   }
@@ -984,6 +1195,7 @@ export default function App(): React.JSX.Element {
     return conScambiatore(
       <Accesso
         impostazioni={impostazioni}
+        serverScelto={serverDaUsare}
         motivo={motivoAccesso}
         salva={salva}
         quandoEntra={(u) => {
@@ -1021,7 +1233,36 @@ export default function App(): React.JSX.Element {
 
   return (
     <div className="relative flex h-full overflow-hidden">
-      {!chiamataPiena && (
+      {/* La novita' si vede appena si apre l'applicazione, e si manda via.
+          Sopra a tutto e senza rubare spazio: e' una striscia che galleggia,
+          non una riga che spinge giu' le tre colonne. */}
+      <AvvisoAggiornamento
+        stato={aggiornamenti.stato}
+        inVoce={inVoce !== null}
+        scarica={aggiornamenti.scarica}
+        installa={aggiornamenti.installa}
+      />
+
+      {/* La barra degli spazi non si smonta piu' a tutto schermo: si ritira.
+
+          Smontata non aveva nessuno stato intermedio da disegnare — spariva in
+          un fotogramma mentre la sala si allargava nel successivo, ed e' quello
+          che si vedeva come uno scatto. Adesso resta nell'albero dentro a un
+          contenitore che porta la sua larghezza a zero, e la sala si allarga
+          nello stesso movimento perche' e' lo stesso spazio.
+
+          La larghezza sta nello `style` e non in una classe: `md:w-60` e simili
+          vincono su qualunque `w-0` sopra ai 768 pixel — che e' esattamente la
+          larghezza a cui si guarda un desktop — e la classe che c'era prima non
+          faceva niente. Una regola in linea non ha breakpoint contro cui
+          perdere. */}
+      <div
+        className={`colonna-collassabile w-16 shrink-0 ${
+          navigazioneMobileAperta ? 'flex' : 'hidden md:flex'
+        } ${chiamataPiena ? 'colonna-collassata' : ''}`}
+        style={{ width: chiamataPiena ? 0 : undefined }}
+        inert={chiamataPiena}
+      >
       <BarraSpazi
         spazi={spazi}
         aperto={vista === 'spazi' ? (spazioAperto?.id ?? null) : null}
@@ -1052,9 +1293,8 @@ export default function App(): React.JSX.Element {
         intestazione={
           <BottoneServer impostazioni={impostazioni} apri={() => setMostraServer(true)} />
         }
-        className={navigazioneMobileAperta ? '' : 'hidden md:flex'}
       />
-      )}
+      </div>
 
       {mostraServer && (
         <PannelloServer
@@ -1071,12 +1311,22 @@ export default function App(): React.JSX.Element {
           degli spazi e w-60 dei canali — e sta scritta a mano perche' un
           overlay non puo' misurarle: cambiando una delle due, va cambiata
           anche questa. Senza spazio aperto la colonna dei canali non esiste, e
-          il pannello si restringe sulla sola barra. */}
-      {inVoce && utente && !chiamataPiena && (
+          il pannello si restringe sulla sola barra.
+
+          Le due colonne si ritirano cambiando larghezza e non sparendo, quindi
+          la somma qui sopra resta quella: 4rem + 15rem, gli stessi numeri di
+          prima. A tutto schermo questo pannello se ne va scorrendo a sinistra
+          invece di stringersi, e non e' una scelta di gusto — dentro ha una
+          tendina che si apre verso l'alto, e un contenitore che taglia cio' che
+          esce (`overflow: hidden`) la mozzerebbe a meta' ogni volta. */}
+      {inVoce && utente && (
         <div
-          className={`absolute bottom-0 left-0 z-20 ${
+          className={`pannello-scorrevole absolute bottom-0 left-0 z-20 ${
             navigazioneMobileAperta ? 'block' : 'hidden md:block'
-          } ${spazioAperto ? 'w-full md:w-[19rem]' : 'w-16'}`}
+          } ${spazioAperto ? 'w-full md:w-[19rem]' : 'w-16'} ${
+            chiamataPiena ? 'pannello-ritirato' : ''
+          }`}
+          inert={chiamataPiena}
         >
           <PannelloVoce
             utente={utente}
@@ -1162,11 +1412,18 @@ export default function App(): React.JSX.Element {
               della voce. Cambiare geometria fra le due viste vorrebbe dire far
               saltare l'interfaccia a ogni passaggio. */}
           <div
-            ref={colonna}
-            className={`${navigazioneMobileAperta ? 'flex' : 'hidden'} w-[calc(100%-4rem)] shrink-0 flex-col border-r border-bordo bg-fondo-2 md:flex md:w-60 ${
-              chiamataPiena ? 'hidden' : ''
-            }`}
+            className={`colonna-collassabile w-[calc(100%-4rem)] shrink-0 border-r border-bordo bg-fondo-2 md:w-60 ${
+              navigazioneMobileAperta ? 'flex' : 'hidden md:flex'
+            } ${chiamataPiena ? 'colonna-collassata' : ''}`}
+            style={{ width: chiamataPiena ? 0 : undefined }}
+            inert={chiamataPiena}
           >
+          {/* La larghezza di dentro e' fissa e in unita' di finestra, non in
+              percentuale del contenitore: se seguisse il contenitore che si
+              sta stringendo, a ogni fotogramma l'elenco andrebbe a capo e poi
+              si troncherebbe, e per un terzo di secondo la colonna sembrerebbe
+              rompersi invece che ritirarsi. */}
+          <div ref={colonna} className="flex w-[calc(100vw-4rem)] shrink-0 flex-col md:w-60">
             <ColonnaDiretti
               api={api}
               conversazioni={diretti.conversazioni}
@@ -1184,6 +1441,7 @@ export default function App(): React.JSX.Element {
                 })
               }}
             />
+          </div>
           </div>
 
           <main
@@ -1245,6 +1503,7 @@ export default function App(): React.JSX.Element {
                 tornaAiServer={lasciaVistaChiamata}
                 condivisioneRichiesta={richiestaCondivisione}
                 condivisioneServita={condivisioneServita}
+                restrizioni={restrizioni}
                 esci={esciDallaVoce}
                 apriImpostazioni={() => setMostraImpostazioni(true)}
               />
@@ -1277,11 +1536,13 @@ export default function App(): React.JSX.Element {
               deve correre dall'alto al basso senza spezzarsi dove finisce
               l'elenco dei canali e comincia la barra della voce. */}
           <div
-            ref={colonna}
-            className={`${navigazioneMobileAperta ? 'flex' : 'hidden'} w-[calc(100%-4rem)] shrink-0 flex-col border-r border-bordo bg-fondo-2 md:flex md:w-60 ${
-              chiamataPiena ? 'hidden' : ''
-            }`}
+            className={`colonna-collassabile w-[calc(100%-4rem)] shrink-0 border-r border-bordo bg-fondo-2 md:w-60 ${
+              navigazioneMobileAperta ? 'flex' : 'hidden md:flex'
+            } ${chiamataPiena ? 'colonna-collassata' : ''}`}
+            style={{ width: chiamataPiena ? 0 : undefined }}
+            inert={chiamataPiena}
           >
+          <div ref={colonna} className="flex w-[calc(100vw-4rem)] shrink-0 flex-col md:w-60">
             <ColonnaCanali
               spazio={spazioAperto}
               apertoId={canaleAperto?.id ?? null}
@@ -1314,6 +1575,7 @@ export default function App(): React.JSX.Element {
               profili={profili}
               microfoniSpenti={sessione.microfoniSpenti}
               sordine={sessione.sordine}
+              persona={personaInVoce}
               menuAperto={menuSpazioAperto}
               alternaMenu={() => setMenuSpazioAperto((v) => !v)}
               menu={
@@ -1337,6 +1599,7 @@ export default function App(): React.JSX.Element {
               }
             />
 
+          </div>
           </div>
 
           <main
@@ -1393,6 +1656,7 @@ export default function App(): React.JSX.Element {
                 tornaAiServer={lasciaVistaChiamata}
                 condivisioneRichiesta={richiestaCondivisione}
                 condivisioneServita={condivisioneServita}
+                restrizioni={restrizioni}
                 esci={esciDallaVoce}
                 apriImpostazioni={() => setMostraImpostazioni(true)}
               />

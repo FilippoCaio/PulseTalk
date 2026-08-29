@@ -157,6 +157,33 @@ export const PROFILI_AUDIO: Record<ModoAudio, ProfiloAudio> = {
   }
 }
 
+/**
+ * L'audio di una condivisione, che non e' un microfono e non lo diventa mai.
+ *
+ * Sta scritto a parte e non si ricava da `PROFILI_AUDIO` di proposito. `voce` e
+ * `musica` descrivono come catturare e pubblicare il microfono di chi le
+ * imposta: sono la risposta alla domanda "come suono io". Quello che esce dalle
+ * casse mentre si condivide uno schermo non e' nessuno che parla — e' la
+ * colonna sonora di cio' che si sta mostrando — e va trattato sempre allo
+ * stesso modo, a prescindere da come e' impostato il microfono di chi
+ * condivide.
+ *
+ * Legarlo a `modoAudio` avrebbe prodotto la cosa piu' difficile da diagnosticare
+ * di tutte: una condivisione che cambia qualita' da sola quando chi condivide
+ * tocca un'impostazione che parla di tutt'altro.
+ *
+ * Stereo e senza compressione dei silenzi, sempre: la musica in mono e' meta'
+ * della musica, e il DTX mangia le code delle note e le dissolvenze.
+ */
+export const PROFILO_AUDIO_CONDIVISO: ProfiloAudio = {
+  bitrate: 510_000,
+  stereo: true,
+  cancellazioneEco: false,
+  soppressioneRumore: false,
+  guadagnoAutomatico: false,
+  silenzioCompresso: false
+}
+
 /** I tetti che il server dichiara in GET /api/config. */
 export interface Limiti {
   bitrateSchermo: number

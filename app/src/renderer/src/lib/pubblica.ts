@@ -13,6 +13,7 @@ import {
   entroILimitiAudio,
   entroILimitiCamera,
   PROFILI_AUDIO,
+  PROFILO_AUDIO_CONDIVISO,
   type Degradazione,
   type Limiti,
   type ModoAudio,
@@ -166,7 +167,7 @@ export async function catturaSchermo(
       video: vincoliVideo,
       // Nel browser questo diventa la spunta "condividi l'audio"; dentro
       // Electron e' il loopback di Windows, gia' deciso da preparaCattura.
-      audio: audioSistema !== 'niente'
+      audio: audioSistema === 'niente' ? false : vincoliAudioCondiviso(audioSistema)
     })
   }
 
@@ -176,7 +177,65 @@ export async function catturaSchermo(
     video.contentHint = preset.indizio
   }
 
+  for (const audio of stream.getAudioTracks()) preparaTracciaAudioCondivisa(audio)
+
   return stream
+}
+
+/**
+ * I vincoli dell'audio di una condivisione, scritti per esteso.
+ *
+ * Prima qui c'era un booleano nudo — `audio: true` — e cio' che arrivava lo
+ * decideva Chromium con i suoi valori di serie, che sono quelli di un
+ * microfono perche' e' per un microfono che quelle tre lavorazioni sono state
+ * inventate.
+ *
+ * La cancellazione dell'eco e' la peggiore delle tre, e non di poco. Su un
+ * loopback fa esattamente il suo mestiere: sottrae dal segnale catturato cio'
+ * che sta uscendo dalle casse. Solo che su un loopback quello che esce dalle
+ * casse *e'* il segnale catturato, quindi sottrae il suono da se stesso — e chi
+ * ascolta dall'altra parte sente una musica che va e viene, si sfarfalla, e
+ * sparisce del tutto nei passaggi piu' pieni. Sembra un problema di rete, e non
+ * lo e'.
+ *
+ * Le altre due fanno danni piu' silenziosi: la soppressione del rumore scambia
+ * un piatto o un riverbero per rumore e lo cancella, il guadagno automatico
+ * insegue la dinamica e appiattisce i crescendo.
+ *
+ * Nessun vincolo sulla frequenza di campionamento, e non e' una dimenticanza:
+ * chiederne una qualunque — anche 48 kHz, anche "la piu' comune" — obbliga
+ * Chromium a ricampionare quando la sorgente ne dichiara un'altra. Senza
+ * vincolo arriva quella nativa, che e' la sola che non costa niente; da li' la
+ * legge `creaCatenaAudioCondiviso` da `getSettings()` e ci apre l'AudioContext
+ * sopra, cosi' nemmeno noi ne aggiungiamo uno.
+ */
+function vincoliAudioCondiviso(audioSistema: ModoAudioSistema): MediaTrackConstraints {
+  return {
+    echoCancellation: false,
+    noiseSuppression: false,
+    autoGainControl: false,
+    // Ideale e non esatto: una scheda audio mono esiste, e su quella un
+    // `exact: 2` farebbe fallire tutta la cattura — video compreso — invece di
+    // consegnare l'unico canale che c'e'.
+    channelCount: { ideal: 2 },
+    // Nel browser e' cosi' che si chiede "mandalo agli altri senza farlo
+    // suonare anche qui". Dentro Electron la stessa scelta l'ha gia' fatta
+    // `preparaCattura` scegliendo fra `loopback` e `loopbackWithMute`, e
+    // questo vincolo viene ignorato senza far danni.
+    suppressLocalAudioPlayback: audioSistema === 'soloRemoto'
+  } as MediaTrackConstraints
+}
+
+/**
+ * Quel poco che si puo' dire a una traccia audio gia' catturata.
+ *
+ * `contentHint` non e' un sinonimo dei vincoli qui sopra: quelli dicono come
+ * catturare, questo dice al codificatore Opus come trattare cio' che gli
+ * arriva. `music` gli toglie le scorciatoie pensate per il parlato — che sotto
+ * a una chitarra si sentono tutte.
+ */
+function preparaTracciaAudioCondivisa(traccia: MediaStreamTrack): void {
+  traccia.contentHint = 'music'
 }
 
 export interface SchermoPubblicato {
@@ -230,6 +289,32 @@ interface CatenaAudioCondiviso {
 /** Metadato leggero nel nome LiveKit: distingue l'audio standalone da quello di un video. */
 export const PREFISSO_SOLO_AUDIO = 'pulsetalk:solo-audio:'
 
+/**
+ * Il suffisso che lega una traccia audio al video della stessa condivisione.
+ *
+ * LiveKit non lega fra loro due tracce dello stesso partecipante: le pubblica
+ * e basta. La cosa che le tiene insieme e' il nome, che scegliamo noi —
+ * "Finestra" e "Finestra (audio)" — e questo e' l'unico posto in cui quella
+ * convenzione e' scritta. Chi deve risalire dall'audio al suo video passa da
+ * `nomeDelVideoDi`, non riscrive la regola.
+ */
+export const SUFFISSO_AUDIO_DI_VIDEO = ' (audio)'
+
+/** Il nome che l'audio di questa condivisione avra' sulla SFU. */
+export function nomeAudioDi(nomeVideo: string): string {
+  return `${nomeVideo}${SUFFISSO_AUDIO_DI_VIDEO}`
+}
+
+/**
+ * Da "Finestra (audio)" a "Finestra". Nullo se questa traccia non e' l'audio
+ * di nessun video — cioe' se e' una condivisione di solo audio.
+ */
+export function nomeDelVideoDi(nomeTraccia: string): string | null {
+  return nomeTraccia.endsWith(SUFFISSO_AUDIO_DI_VIDEO)
+    ? nomeTraccia.slice(0, -SUFFISSO_AUDIO_DI_VIDEO.length)
+    : null
+}
+
 export function etichettaSoloAudio(nomeTraccia: string): string | null {
   if (nomeTraccia.startsWith(PREFISSO_SOLO_AUDIO)) {
     return nomeTraccia.slice(PREFISSO_SOLO_AUDIO.length)
@@ -237,7 +322,7 @@ export function etichettaSoloAudio(nomeTraccia: string): string | null {
   // Compatibilita' con le versioni che gia' pubblicavano audio standalone ma
   // non avevano ancora il prefisso. L'audio di un video nasce invece sempre
   // con il suffisso " (audio)".
-  return nomeTraccia.endsWith(' (audio)') ? null : nomeTraccia
+  return nomeDelVideoDi(nomeTraccia) === null ? nomeTraccia : null
 }
 
 function limitaVolume(volume: number): number {
@@ -245,9 +330,46 @@ function limitaVolume(volume: number): number {
 }
 
 /**
+ * Come si pubblica l'audio di una condivisione, in un posto solo.
+ *
+ * Le due strade — lo schermo con il suo audio e la condivisione di solo audio —
+ * sono lo stesso caso con e senza immagine, e finche' le opzioni stavano
+ * scritte due volte potevano divergere: e' successo, ed e' il genere di cosa
+ * che si scopre mesi dopo perche' "la musica si sente peggio quando condivido
+ * anche lo schermo" non e' una frase che porta a un file.
+ *
+ * Il profilo e' `PROFILO_AUDIO_CONDIVISO` e non ha niente a che vedere con
+ * `modoAudio`, che descrive il microfono di chi condivide.
+ */
+function opzioniAudioCondiviso(
+  nome: string,
+  limiti: Limiti,
+  tetto = PROFILO_AUDIO_CONDIVISO.bitrate
+): TrackPublishOptions {
+  const profilo = entroILimitiAudio(PROFILO_AUDIO_CONDIVISO, limiti)
+  return {
+    source: Track.Source.ScreenShareAudio,
+    name: nome,
+    audioPreset: { maxBitrate: Math.min(profilo.bitrate, tetto) },
+    forceStereo: profilo.stereo,
+    // DTX taglia i silenzi: su una voce fa risparmiare, su una traccia
+    // musicale mangia le code delle note e i passaggi in dissolvenza.
+    dtx: profilo.silenzioCompresso,
+    red: false
+  }
+}
+
+/**
  * Un GainNode fra la cattura e LiveKit permette di regolare una sola
  * condivisione, mentre `participant.setVolume` riguarda cio' che si riceve.
  * La rampa breve evita il click elettrico prodotto da un salto secco a zero.
+ *
+ * Un nodo e uno solo, e resti uno solo. Qui dentro non entrano filtri,
+ * compressori, ne' niente che venga letto da `PROFILI_AUDIO`: quei profili
+ * riguardano il microfono, e una catena che li leggesse anche solo per sbaglio
+ * farebbe cambiare la condivisione a chi tocca un'impostazione del microfono.
+ * Il ricampionamento non lo aggiungiamo noi — il contesto nasce alla frequenza
+ * che la sorgente dichiara.
  */
 async function creaCatenaAudioCondiviso(ingresso: MediaStreamTrack): Promise<CatenaAudioCondiviso> {
   const impostazioni = ingresso.getSettings()
@@ -325,16 +447,13 @@ export async function pubblicaSoloAudio(
 
   let catena = await creaCatenaAudioCondiviso(tracceAudio[0])
   const traccia = new LocalAudioTrack(catena.uscita, undefined, false, catena.contesto)
-  const audio = await stanza.localParticipant.publishTrack(traccia, {
-    source: Track.Source.ScreenShareAudio,
-    name: `${PREFISSO_SOLO_AUDIO}${etichetta}`,
-    audioPreset: { maxBitrate: Math.min(bitrate, limiti.bitrateVoce) },
-    forceStereo: true,
-    // DTX taglia i silenzi: su una voce fa risparmiare, su una traccia
-    // musicale mangia le code delle note e i passaggi in dissolvenza.
-    dtx: false,
-    red: false
-  })
+  const audio = await stanza.localParticipant.publishTrack(
+    traccia,
+    // Il bitrate scelto nel selettore e' un tetto in piu' sopra al profilo, non
+    // un profilo diverso: chi condivide un podcast puo' spendere meno banda,
+    // ma stereo e senza compressione dei silenzi restano com'erano.
+    opzioniAudioCondiviso(`${PREFISSO_SOLO_AUDIO}${etichetta}`, limiti, bitrate)
+  )
 
   let chiuso = false
   let tracciaAscoltata: MediaStreamTrack | null = null
@@ -532,14 +651,10 @@ export async function pubblicaSchermo(
   if (mediaAudioCorrente) {
     tracciaAudio = new LocalAudioTrack(mediaAudioCorrente, undefined, false)
     try {
-      audio = await stanza.localParticipant.publishTrack(tracciaAudio, {
-        source: Track.Source.ScreenShareAudio,
-        name: `${etichetta} (audio)`,
-        audioPreset: { maxBitrate: Math.min(510_000, limiti.bitrateVoce) },
-        forceStereo: true,
-        dtx: false,
-        red: false
-      })
+      audio = await stanza.localParticipant.publishTrack(
+        tracciaAudio,
+        opzioniAudioCondiviso(nomeAudioDi(etichetta), limiti)
+      )
     } catch (errore) {
       await stanza.localParticipant.unpublishTrack(traccia, true).catch(() => {})
       for (const t of stream.getTracks()) t.stop()

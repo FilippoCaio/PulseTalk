@@ -77,6 +77,24 @@ export async function elencaSorgenti(): Promise<Sorgente[]> {
  *               chi condivide un video vuole sentirlo anche lui.
  *   soloRemoto  il suono va solo nello stream. Serve quando si fa ascoltare
  *               qualcosa agli altri senza averlo addosso.
+ *
+ * Cosa prendono davvero, e conviene esserne precisi: non "l'audio della
+ * finestra scelta" — quello Windows non lo sa isolare — ma tutto cio' che esce
+ * dal dispositivo di riproduzione predefinito. Nella quasi totalita' dei casi
+ * la differenza non si nota. Si nota quando quel dispositivo e' un missaggio
+ * ("Stereo Mix", un cavo virtuale, VoiceMeeter), oppure quando il microfono ha
+ * "Ascolta questo dispositivo" acceso, oppure quando la scheda audio fa
+ * monitoraggio: in quei tre casi nel loopback c'e' dentro anche la voce di chi
+ * condivide, e dall'altra parte si sente doppia e sfasata.
+ *
+ * Non e' una cosa che si aggiusta da qui, e soprattutto non si aggiusta
+ * togliendo o aggiungendo tracce: il microfono e la condivisione sono due
+ * tracce diverse e devono restare due tracce diverse fino alle orecchie di chi
+ * ascolta. Il primo dei tre casi si riconosce dal nome dell'uscita, e chi lo
+ * riconosce e lo dice e' il selettore delle sorgenti — vedi
+ * `renderer/src/lib/loopbackSporco.ts`. Gli altri due vivono in impostazioni
+ * che nessuna API leggibile da qui espone, e restano scritti li' come
+ * possibilita' invece di essere taciuti.
  */
 function audioPer(scelta: SceltaCattura): 'loopback' | 'loopbackWithMute' | undefined {
   // Il loopback e' una cosa di Windows. Su macOS e Linux Electron non lo ha, e

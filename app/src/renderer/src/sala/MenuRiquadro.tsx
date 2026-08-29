@@ -1,15 +1,42 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import type { GenereRestrizione, Restrizione } from '@shared/tipi'
 import { PannelloVolume, type VoceVolume } from './Volume'
+import { fraseRestrizione, type VoceModerazione } from '../lib/usaRestrizioni'
 import {
   Altoparlante,
   AltoparlanteMuto,
+  Camera,
+  CameraSpenta,
+  Cuffie,
+  CuffieSpente,
   Espelli,
   Ingrandisci,
   Lente,
+  MicrofonoSpento,
   Rimpicciolisci,
+  SchermoCondividi,
   SchermoIntero,
-  SchermoNormale
+  SchermoNormale,
+  SchermoStop
 } from '../icone'
+
+/** Come si chiama, nel menu, cio' che si sta per fare o disfare. */
+const PAROLE: Record<GenereRestrizione, { imponi: string; togli: string }> = {
+  // Solo spegnere. Accendere la telecamera di qualcun altro non e' possibile
+  // per nessuno, con nessun permesso, mai: non e' una voce che manca, e' una
+  // voce che non deve esistere.
+  camera: { imponi: 'Forza la telecamera spenta', togli: 'Ridai la telecamera' },
+  condivisione: { imponi: 'Togli la condivisione', togli: 'Ridai la condivisione' },
+  microfono: { imponi: 'Muto forzato del microfono', togli: 'Riattiva il microfono' },
+  cuffie: { imponi: 'Muto forzato delle cuffie', togli: "Ridai l'ascolto" }
+}
+
+function iconaDi(genere: GenereRestrizione, attiva: boolean): React.ReactNode {
+  if (genere === 'camera') return attiva ? <Camera /> : <CameraSpenta />
+  if (genere === 'condivisione') return attiva ? <SchermoCondividi /> : <SchermoStop />
+  if (genere === 'microfono') return attiva ? <Altoparlante /> : <MicrofonoSpento />
+  return attiva ? <Cuffie /> : <CuffieSpente />
+}
 
 /** Quanto stare lontani dal bordo della finestra. */
 const MARGINE = 8
@@ -40,12 +67,16 @@ export default function MenuRiquadro({
   titolo,
   sottotitolo,
   cosa,
+  intestazione,
   voci,
-  aFuoco,
+  aFuoco = false,
   metti,
   schermoIntero,
   azioni,
   caccia,
+  moderazione,
+  chiudiCondivisione,
+  restrizioniAddosso,
   qualita,
   chiudi
 }: {
@@ -57,16 +88,52 @@ export default function MenuRiquadro({
   sottotitolo?: string
   /** Come chiamare cio' che si zittisce: "lo schermo", "la voce", "il video". */
   cosa: string
+  /**
+   * Un blocco libero in cima, sotto al titolo.
+   *
+   * Serve al pannellino sulla persona nella colonna dei canali, che sopra ai
+   * comandi mostra faccia, nome e stato. Un nodo e non tre proprieta' perche'
+   * cio' che ci va dentro non e' affare di questo menu.
+   */
+  intestazione?: React.ReactNode
   voci: VoceVolume[]
-  aFuoco: boolean
-  /** Mette a fuoco, o toglie dal fuoco se ci sta gia'. */
-  metti: () => void
+  aFuoco?: boolean
+  /**
+   * Mette a fuoco, o toglie dal fuoco se ci sta gia'.
+   *
+   * Facoltativo perche' questo stesso menu si apre anche fuori dalla griglia —
+   * sull'elenco delle persone nella colonna dei canali — dove un "primo piano"
+   * non vuol dire niente. E' lo stesso menu di proposito: sono le stesse cose
+   * fatte alla stessa persona, e due menu diversi per la stessa domanda
+   * sarebbero due menu da imparare.
+   */
+  metti?: () => void
   /** Solo sul riquadro grande: il vero schermo intero. */
   schermoIntero?: { attivo: boolean; alterna: () => void }
   /** Le voci che valgono solo per questo tipo di riquadro, in fondo. */
   azioni?: { icona: React.ReactNode; testo: string; fai: () => void; pericolo?: boolean }[]
   /** Gia' filtrato da chi apre il menu: se c'e', si puo' fare. */
   caccia?: () => Promise<void>
+  /**
+   * I provvedimenti che si possono prendere su chi sta in questo riquadro.
+   *
+   * Gia' filtrati da chi apre il menu: qui dentro ci sono soltanto quelli che
+   * chi guarda ha il diritto di usare. Nascondere una voce non e' pero' cio'
+   * che li fa rispettare — quello lo fa il server su ogni richiesta — ed e' il
+   * motivo per cui non c'e' nessuna voce disabilitata: un pulsante spento
+   * racconta a chi non puo' esattamente cosa potrebbe fare qualcun altro.
+   */
+  moderazione?: VoceModerazione[]
+  /**
+   * Ferma questa condivisione per tutti, adesso.
+   *
+   * Da tenere ben distinta dallo "smetti di guardare e ascoltare" qui sopra,
+   * che riguarda solo chi preme: questa la chiude a tutta la stanza. Per
+   * questo sta in fondo, in rosso, con le altre cose che si fanno agli altri.
+   */
+  chiudiCondivisione?: () => void
+  /** Cio' che questa persona ha gia' addosso, per dirlo invece di lasciarlo indovinare. */
+  restrizioniAddosso?: Restrizione[]
   /**
    * Solo sulla PROPRIA condivisione: cambiare qualita' mentre e' accesa.
    *
@@ -98,6 +165,21 @@ export default function MenuRiquadro({
     })
   }, [x, y])
 
+  /**
+   * Il fuoco ci entra, e quando si chiude torna da dove era venuto.
+   *
+   * Col tasto destro non si nota: la mano e' gia' sul mouse. Si nota aprendo
+   * questo stesso pannello da tastiera sull'elenco delle persone, dove senza
+   * queste righe il fuoco restava sulla riga dietro — e il Tab successivo
+   * portava sulla persona dopo invece che dentro al pannello appena aperto.
+   */
+  useEffect(() => {
+    const tornaA = document.activeElement as HTMLElement | null
+    const dentro = scatola.current?.querySelector<HTMLElement>('[role="menuitem"]')
+    ;(dentro ?? scatola.current)?.focus({ preventScroll: true })
+    return () => tornaA?.focus?.({ preventScroll: true })
+  }, [])
+
   // Si chiude con Escape, col clic fuori, e anche col tasto destro fuori:
   // aprirne due insieme e' un modo sicuro di lasciarne uno orfano a mezz'aria.
   useEffect(() => {
@@ -125,16 +207,19 @@ export default function MenuRiquadro({
     <div
       ref={scatola}
       role="menu"
+      tabIndex={-1}
       onContextMenu={(e) => e.preventDefault()}
       className={`menu-comparsa fixed z-50 w-56 rounded-xl border border-bordo bg-fondo-2 p-2 shadow-xl shadow-black/40 ${
         posto.pronto ? 'opacity-100' : 'opacity-0'
       }`}
       style={{ left: posto.sinistra, top: posto.alto }}
     >
-      <div className="truncate px-1.5 pt-0.5 pb-2 text-xs font-semibold text-testo-2">
-        {titolo}
-        {sottotitolo && <span className="font-normal text-testo-3"> · {sottotitolo}</span>}
-      </div>
+      {intestazione ?? (
+        <div className="truncate px-1.5 pt-0.5 pb-2 text-xs font-semibold text-testo-2">
+          {titolo}
+          {sottotitolo && <span className="font-normal text-testo-3"> · {sottotitolo}</span>}
+        </div>
+      )}
 
       {voci.length > 0 && (
         <>
@@ -155,14 +240,16 @@ export default function MenuRiquadro({
         </>
       )}
 
-      <Riga
-        icona={aFuoco ? <Rimpicciolisci /> : <Ingrandisci />}
-        testo={aFuoco ? 'Togli dal primo piano' : 'Metti in primo piano'}
-        fai={() => {
-          metti()
-          chiudi()
-        }}
-      />
+      {metti && (
+        <Riga
+          icona={aFuoco ? <Rimpicciolisci /> : <Ingrandisci />}
+          testo={aFuoco ? 'Togli dal primo piano' : 'Metti in primo piano'}
+          fai={() => {
+            metti()
+            chiudi()
+          }}
+        />
+      )}
 
       {schermoIntero && (
         <Riga
@@ -206,6 +293,62 @@ export default function MenuRiquadro({
               pericolo={azione.pericolo}
               fai={() => {
                 azione.fai()
+                chiudi()
+              }}
+            />
+          ))}
+        </>
+      )}
+
+      {/* Cosa gli e' gia' stato tolto, scritto e non da indovinare.
+          Vale per chi modera — che deve sapere se sta per rimettere o togliere
+          — e vale soprattutto per chi guarda il proprio riquadro e non capisce
+          perche' il microfono non risponde. */}
+      {restrizioniAddosso && restrizioniAddosso.length > 0 && (
+        <>
+          <div className="my-1 border-t border-bordo" />
+          <div className="space-y-0.5 px-1.5 py-1">
+            {restrizioniAddosso.map((r) => (
+              <p key={r.genere} className="text-[11px] leading-snug text-attenzione">
+                {fraseRestrizione(r)}
+              </p>
+            ))}
+          </div>
+        </>
+      )}
+
+      {chiudiCondivisione && (
+        <>
+          <div className="my-1 border-t border-bordo" />
+          <Riga
+            icona={<SchermoStop />}
+            testo="Chiudi questa condivisione per tutti"
+            pericolo
+            fai={() => {
+              chiudiCondivisione()
+              chiudi()
+            }}
+          />
+        </>
+      )}
+
+      {moderazione && moderazione.length > 0 && (
+        <>
+          <div className="my-1 border-t border-bordo" />
+          <div className="px-1.5 pt-0.5 pb-1 text-[11px] tracking-wide text-testo-3 uppercase">
+            Moderazione
+          </div>
+          {moderazione.map((voce) => (
+            <Riga
+              key={voce.genere}
+              icona={iconaDi(voce.genere, voce.attiva)}
+              testo={voce.attiva ? PAROLE[voce.genere].togli : PAROLE[voce.genere].imponi}
+              // Rimettere non e' pericoloso: il rosso e' per cio' che toglie
+              // qualcosa a qualcuno, e usarlo anche per il contrario lo
+              // svuoterebbe di significato.
+              pericolo={!voce.attiva}
+              fai={() => {
+                voce.fai(!voce.attiva)
                 chiudi()
               }}
             />

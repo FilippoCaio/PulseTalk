@@ -18,6 +18,7 @@ import {
 import type { Api } from './lib/api'
 import { coloreDi, inizialiDi } from './lib/avatar'
 import { ponte } from './ponte'
+import { fraseAggiornamento } from './lib/usaAggiornamenti'
 import { STATI } from './PopupProfilo'
 import { avviaProva, type Prova } from './lib/provaMicrofono'
 import { usaMisuratore } from './lib/misuratoreMicrofono'
@@ -431,7 +432,7 @@ export default function PannelloImpostazioni({
 
             {pagina === 'app' && (
               <>
-                <SezioneAggiornamenti />
+                <SezioneAggiornamenti inChiamata={inChiamata} />
 
                 {ponte.elettrone ? (
                   <Sezione titolo="Applicazione">
@@ -1200,7 +1201,7 @@ function Sessioni({ api }: { api: Api }): React.JSX.Element {
  * ma trecento megabyte scaricati senza chiedere mentre uno e' in chiamata
  * sono un modo sicuro di far saltare la chiamata.
  */
-function SezioneAggiornamenti(): React.JSX.Element | null {
+function SezioneAggiornamenti({ inChiamata }: { inChiamata: boolean }): React.JSX.Element | null {
   const aggiornamenti = ponte.aggiornamenti
   const [stato, setStato] = useState<StatoAggiornamento | null>(null)
 
@@ -1216,31 +1217,40 @@ function SezioneAggiornamenti(): React.JSX.Element | null {
   if (!aggiornamenti || !stato) return null
 
   const fase = stato.fase
+  // L'installazione chiude l'applicazione. Chiederla a chi sta parlando vuol
+  // dire buttarlo fuori a meta' frase, e un pulsante spento senza una riga che
+  // dice perche' e' un pulsante che sembra rotto.
+  const bloccato = inChiamata
 
   return (
     <Sezione titolo="Aggiornamenti" sotto={`Stai usando la versione ${stato.versione}.`}>
-      {fase === 'nonSupportato' ? (
-        <Avviso tono="neutro">
-          Questa e' la versione portabile: si aggiorna sostituendo il file, che e' poi il motivo per
-          cui esiste un portabile.
-        </Avviso>
+      {/* Ogni fase ha la sua frase, e la frase e' la stessa che si legge
+          nell'avviso in alto: due parole diverse per lo stesso stato fanno
+          credere che siano due stati diversi. */}
+      {fase === 'nonSupportato' || fase === 'senzaFeed' ? (
+        // Nessuno dei due e' un guasto, e nessuno dei due ha un pulsante:
+        // "controlla adesso" ricontrollerebbe una cosa che non cambia.
+        <Avviso tono="neutro">{fraseAggiornamento(stato)}</Avviso>
       ) : (
         <>
+          {fase === 'controllo' && <Avviso tono="neutro">{fraseAggiornamento(stato)}</Avviso>}
           {fase === 'disponibile' && (
             <Avviso tono="neutro">
-              C'e' la {stato.disponibile}.{stato.note ? ` ${primaRiga(stato.note)}` : ''}
+              {fraseAggiornamento(stato)}
+              {stato.note ? ` ${primaRiga(stato.note)}` : ''}
             </Avviso>
           )}
-          {fase === 'aggiornato' && <Avviso tono="neutro">Sei all'ultima versione.</Avviso>}
+          {fase === 'aggiornato' && <Avviso tono="neutro">{fraseAggiornamento(stato)}</Avviso>}
           {fase === 'pronto' && (
             <Avviso tono="neutro">
-              La {stato.disponibile} e' scaricata. Si installa al riavvio dell'applicazione — e il
-              riavvio chiude la chiamata, se sei in una stanza.
+              {fraseAggiornamento(stato)} Si installa da sola al riavvio: nessuna schermata da
+              leggere, nessuna conferma da dare.
+              {bloccato ? " Prima pero' devi uscire dalla stanza vocale." : ''}
             </Avviso>
           )}
           {fase === 'errore' && (
             <Avviso tono="attenzione">
-              Non sono riuscito a controllare: {stato.errore}
+              Non sono riuscito a controllare: {fraseAggiornamento(stato)}
             </Avviso>
           )}
 
@@ -1262,7 +1272,17 @@ function SezioneAggiornamenti(): React.JSX.Element | null {
                 Scarica la {stato.disponibile}
               </Bottone>
             ) : fase === 'pronto' ? (
-              <Bottone onClick={() => void aggiornamenti.installa()}>Riavvia e installa</Bottone>
+              <Bottone
+                disabled={bloccato}
+                title={
+                  bloccato
+                    ? 'Sei in una stanza vocale: il riavvio chiuderebbe la chiamata.'
+                    : undefined
+                }
+                onClick={() => void aggiornamenti.installa()}
+              >
+                {bloccato ? 'Esci dalla chiamata per installare' : 'Riavvia per usare la nuova versione'}
+              </Bottone>
             ) : (
               <Bottone
                 tono="fantasma"

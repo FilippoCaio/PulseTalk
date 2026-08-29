@@ -468,7 +468,7 @@ export default function Riquadro({
             disabled={!puoiGuardare || !guarda}
             title={
               puoiGuardare
-                ? `Comincia a ricevere la condivisione di ${dati.nome}`
+                ? `Comincia a ricevere la condivisione di ${dati.nome}, immagine e suono`
                 : "Ne stai gia' guardando due: chiudine una per aprire questa"
             }
             className="flex items-center gap-2 rounded-lg bg-fondo-3 px-3 py-2 text-sm text-testo transition-colors hover:bg-bordo disabled:cursor-not-allowed disabled:opacity-40"
@@ -478,7 +478,7 @@ export default function Riquadro({
             ) : (
               <Lucchetto className="h-4 w-4" />
             )}
-            Guarda
+            Guarda e ascolta
           </button>
           {/* Di chi e', e quale delle sue. Sulle condivisioni la targhetta col
               nome non c'e' piu', e da un rettangolo grigio non si capisce che
@@ -518,7 +518,7 @@ export default function Riquadro({
         {/* Solo su una condivisione altrui che si sta ricevendo: e' il modo di
             liberare uno dei due posti senza aspettare che l'altro smetta. */}
         {nonGuardare && !dati.bloccato && (
-          <Comando titolo="Smetti di guardare — libera un posto" premi={nonGuardare}>
+          <Comando titolo="Smetti di guardare e ascoltare — libera un posto" premi={nonGuardare}>
             <SchermoStop className="h-4 w-4" />
           </Comando>
         )}

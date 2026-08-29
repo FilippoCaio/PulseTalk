@@ -31,7 +31,16 @@ export const IPC = {
   aggiornamentoControlla: 'aggiornamento-controlla',
   aggiornamentoPrepara: 'aggiornamento-prepara',
   aggiornamentoScarica: 'aggiornamento-scarica',
-  aggiornamentoInstalla: 'aggiornamento-installa'
+  aggiornamentoInstalla: 'aggiornamento-installa',
+  /**
+   * La finestra e' entrata o uscita dal tutto schermo del sistema (F11).
+   *
+   * Serve perche' quello e' l'unico percorso al tutto schermo che non passa
+   * dall'interfaccia: senza questo avviso la finestra si apriva su tutto lo
+   * schermo e le due colonne restavano al loro posto, cioe' esattamente il
+   * contrario di quello che si e' chiesto premendo.
+   */
+  schermoFinestra: 'schermo-finestra'
 } as const
 
 /**
@@ -52,6 +61,15 @@ export interface StatoAggiornamento {
     | 'errore'
     /** Portabile o versione di sviluppo: non c'e' niente da aggiornare. */
     | 'nonSupportato'
+    /**
+     * Questo server non pubblica aggiornamenti, e non e' un guasto.
+     *
+     * Un'istanza installata da qualcun altro puo' benissimo non servire nessun
+     * feed: chi la amministra non compila l'applicazione, la scarica come tutti
+     * gli altri. Prima questo caso arrivava come un errore rosso — "404 su
+     * latest.yml" — e faceva sembrare rotta una cosa che semplicemente non c'e'.
+     */
+    | 'senzaFeed'
   /** Quella installata adesso. */
   versione: string
   /** Quella trovata, se ce n'e' una. */
@@ -798,6 +816,20 @@ export type Evento =
   | { tipo: 'autowriter'; spazio: number; canale: number }
   | { tipo: 'presenza'; spazio: number }
   /**
+   * Le restrizioni vocali di qualcuno, in un canale, sono cambiate.
+   *
+   * Arriva solo agli interessati: al bersaglio, che deve vedere scritto cosa
+   * non puo' fare e da parte di chi, e a chi sta nella stanza, perche' e' li'
+   * che si legge lo stato degli altri. A nessun altro — chi sta leggendo una
+   * chat da un'altra parte non ha motivo di sapere chi e' stato zittito.
+   */
+  | {
+      tipo: 'restrizioni'
+      canale: number
+      utente: number
+      restrizioni: Restrizione[]
+    }
+  /**
    * Qualcuno e' comparso, sparito, si e' fermato o si e' messo a non
    * disturbare. Da non confondere con `presenza`, che riguarda chi sta dentro
    * a un canale vocale di *quello* spazio: questo riguarda la persona, ovunque
@@ -896,7 +928,31 @@ export interface Permessi {
   puoScrivere: boolean
   /** Schermo, camera e sessioni da guardare insieme. */
   puoCondividere?: boolean
+  /** Caccia dalla stanza, spegne le camere, toglie le condivisioni. */
   moderatore: boolean
+  /** Muto forzato del microfono altrui. */
+  puoZittire?: boolean
+  /** Muto forzato delle cuffie altrui: gli impedisce anche di sentire. */
+  puoAssordare?: boolean
+}
+
+/**
+ * Cosa non si puo' fare in questo canale, per decisione di qualcun altro.
+ *
+ * Quattro generi e non uno di piu'. Manca — e manca apposta — "accendi la
+ * telecamera": spegnere quella di un altro e' moderazione, accenderla sarebbe
+ * un'altra cosa, e non esiste nessun permesso che la conceda a nessuno.
+ */
+export type GenereRestrizione = 'camera' | 'condivisione' | 'microfono' | 'cuffie'
+
+export interface Restrizione {
+  genere: GenereRestrizione
+  /** Quando e' stata imposta, in secondi epoch. */
+  istante: number
+  /** L'evento sotto la cui autorita' e' stata imposta: alla sua fine decade. */
+  evento: number | null
+  /** Chi l'ha imposta. Nullo se quell'account non c'e' piu'. */
+  da: { id: number; nome: string | null } | null
 }
 
 export interface Ingresso {
@@ -912,5 +968,13 @@ export interface Ingresso {
    */
   diretta?: { conversazione: number; con: number }
   permessi: Permessi
+  /**
+   * Le proprie restrizioni in questo canale, gia' pronte all'ingresso.
+   *
+   * Arrivano insieme al gettone e non con un secondo giro di rete: chi entra
+   * con il microfono bloccato deve vederlo scritto subito, non scoprirlo
+   * premendo un pulsante che non risponde.
+   */
+  restrizioni?: Restrizione[]
   limiti: Limiti
 }

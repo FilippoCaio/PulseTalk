@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react'
 import type { Canale, Spazio } from '@shared/tipi'
+import MenuRiquadro from '../sala/MenuRiquadro'
+import { nomeRestrizione } from '../lib/usaRestrizioni'
+import type { PersonaInVoce } from './personaInVoce'
 import { puo } from '@shared/permessi'
 import { coloreDi, inizialiDi } from '../lib/avatar'
 import { Avviso, Bottone, Campo, classiInput } from '../ui'
@@ -11,6 +14,7 @@ import {
   Chiudi,
   Cuffie,
   Esci,
+  Fumetto,
   Lente,
   Lucchetto,
   Matita,
@@ -46,6 +50,7 @@ export default function ColonnaCanali({
   microfoniSpenti,
   sordine,
   parlanti,
+  persona,
   menu,
   menuAperto = false,
   alternaMenu
@@ -108,6 +113,15 @@ export default function ColonnaCanali({
    * vorrebbe saperlo.
    */
   parlanti?: Set<string>
+  /**
+   * Cosa si puo' fare a una persona elencata sotto a un canale vocale.
+   *
+   * Arriva da fuori tutto insieme perche' e' roba che questa colonna non ha e
+   * non deve avere: i volumi vivono nella sessione RTC, i diretti nel loro
+   * hook, i provvedimenti nei permessi del canale. Qui si sa soltanto dove
+   * disegnare la riga e chi c'e' sopra.
+   */
+  persona?: PersonaInVoce
   /**
    * Il menu del server, gia' costruito da chi sta sopra.
    *
@@ -206,6 +220,8 @@ export default function ColonnaCanali({
                   microfoniSpenti={canale.id === inVoce ? microfoniSpenti : undefined}
                   sordine={canale.id === inVoce ? sordine : undefined}
                   parlanti={canale.id === inVoce ? parlanti : undefined}
+                  persona={persona}
+                  inQuestoVocale={canale.id === inVoce}
                   elimina={async () => {
                     try {
                       await elimina(canale)
@@ -278,7 +294,9 @@ function RigaCanale({
   profili,
   microfoniSpenti,
   sordine,
-  parlanti
+  parlanti,
+  persona,
+  inQuestoVocale = false
 }: {
   canale: Canale
   aperto: boolean
@@ -295,9 +313,14 @@ function RigaCanale({
   sordine?: Set<string>
   /** Valorizzato solo per il canale in cui si sta parlando adesso. */
   parlanti?: Set<string>
+  persona?: PersonaInVoce
+  /** Vero solo per il canale in cui si sta parlando: li' i volumi hanno senso. */
+  inQuestoVocale?: boolean
 }): React.JSX.Element {
   const [conferma, setConferma] = useState(false)
   const [modificaAperta, setModificaAperta] = useState(false)
+  /** Su chi e' aperto il pannellino, e dove. Uno solo alla volta. */
+  const [aperta, setAperta] = useState<{ identita: string; x: number; y: number } | null>(null)
 
   return (
     <div>
@@ -423,15 +446,36 @@ function RigaCanale({
           cui le facce non si distinguono piu' l'una dall'altra. */}
       {canale.tipo === 'voce' && canale.presenti.length > 0 && (
         <div className="mt-1 mb-2 ml-6 space-y-2">
-          {canale.presenti.map((persona) => {
+          {canale.presenti.map((riga) => {
             // L'identita' sulla SFU e' `u<id>`: e' l'unica chiave su cui una
             // presenza e un profilo combaciano.
-            const foto = profili?.get(Number(persona.identita.slice(1)))?.avatar ?? null
-            const parla = parlanti?.has(persona.identita) ?? false
-            const sordo = sordine?.has(persona.identita) ?? false
+            const foto = profili?.get(Number(riga.identita.slice(1)))?.avatar ?? null
+            const parla = parlanti?.has(riga.identita) ?? false
+            const sordo = sordine?.has(riga.identita) ?? false
+
+            const chi = Number(riga.identita.slice(1))
+            const sue = persona?.restrizioni(canale.id, chi)
 
             return (
-            <div key={persona.identita} className="flex items-center gap-2 text-xs text-testo-2">
+            <button
+              key={riga.identita}
+              type="button"
+              aria-haspopup="menu"
+              aria-expanded={aperta?.identita === riga.identita}
+              disabled={!persona}
+              onClick={(e) => {
+                // Le restrizioni di questa stanza si chiedono adesso, non
+                // all'avvio: sono tante quante i canali vocali, e quasi nessuno
+                // le guarda. Chiamarla a ogni apertura non costa una richiesta
+                // a ogni apertura — la seconda volta e' gia' saputa.
+                persona?.assicura(canale.id)
+                const misura = e.currentTarget.getBoundingClientRect()
+                // Ancorato alla riga e non al puntatore: aperto da tastiera un
+                // puntatore non c'e', e il pannello comparirebbe nell'angolo in
+                // alto a sinistra dello schermo.
+                setAperta({ identita: riga.identita, x: misura.right + 6, y: misura.top })
+              }}
+              className="flex w-full items-center gap-2 rounded-md px-1 py-0.5 text-left text-xs text-testo-2 transition-colors enabled:hover:bg-fondo-3/60 enabled:hover:text-testo disabled:cursor-default">
               {/* L'anello sta DENTRO l'icona, non fuori.
                   
                   Fuori — con ring-offset — ogni faccia si portava dietro due
@@ -453,9 +497,9 @@ function RigaCanale({
               ) : (
                 <span
                   className="flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-semibold text-black/75"
-                  style={{ background: coloreDi(persona.identita) }}
+                  style={{ background: coloreDi(riga.identita) }}
                 >
-                  {inizialiDi(persona.nome)}
+                  {inizialiDi(riga.nome)}
                 </span>
               )}
                 <span
@@ -464,8 +508,19 @@ function RigaCanale({
                   }`}
                 />
               </span>
-              <span className="min-w-0 flex-1 truncate">{persona.nome}</span>
-              {(microfoniSpenti ? microfoniSpenti.has(persona.identita) : !persona.microfono) && (
+              <span className="min-w-0 flex-1 truncate">{riga.nome}</span>
+              {/* Cio' che gli e' stato tolto, sulla riga: chi apre la colonna
+                  deve poter vedere che quel microfono e' bloccato senza dover
+                  aprire il pannello di ognuno. */}
+              {sue && sue.length > 0 && (
+                <span
+                  className="shrink-0 text-attenzione"
+                  title={`Gli e' stato tolto: ${sue.map((r) => nomeRestrizione(r.genere)).join(', ')}`}
+                >
+                  <Lucchetto className="h-3 w-3" />
+                </span>
+              )}
+              {(microfoniSpenti ? microfoniSpenti.has(riga.identita) : !riga.microfono) && (
                 <span
                   className={`shrink-0 ${sordo ? 'text-male/70' : 'text-testo-3'}`}
                   title={sordo ? 'Non parla e non sente' : 'Microfono spento'}
@@ -483,16 +538,97 @@ function RigaCanale({
                   <CuffieSpente className="h-3.5 w-3.5" />
                 </span>
               )}
-              {persona.schermi > 0 && (
+              {riga.schermi > 0 && (
                 <span className="shrink-0 text-ok" title="Sta condividendo">
                   <SchermoCondividi className="h-3.5 w-3.5" />
                 </span>
               )}
-            </div>
+            </button>
             )
           })}
         </div>
       )}
+
+      {/* Il pannellino sulla persona.
+          E' lo STESSO componente del menu del tasto destro nella sala, e non un
+          secondo meccanismo di comparsa: stesse regole per restare dentro alla
+          finestra, stesso Escape, stesso clic fuori, stesso ritorno del fuoco.
+          Anche le voci sono le stesse, perche' sono le stesse cose fatte alla
+          stessa persona — cambiare menu cambiando colonna vorrebbe dire due
+          menu da imparare per una cosa sola. */}
+      {aperta && persona && (() => {
+        const chi = Number(aperta.identita.slice(1))
+        const dentro = canale.presenti.find((p) => p.identita === aperta.identita)
+        if (!dentro) return null
+        const mio = persona.io === chi
+        const foto = profili?.get(chi)?.avatar ?? null
+
+        return (
+          <MenuRiquadro
+            x={aperta.x}
+            y={aperta.y}
+            titolo={dentro.nome}
+            cosa="la voce"
+            intestazione={
+              <div className="flex items-center gap-2 px-1.5 pt-0.5 pb-2">
+                {foto ? (
+                  <img src={foto} alt="" className="h-8 w-8 shrink-0 rounded-full object-cover" />
+                ) : (
+                  <span
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold text-black/75"
+                    style={{ background: coloreDi(dentro.identita) }}
+                  >
+                    {inizialiDi(dentro.nome)}
+                  </span>
+                )}
+                <span className="min-w-0">
+                  <span className="block truncate text-xs font-semibold text-testo">
+                    {dentro.nome}
+                  </span>
+                  <span className="block truncate text-[11px] text-testo-3">
+                    {sordine?.has(dentro.identita)
+                      ? 'non parla e non sente'
+                      : (microfoniSpenti ? microfoniSpenti.has(dentro.identita) : !dentro.microfono)
+                        ? 'microfono spento'
+                        : parlanti?.has(dentro.identita)
+                          ? 'sta parlando'
+                          : `in ${canale.nome}`}
+                  </span>
+                </span>
+              </div>
+            }
+            // I cursori sono impostazioni locali di chi guarda, e ci sono solo
+            // dove c'e' una voce da regolare: nel canale in cui si sta
+            // parlando. Sulla propria riga nemmeno li': il proprio volume in
+            // entrata non esiste.
+            voci={inQuestoVocale && !mio ? persona.volumi(dentro.identita) : []}
+            azioni={
+              mio
+                ? undefined
+                : [
+                    {
+                      icona: <Fumetto />,
+                      testo: 'Manda un messaggio diretto',
+                      fai: () => persona.scrivi(chi)
+                    },
+                    {
+                      icona: <Utenti />,
+                      testo: 'Vai ai diretti',
+                      fai: () => persona.vaiAiDiretti(chi)
+                    }
+                  ]
+            }
+            moderazione={mio ? undefined : persona.moderazione(canale.id, chi)}
+            restrizioniAddosso={persona.restrizioni(canale.id, chi)}
+            caccia={
+              mio || !persona.caccia
+                ? undefined
+                : () => persona.caccia!(canale.id, dentro.identita)
+            }
+            chiudi={() => setAperta(null)}
+          />
+        )
+      })()}
     </div>
   )
 }

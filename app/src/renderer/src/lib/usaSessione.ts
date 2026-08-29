@@ -27,6 +27,8 @@ import {
   catturaSchermo,
   chiudiCatenaMicrofono,
   etichettaSoloAudio,
+  nomeAudioDi,
+  nomeDelVideoDi,
   impostaGuadagnoMicrofono,
   livelloMicrofono,
   microfonoPassa,
@@ -158,6 +160,16 @@ export interface AudioRemoto {
   etichetta: string
   volume: number
   muto: boolean
+  /**
+   * Se la traccia sta davvero arrivando.
+   *
+   * Diverso da `muto`, e la differenza si paga in banda: zittita continua a
+   * scaricarsi e a costare, e si riaccende nell'istante in cui si rialza il
+   * cursore. Non ascoltata non arriva proprio — e' `nonGuardare` applicato a
+   * una condivisione senza immagine — e per riaverla bisogna richiederla, cosa
+   * che costa il tempo di una sottoscrizione.
+   */
+  ascoltato: boolean
 }
 
 /**
@@ -224,6 +236,40 @@ export interface Messaggio {
   testo: string
   istante: number
   mio: boolean
+}
+
+/**
+ * Il video a cui appartiene questa traccia audio, se ce n'e' uno.
+ *
+ * La convenzione dei nomi sta tutta in `pubblica.ts` — "Finestra" e
+ * "Finestra (audio)" — e qui la si legge invece di riscriverla: due copie
+ * della stessa regola diventano due regole appena qualcuno cambia il suffisso.
+ *
+ * Nullo per le condivisioni di solo audio, che un video non ce l'hanno.
+ */
+function videoDellAudio(
+  partecipante: Participant,
+  pubblicazione: TrackPublication
+): TrackPublication | null {
+  const suo = nomeDelVideoDi(pubblicazione.trackName || '')
+  if (suo === null) return null
+  for (const altra of partecipante.trackPublications.values()) {
+    if (altra.source === Track.Source.ScreenShare && (altra.trackName ?? '') === suo) return altra
+  }
+  return null
+}
+
+/** Se questo id e' una condivisione di solo audio di qualcun altro. */
+function soloAudioRemoto(stanza: Room, id: string): boolean {
+  for (const partecipante of stanza.remoteParticipants.values()) {
+    const pubblicazione = partecipante.trackPublications.get(id)
+    if (!pubblicazione) continue
+    return (
+      pubblicazione.source === Track.Source.ScreenShareAudio &&
+      videoDellAudio(partecipante, pubblicazione) === null
+    )
+  }
+  return false
 }
 
 function moderatoreDi(partecipante: Participant): boolean {
@@ -516,31 +562,77 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
   const [quanteGuardate, setQuanteGuardate] = useState(0)
 
   /**
-   * Taglia la ricezione di tutte le condivisioni che non si sta guardando.
+   * Le condivisioni di SOLO audio che si e' scelto di non ascoltare.
+   *
+   * Un insieme al contrario rispetto a quello qui sopra, e la differenza e'
+   * voluta. Una condivisione con il video costa decine di megabit e si apre
+   * chiedendola; una di solo mezzo megabit si sente e basta, come si sente chi
+   * parla. Chi non la vuole la chiude, e finisce qui dentro.
+   *
+   * Non occupano nessuno dei due posti: quei posti contano il video, che e'
+   * l'unica cosa che costa banda seria. Farle contare vorrebbe dire che
+   * qualcuno che mette della musica impedisce a tutti di guardare due schermi.
+   */
+  const nonAscoltateRef = useRef<Set<string>>(new Set())
+
+  /**
+   * Taglia la ricezione di tutto cio' che non si sta guardando o ascoltando.
    *
    * Passa da qui ogni condivisione altrui: quelle appena pubblicate, quelle
    * gia' in corso di chi entra dopo di noi, e quelle che c'erano gia' quando
    * siamo entrati noi. `autoSubscribe` resta acceso — spegnerlo per tutti
    * vorrebbe dire gestire a mano anche le voci, che invece devono arrivare
    * sempre — e qui si disdice subito cio' che non serve.
+   *
+   * L'audio entra in questo conto e prima non ci entrava, ed e' il difetto per
+   * cui «smetti di guardare» staccava l'immagine e lasciava il suono: la
+   * traccia `ScreenShareAudio` non passava mai di qui, restava sottoscritta, e
+   * si continuava a scaricarla e a sentirla. Da fuori sembrava che il pulsante
+   * funzionasse a meta'.
    */
   const potaCondivisioni = useCallback((stanza: Room) => {
     stanza.remoteParticipants.forEach((partecipante) => {
       partecipante.trackPublications.forEach((pubblicazione) => {
-        if (pubblicazione.kind !== Track.Kind.Video) return
-        if (pubblicazione.source !== Track.Source.ScreenShare) return
+        if (pubblicazione.source === Track.Source.ScreenShare) {
+          if (pubblicazione.kind !== Track.Kind.Video) return
+          const voluta = guardateRef.current.has(pubblicazione.trackSid)
+          if (pubblicazione.isSubscribed !== voluta) pubblicazione.setSubscribed(voluta)
+          return
+        }
 
-        const voluta = guardateRef.current.has(pubblicazione.trackSid)
+        if (pubblicazione.source !== Track.Source.ScreenShareAudio) return
+
+        // L'audio che accompagna un video segue il suo video: sono due tracce
+        // per una cosa sola, e si aprono e si chiudono insieme.
+        const video = videoDellAudio(partecipante, pubblicazione)
+        const voluta = video
+          ? guardateRef.current.has(video.trackSid)
+          : !nonAscoltateRef.current.has(pubblicazione.trackSid)
         if (pubblicazione.isSubscribed !== voluta) pubblicazione.setSubscribed(voluta)
       })
     })
   }, [])
 
-  /** Apre una condivisione altrui, se non se ne stanno gia' guardando due. */
+  /**
+   * Apre una condivisione altrui — l'immagine e il suo suono insieme.
+   *
+   * L'id e' quello della condivisione, cioe' il trackSid del video, oppure
+   * quello dell'audio quando video non ce n'e'. E' lo stesso id che porta il
+   * riquadro e lo stesso che porta la riga nel pannello dell'audio: uno solo,
+   * cosi' non esiste il caso in cui si riapre meta' di qualcosa.
+   */
   const guarda = useCallback(
     (id: string) => {
       const stanza = stanzaRef.current
       if (!stanza) return
+
+      if (soloAudioRemoto(stanza, id)) {
+        if (!nonAscoltateRef.current.delete(id)) return
+        potaCondivisioni(stanza)
+        ridisegna()
+        return
+      }
+
       if (guardateRef.current.has(id)) return
       if (guardateRef.current.size >= MAX_CONDIVISIONI_GUARDATE) return
 
@@ -552,10 +644,25 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
     [potaCondivisioni, ridisegna]
   )
 
-  /** Chiude una condivisione: smette di scaricarla e libera uno dei due posti. */
+  /**
+   * Chiude una condivisione: smette di scaricarla, immagine e suono.
+   *
+   * Su una condivisione con il video libera anche uno dei due posti. Su una di
+   * solo audio non c'e' nessun posto da liberare — non ne occupava — e l'unica
+   * cosa che succede e' che quella traccia smette di arrivare.
+   */
   const nonGuardare = useCallback(
     (id: string) => {
       const stanza = stanzaRef.current
+
+      if (stanza && soloAudioRemoto(stanza, id)) {
+        if (nonAscoltateRef.current.has(id)) return
+        nonAscoltateRef.current.add(id)
+        potaCondivisioni(stanza)
+        ridisegna()
+        return
+      }
+
       if (!guardateRef.current.delete(id)) return
 
       setQuanteGuardate(guardateRef.current.size)
@@ -681,12 +788,8 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
         // hanno un video da mettere a fuoco, e zittirle vorrebbe dire
         // spegnere la musica ogni volta che qualcuno ingrandisce uno schermo.
         if (nomeAFuoco !== null) {
-          const suoVideo = [...partecipante.trackPublications.values()].some(
-            (p) =>
-              p.source === Track.Source.ScreenShare &&
-              `${p.trackName} (audio)` === pubblicazione.trackName
-          )
-          if (suoVideo && pubblicazione.trackName !== `${nomeAFuoco} (audio)`) muto = true
+          const suoVideo = videoDellAudio(partecipante, pubblicazione) !== null
+          if (suoVideo && pubblicazione.trackName !== nomeAudioDi(nomeAFuoco)) muto = true
         }
 
         ;(pubblicazione.track as RemoteAudioTrack | undefined)?.setVolume(
@@ -880,6 +983,10 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
         if (guardateRef.current.delete(pubblicazione.trackSid)) {
           setQuanteGuardate(guardateRef.current.size)
         }
+        // Una condivisione di solo audio che finisce si porta via anche il
+        // "non voglio sentirla": se la stessa persona ne apre un'altra, quella
+        // e' un'altra cosa e va sentita.
+        nonAscoltateRef.current.delete(pubblicazione.trackSid)
       })
 
       stanza.on(RoomEvent.ConnectionStateChanged, (nuovo) => {
@@ -1136,6 +1243,7 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
       // quella in cui si entra: entrando altrove si riparte da nessuna, e i
       // due posti sono di nuovo liberi.
       guardateRef.current.clear()
+      nonAscoltateRef.current.clear()
       setQuanteGuardate(0)
       // Da adesso un allegato che sale deve farsi da parte: la linea serve
       // prima alle voci.
@@ -1239,6 +1347,7 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
     schermiRef.current.clear()
     volumiAudioRemotiRef.current.clear()
     guardateRef.current.clear()
+    nonAscoltateRef.current.clear()
     setQuanteGuardate(0)
     segnalaChiamata(false)
     await stanzaRef.current?.disconnect()
@@ -2118,6 +2227,7 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
         if (etichetta === null) return
         const esplicito = volumiAudioRemotiRef.current.get(pubblicazione.trackSid)
         audioRemoti.push({
+          ascoltato: !nonAscoltateRef.current.has(pubblicazione.trackSid),
           id: pubblicazione.trackSid,
           identita: partecipante.identity,
           nome: partecipante.name || partecipante.identity,

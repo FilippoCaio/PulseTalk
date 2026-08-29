@@ -386,11 +386,23 @@ export function ModuloAccesso({
 
 export default function Accesso({
   impostazioni,
+  serverScelto,
   salva,
   quandoEntra,
   motivo = null
 }: {
   impostazioni: Impostazioni
+  /**
+   * Il server scelto nella schermata di prima, quando non ce n'e' ancora uno
+   * collegato.
+   *
+   * Nelle impostazioni `server` compare solo dopo il primo accesso riuscito —
+   * e' un campo derivato dall'elenco dei server collegati, e un collegamento
+   * ha un token dentro. Fino ad allora l'indirizzo sta qui: e' lo stesso su cui
+   * si sta per creare l'account, ed e' quello che va mostrato invece di un
+   * campo vuoto.
+   */
+  serverScelto?: string
   salva: (modifiche: Partial<Impostazioni>) => Promise<Impostazioni>
   quandoEntra: (utente: Utente) => void
   /**
@@ -425,7 +437,7 @@ export default function Accesso({
         <ModuloAccesso
           modoIniziale={modo}
           quandoCambiaModo={setModo}
-          serverIniziale={impostazioni.server}
+          serverIniziale={serverScelto || impostazioni.server}
           utenteIniziale={impostazioni.utenteRicordato}
           codiceIniziale={invitoDalLink}
           motivo={motivo}

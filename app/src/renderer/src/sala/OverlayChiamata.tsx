@@ -54,6 +54,8 @@ export default function OverlayChiamata({
   mutoAudioCondiviso,
   volumeAudioRemoto,
   mutoAudioRemoto,
+  guardaCondivisione,
+  nonGuardareCondivisione,
   riascoltoAttivo,
   secondiRiascolto,
   nomeCanale,
@@ -90,6 +92,16 @@ export default function OverlayChiamata({
   mutoAudioCondiviso: (id: string) => void
   volumeAudioRemoto: (id: string, volume: number) => void
   mutoAudioRemoto: (id: string) => void
+  /**
+   * Riapre e chiude una condivisione di solo audio.
+   *
+   * Sono le stesse due funzioni degli schermi — `guarda` e `nonGuardare` —
+   * perche' e' la stessa azione: una condivisione di solo audio e' una
+   * condivisione senza immagine, e chiuderla vuol dire staccarne l'unica
+   * traccia invece di abbassarne il volume.
+   */
+  guardaCondivisione: (id: string) => void
+  nonGuardareCondivisione: (id: string) => void
   riascoltoAttivo: boolean
   secondiRiascolto: number
   nomeCanale: string
@@ -438,6 +450,8 @@ export default function OverlayChiamata({
             smettiMio={smettiDiCondividere}
             volumeLoro={volumeAudioRemoto}
             mutoLoro={mutoAudioRemoto}
+            ascoltaLoro={guardaCondivisione}
+            smettiLoro={nonGuardareCondivisione}
           />
         )}
         {aperto === 'condivisioni' && schermiAttivi.length > 0 && (
@@ -875,7 +889,9 @@ function MenuAudio({
   mutoMio,
   smettiMio,
   volumeLoro,
-  mutoLoro
+  mutoLoro,
+  ascoltaLoro,
+  smettiLoro
 }: {
   miei: AudioCondiviso[]
   loro: AudioRemoto[]
@@ -884,6 +900,10 @@ function MenuAudio({
   smettiMio: (id: string) => void
   volumeLoro: (id: string, volume: number) => void
   mutoLoro: (id: string) => void
+  /** Torna a ricevere una condivisione di solo audio staccata. */
+  ascoltaLoro: (id: string) => void
+  /** Stacca davvero la traccia: non e' il muto, e' smettere di scaricarla. */
+  smettiLoro: (id: string) => void
 }): React.JSX.Element {
   return (
     <Pannello>
@@ -919,11 +939,22 @@ function MenuAudio({
               <RigaAudio
                 key={a.id}
                 nome={a.etichetta}
-                sotto={`da ${a.nome} — solo per te`}
+                sotto={
+                  a.ascoltato
+                    ? `da ${a.nome} — solo per te`
+                    : `da ${a.nome} — staccata, non la stai ricevendo`
+                }
                 volume={a.volume}
                 muto={a.muto}
+                staccato={!a.ascoltato}
                 cambia={(v) => volumeLoro(a.id, v)}
                 alterna={() => mutoLoro(a.id)}
+                /* Una condivisione di solo audio non ha un riquadro: qui c'e'
+                   l'unica "smetti di ascoltare" che possa avere, ed e' la
+                   stessa azione dello "smetti di guardare e ascoltare" degli
+                   schermi — stacca la traccia invece di abbassarla. */
+                chiudi={a.ascoltato ? () => smettiLoro(a.id) : undefined}
+                riapri={a.ascoltato ? undefined : () => ascoltaLoro(a.id)}
               />
             ))}
           </div>
@@ -938,29 +969,42 @@ function RigaAudio({
   sotto,
   volume,
   muto,
+  staccato = false,
   cambia,
   alterna,
-  chiudi
+  chiudi,
+  riapri
 }: {
   nome: string
   sotto: string
   volume: number
   muto: boolean
+  /** Non sta arrivando: il cursore non ha niente da regolare. */
+  staccato?: boolean
   cambia: (volume: number) => void
   alterna: () => void
-  /** Solo sulle proprie: smette di condividere. Sugli altrui non ha senso. */
+  /** Sulle proprie smette di condividere, sulle altrui smette di riceverle. */
   chiudi?: () => void
+  /** Torna a riceverla. Solo su una staccata. */
+  riapri?: () => void
 }): React.JSX.Element {
   return (
     <div>
       <div className="flex items-center gap-2">
         <button
           onClick={alterna}
+          disabled={staccato}
           title={muto ? `Riattiva ${nome}` : `Zittisci ${nome}`}
           aria-label={muto ? `Riattiva ${nome}` : `Zittisci ${nome}`}
-          className={`shrink-0 ${muto ? 'text-male' : 'text-testo-3 hover:text-testo'}`}
+          className={`shrink-0 disabled:opacity-40 ${
+            muto || staccato ? 'text-male' : 'text-testo-3 hover:text-testo'
+          }`}
         >
-          {muto ? <AltoparlanteMuto className="h-4 w-4" /> : <Altoparlante className="h-4 w-4" />}
+          {muto || staccato ? (
+            <AltoparlanteMuto className="h-4 w-4" />
+          ) : (
+            <Altoparlante className="h-4 w-4" />
+          )}
         </button>
         <span className="min-w-0 flex-1">
           <span className="block truncate text-xs text-testo">{nome}</span>
@@ -972,11 +1016,21 @@ function RigaAudio({
         {chiudi && (
           <button
             onClick={chiudi}
-            title={`Smetti di condividere ${nome}`}
-            aria-label={`Smetti di condividere ${nome}`}
+            title={`Smetti ${nome}`}
+            aria-label={`Smetti ${nome}`}
             className="shrink-0 text-male hover:opacity-80"
           >
             <SchermoStop className="h-4 w-4" />
+          </button>
+        )}
+        {riapri && (
+          <button
+            onClick={riapri}
+            title={`Torna ad ascoltare ${nome}`}
+            aria-label={`Torna ad ascoltare ${nome}`}
+            className="shrink-0 text-ok hover:opacity-80"
+          >
+            <SchermoCondividi className="h-4 w-4" />
           </button>
         )}
       </div>
@@ -986,9 +1040,10 @@ function RigaAudio({
         max={1}
         step={0.05}
         value={volume}
+        disabled={staccato}
         onChange={(e) => cambia(Number(e.target.value))}
         aria-label={`Volume di ${nome}`}
-        className="mt-1 w-full"
+        className="mt-1 w-full disabled:opacity-40"
       />
     </div>
   )

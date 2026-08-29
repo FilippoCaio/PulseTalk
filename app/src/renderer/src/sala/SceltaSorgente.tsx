@@ -3,6 +3,7 @@ import type { ModoAudioSistema, Sorgente } from '@shared/tipi'
 import { PRESET_SCHERMO, type PresetSchermo } from '@shared/qualita'
 import { ponte } from '../ponte'
 import { usaDispositivi } from '../lib/usaDispositivi'
+import { missaggioFraLeUscite } from '../lib/loopbackSporco'
 import { Avviso, Bottone } from '../ui'
 import { Altoparlante, Giu, Lente, SchermoCondividi, Spunta } from '../icone'
 
@@ -81,7 +82,17 @@ export default function SceltaSorgente({
    */
   const [permettiInterazione, setPermettiInterazione] = useState(true)
 
-  const { per } = usaDispositivi()
+  const { per, tutti } = usaDispositivi()
+  /**
+   * L'uscita da cui il loopback prende e' un missaggio, se lo e'.
+   *
+   * Vale la pena dirlo prima e non dopo: chi condivide non si sente mai da
+   * solo — la sua voce esce dal suo microfono e torna dentro alla condivisione
+   * senza passare dalle sue casse — quindi l'unico modo di accorgersene e' che
+   * qualcuno dall'altra parte lo dica. Quando succede, di solito e' passata
+   * mezz'ora.
+   */
+  const missaggio = missaggioFraLeUscite(tutti)
   const dispositivi: Sorgente[] = per('videoinput').map((d) => ({
     id: d.deviceId,
     nome: d.label || 'Dispositivo senza nome',
@@ -195,6 +206,24 @@ export default function SceltaSorgente({
             </div>
           )}
         </div>
+
+        {/* L'audio di sistema non e' "l'audio di questa finestra": e' cio' che
+            esce dalle casse. Quando le casse sono un missaggio, dentro ci
+            finisce anche il microfono, e dall'altra parte si sente chi parla
+            due volte — una dalla sua traccia, una dentro alla condivisione,
+            leggermente in ritardo. */}
+        {missaggio && ponte.audioDiSistema && audio !== 'niente' && (
+          <div className="shrink-0 border-t border-bordo px-5 pt-3">
+            <Avviso tono="attenzione">
+              L&apos;uscita audio predefinita e&apos; <strong>{missaggio}</strong>, che e&apos; un
+              missaggio: nella condivisione finira&apos; anche il tuo microfono, e chi ascolta ti
+              sentira&apos; due volte. Scegli una vera uscita in Windows, oppure metti
+              l&apos;audio su &laquo;Nessuno&raquo; e lascia parlare solo il microfono. Lo stesso
+              succede con &laquo;Ascolta questo dispositivo&raquo; acceso sul microfono o con il
+              monitoraggio della scheda audio: quelli da qui non si vedono.
+            </Avviso>
+          </div>
+        )}
 
         {/* I settaggi: una riga sola, tendine e interruttori. Il dettaglio sta
             dentro, e nel titolo che compare passandoci sopra. */}

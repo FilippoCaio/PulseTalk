@@ -10,6 +10,8 @@ import type {
   Conversazione,
   Evento,
   EventoSpazio,
+  GenereRestrizione,
+  Restrizione,
   ImpostazioniSpazio,
   InformazioniClient,
   Ingresso,
@@ -235,9 +237,77 @@ export class ErroreApi extends Error {
   }
 }
 
+/**
+ * A questo indirizzo c'e' un PulseTalk?
+ *
+ * Serve prima di qualunque altra cosa: alla prima apertura non c'e' nessun
+ * token, nessun account e nessun server, e la prima domanda da fare e' dove
+ * andare. Chiederla e basta, senza verificarla, vorrebbe dire scoprire un
+ * indirizzo sbagliato piu' tardi — al momento della password, con un errore
+ * che parla di credenziali quando il problema era una lettera nel dominio.
+ *
+ * `/salute` e' pubblica e non richiede niente: e' la stessa rotta che guarda
+ * Docker per sapere se il container e' vivo.
+ *
+ * I tre esiti sono tre frasi diverse di proposito. "Non risponde nessuno" si
+ * risolve controllando l'indirizzo o la rete; "risponde ma non e' PulseTalk" si
+ * risolve sapendo che li' c'e' dell'altro — un router, un pannello, il NAS
+ * stesso — e sono due strade che non si somigliano.
+ */
+export async function provaServer(
+  grezzo: string,
+  { timeoutMs = 8000 }: { timeoutMs?: number } = {}
+): Promise<{ ok: true; indirizzo: string } | { ok: false; motivo: string }> {
+  const indirizzo = String(grezzo ?? '').trim().replace(/\/+$/, '')
+  if (!indirizzo) return { ok: false, motivo: "Serve l'indirizzo del server." }
+
+  let base: URL
+  try {
+    base = new URL(/^https?:\/\//i.test(indirizzo) ? indirizzo : `https://${indirizzo}`)
+  } catch {
+    return { ok: false, motivo: `"${indirizzo}" non e' un indirizzo valido.` }
+  }
+  if (base.username || base.password) {
+    return { ok: false, motivo: "L'indirizzo non puo' contenere credenziali." }
+  }
+
+  try {
+    const risposta = await fetch(`${base.origin}${base.pathname.replace(/\/$/, '')}/salute`, {
+      signal: AbortSignal.timeout(timeoutMs)
+    })
+    if (!risposta.ok) {
+      return { ok: false, motivo: `Risponde qualcosa, ma non e' PulseTalk (${risposta.status}).` }
+    }
+    const corpo = (await risposta.json()) as { ok?: boolean }
+    if (corpo?.ok !== true) {
+      return { ok: false, motivo: "Risponde qualcosa, ma non e' PulseTalk." }
+    }
+    return { ok: true, indirizzo: base.toString().replace(/\/+$/, '') }
+  } catch (e) {
+    // Un timeout e una connessione rifiutata sono la stessa cosa per chi
+    // legge: da qui non si arriva. Distinguerli vorrebbe dire raccontare la
+    // rete a qualcuno che sta solo cercando di entrare.
+    const scaduto = (e as Error)?.name === 'TimeoutError'
+    return {
+      ok: false,
+      motivo: scaduto
+        ? 'Il server non ha risposto in tempo. Controlla che sia acceso e raggiungibile da qui.'
+        : "Non risponde nessuno a quell'indirizzo. Controlla che sia scritto giusto — e che tu sia sulla rete giusta, se e' un indirizzo locale."
+    }
+  }
+}
+
 export class Api {
   constructor(
-    private readonly base: string,
+    /**
+     * L'indirizzo del server, senza barra finale.
+     *
+     * Leggibile da fuori — il token no — perche' serve a distinguere un server
+     * dall'altro: chi tiene una memoria per server (il controllo di
+     * compatibilita', per esempio) deve poter dire "a questo l'ho gia'
+     * chiesto" senza tenersi da parte una seconda copia dell'indirizzo.
+     */
+    readonly base: string,
     private token: string | null
   ) {
     this.base = base.replace(/\/+$/, '')
@@ -646,6 +716,50 @@ export class Api {
     return this.chiama(`/api/canali/${canale}/caccia`, {
       method: 'POST',
       body: JSON.stringify({ identita })
+    })
+  }
+
+  // -- Moderazione della voce -------------------------------------------------
+
+  /** Chi, in questo canale, ha addosso cosa. */
+  restrizioni(canale: number): Promise<{ restrizioni: { utente: number; sue: Restrizione[] }[] }> {
+    return this.chiama(`/api/canali/${canale}/restrizioni`)
+  }
+
+  /**
+   * Impone o toglie un provvedimento. Le due direzioni sono la stessa chiamata.
+   *
+   * Un interruttore e non due rotte: cio' che si e' imposto si deve poter
+   * togliere, e averle separate avrebbe reso possibile scriverne una sola —
+   * cioe' una moderazione da cui non si torna indietro.
+   */
+  imponiRestrizione(
+    canale: number,
+    utente: number,
+    genere: GenereRestrizione,
+    attiva: boolean
+  ): Promise<{ cambiato: boolean; restrizioni: Restrizione[] }> {
+    return this.chiama(`/api/canali/${canale}/restrizioni`, {
+      method: 'POST',
+      body: JSON.stringify({ utente, genere, attiva })
+    })
+  }
+
+  /**
+   * Ferma una condivisione altrui per tutti, adesso.
+   *
+   * Diversa da `imponiRestrizione(..., 'condivisione', true)`, che invece le
+   * impedisce di riaprirne: questa chiude quello che c'e' e basta. `traccia`
+   * indica quale, quando ne ha piu' d'una aperte; senza, si chiudono tutte.
+   */
+  chiudiCondivisione(
+    canale: number,
+    utente: number,
+    traccia?: string
+  ): Promise<{ chiuse: number }> {
+    return this.chiama(`/api/canali/${canale}/condivisioni/chiudi`, {
+      method: 'POST',
+      body: JSON.stringify({ utente, ...(traccia ? { traccia } : {}) })
     })
   }
 

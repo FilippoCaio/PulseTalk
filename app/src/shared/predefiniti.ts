@@ -1,20 +1,27 @@
 /**
  * I valori con cui l'app parte quando non sa ancora niente.
  *
- * Vuoto di proposito: questa e' un'applicazione che si collega al server di
- * chi la installa, e non esiste un indirizzo giusto da mettere qui. Lasciato
- * vuoto, la schermata d'accesso apre da sola il campo dell'indirizzo; una volta
- * scritto, dalla seconda apertura vale quello.
+ * Il server e' **vuoto, e resta vuoto**. PulseTalk non e' un servizio a cui ci
+ * si iscrive: e' un programma che gira sulla macchina di qualcuno, e non esiste
+ * un indirizzo giusto da scrivere qui. Vuoto, la prima schermata chiede dove
+ * andare — e solo dopo si entra o ci si fa un account **su quel server**.
  *
- * **Se distribuisci l'app ai tuoi**, conviene invece scriverci il tuo server
- * prima di compilare:
+ * L'ordine non e' una cortesia: un account esiste dentro a un server e non
+ * prima. Lo stesso nome su due macchine diverse sono due persone diverse, e il
+ * codice di invito che si incolla vale per una sola delle due. Chiedere prima
+ * le credenziali e poi dove usarle era chiedere le cose al contrario.
  *
- *     export const SERVER_PREDEFINITO = 'https://talk.esempio.it'
+ * **Se distribuisci l'app ai tuoi** e vuoi comunque l'indirizzo gia' scritto,
+ * lo si chiede per nome al momento della compilazione:
  *
- * Da quel momento chi la riceve deve incollare **solo il codice di invito**.
- * L'indirizzo del server e' una cosa che sai tu, non lei, e chiederglielo
- * significa doverglielo dettare — e sbagliarlo. Resta comunque un campo
- * modificabile, sotto "Cambia server".
+ *     PULSETALK_SERVER=https://talk.esempio.it npm run build
+ *
+ * Da quel momento chi la riceve deve incollare solo il codice di invito. Resta
+ * comunque un campo modificabile, sotto "Cambia server".
+ *
+ * Nel browser non c'entra niente di tutto questo: li' il server e' l'origine da
+ * cui la pagina e' arrivata, e chiederlo vorrebbe dire far scrivere a qualcuno
+ * l'indirizzo che ha appena aperto.
  */
 declare const __SERVER_PREDEFINITO__: string | undefined
 

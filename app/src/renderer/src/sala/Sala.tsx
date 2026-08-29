@@ -28,6 +28,11 @@ import PannelloInsieme from '../media/PannelloInsieme'
 import RiquadroYouTube from '../media/RiquadroYouTube'
 import type { SessioniMedia } from '../lib/usaSessioniMedia'
 import type { VoceVolume } from './Volume'
+import {
+  fraseRestrizione,
+  vociModerazione as costruisciVociModerazione,
+  type Restrizioni
+} from '../lib/usaRestrizioni'
 import { usaProblema } from '../lib/diagnostica'
 
 /**
@@ -67,7 +72,8 @@ export default function Sala({
   utente,
   media,
   condivisioneRichiesta = false,
-  condivisioneServita
+  condivisioneServita,
+  restrizioni
 }: {
   api: Api
   ingresso: Ingresso
@@ -120,6 +126,14 @@ export default function Sala({
    */
   condivisioneRichiesta?: boolean
   condivisioneServita?: () => void
+  /**
+   * Chi, in questa stanza, ha addosso cosa.
+   *
+   * Arriva da fuori come la sessione, e per lo stesso motivo: la colonna dei
+   * canali deve poterla leggere anche mentre si sta guardando una chat, e uno
+   * stato tenuto qui dentro morirebbe ogni volta che si cambia schermata.
+   */
+  restrizioni: Restrizioni
 }): React.JSX.Element {
   const [aFuoco, setAFuoco] = useState<string | null>(null)
   // Vero quando l'utente ha tolto lui il fuoco. Serve a non rimetterlo subito:
@@ -386,6 +400,11 @@ export default function Sala({
   useEffect(() => {
     const tasto = (evento: KeyboardEvent): void => {
       if (evento.key !== 'Escape' || document.fullscreenElement) return
+      // A tutto schermo Esc serve gia' a uscire da li', e lo fa chi sta sopra.
+      // Il controllo c'era gia' scritto nel commento e mancava nel codice: si
+      // guardava soltanto il tutto schermo di un elemento — che questa
+      // applicazione non usa mai — mentre quello vero e' uno stato di React.
+      if (schermoIntero.attivo) return
       setAFuoco((prima) => {
         if (prima) setSenzaFuoco(true)
         return null
@@ -394,7 +413,7 @@ export default function Sala({
     }
     window.addEventListener('keydown', tasto)
     return () => window.removeEventListener('keydown', tasto)
-  }, [])
+  }, [schermoIntero.attivo])
 
   // Uno schermo messo a fuoco che smette di trasmettere lascerebbe la griglia
   // su un riquadro che non esiste piu'.
@@ -612,20 +631,59 @@ export default function Sala({
         ? [
             {
               icona: <SchermoCondividi />,
-              testo: 'Guarda questa condivisione',
+              testo: 'Guarda e ascolta',
               fai: () => sessione.guarda(r.id)
             }
           ]
         : undefined
     }
 
+    // Una cosa sola e detta come una cosa sola: l'immagine e il suono di quello
+    // schermo si aprono e si chiudono insieme. Finche' la voce diceva soltanto
+    // "smetti di guardare", chiuderla lasciava il suono acceso — e chi l'aveva
+    // premuta continuava a sentire il gioco di un altro senza capire da dove
+    // arrivasse, visto che il riquadro non c'era piu'.
     return [
       {
         icona: <SchermoStop />,
-        testo: 'Smetti di guardare — libera un posto',
+        testo: 'Smetti di guardare e ascoltare — libera un posto',
         fai: () => sessione.nonGuardare(r.id)
       }
     ]
+  }
+
+  /**
+   * L'identita' sulla SFU e' `u<id>`: da li' si torna all'utente.
+   *
+   * E' la stessa conversione che fa il server all'ingresso, e l'unica chiave su
+   * cui una presenza, un riquadro e un profilo combaciano.
+   */
+  const idDi = (identita: string): number => Number(identita.slice(1))
+
+  /** Cosa chi guarda ha il diritto di fare agli altri, deciso dal server. */
+  const poteri = ingresso.permessi
+
+  /**
+   * I provvedimenti che si possono prendere su questa persona.
+   *
+   * L'elenco lo filtra il server: `ingresso.permessi` dice cosa chi guarda ha
+   * il diritto di fare qui dentro, e ci sta dentro anche il caso di chi non
+   * amministra lo spazio ma sta organizzando un evento in questo canale
+   * adesso. A dire di no resta comunque il server, su ogni richiesta: questo
+   * elenco decide soltanto cosa disegnare.
+   *
+   * Su se stessi niente: non ci si modera da soli, e il server risponderebbe
+   * 400 a chi ci provasse.
+   */
+  const vociModerazione = (r: DatiRiquadro): ReturnType<typeof costruisciVociModerazione> => {
+    if (r.locale) return undefined
+    return costruisciVociModerazione(
+      poteri,
+      restrizioni,
+      ingresso.canale.id,
+      idDi(r.identita),
+      setErroreLocale
+    )
   }
 
   // La combinazione richiesta per la vera superficie video: chiamata a tutta
@@ -705,6 +763,22 @@ export default function Sala({
             </Avviso>
           )}
           {(sessione.errore || erroreLocale) && <Avviso>{sessione.errore ?? erroreLocale}</Avviso>}
+
+          {/* Cosa ti e' stato tolto, e da chi.
+              Senza questa riga il microfono semplicemente non risponde, e un
+              pulsante che non risponde si legge come un guasto: si riavvia
+              l'applicazione, si cambia dispositivo, si scrive a qualcuno che
+              "non funziona". Scritto, invece, e' una decisione a cui si puo'
+              rispondere — e la persona a cui rispondere ha un nome. */}
+          {restrizioni.mie.length > 0 && (
+            <Avviso tono="attenzione">
+              <div className="space-y-0.5">
+                {restrizioni.mie.map((r) => (
+                  <p key={r.genere}>{fraseRestrizione(r)}</p>
+                ))}
+              </div>
+            </Avviso>
+          )}
 
           {/* Detto una volta e piccolo: due gesti che non si scoprono da soli,
               e che dopo averli letti una volta non si dimenticano piu'. */}
@@ -1034,6 +1108,8 @@ export default function Sala({
         mutoAudioCondiviso={sessione.alternaMutoAudioCondiviso}
         volumeAudioRemoto={sessione.impostaVolumeAudioRemoto}
         mutoAudioRemoto={sessione.alternaMutoAudioRemoto}
+        guardaCondivisione={sessione.guarda}
+        nonGuardareCondivisione={sessione.nonGuardare}
         riascoltoAttivo={sessione.riascoltoAttivo}
         secondiRiascolto={impostazioni.secondiRiascolto || 30}
         nomeCanale={ingresso.canale.nome}
@@ -1189,6 +1265,25 @@ export default function Sala({
                       setErroreLocale((e as Error).message)
                     }
                   }
+                : undefined
+            }
+            // Sul riquadro di una persona i quattro provvedimenti; su quello di
+            // una condivisione no — li' quello che serve e' chiuderla, e
+            // "togli la condivisione" e' una decisione sulla persona che si
+            // prende dal suo riquadro.
+            moderazione={suo.tipo === 'persona' ? vociModerazione(suo) : undefined}
+            chiudiCondivisione={
+              suo.tipo === 'schermo' && !suo.locale && poteri.moderatore
+                ? () => {
+                    void api
+                      .chiudiCondivisione(ingresso.canale.id, idDi(suo.identita), suo.id)
+                      .catch((e) => setErroreLocale((e as Error).message))
+                  }
+                : undefined
+            }
+            restrizioniAddosso={
+              suo.tipo === 'persona'
+                ? restrizioni.per(ingresso.canale.id).get(idDi(suo.identita))
                 : undefined
             }
             qualita={

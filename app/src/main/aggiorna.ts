@@ -28,7 +28,7 @@ const { autoUpdater } = electronUpdater
  * una versione nuova, pero', resta bloccato con una spiegazione: proseguire
  * fingendo che sia aggiornabile vanificherebbe l'intero controllo.
  */
-export function preparaAggiornamenti(): void {
+export function preparaAggiornamenti(): { allAvvio: () => void } {
   autoUpdater.autoDownload = false
   autoUpdater.autoInstallOnAppQuit = true
 
@@ -101,6 +101,15 @@ export function preparaAggiornamenti(): void {
     // riguarda chi pubblica, non lui.
     if (/no published versions/i.test(e.message) && !vincolo?.obbligatorio) {
       avvisa({ fase: 'aggiornato', errore: undefined })
+      return
+    }
+    // E un caso che non e' nemmeno un errore: il server a cui si e' collegati
+    // non pubblica aggiornamenti. Succede a ogni istanza installata da qualcun
+    // altro — chi la amministra non compila l'applicazione, se la scarica come
+    // tutti — e il feed semplicemente non esiste. Mostrarlo come "404 su
+    // latest.yml" fa sembrare rotta una cosa che non c'e' e basta.
+    if (senzaFeed(e) && !vincolo?.obbligatorio) {
+      avvisa({ fase: 'senzaFeed', errore: undefined })
       return
     }
     avvisa({ fase: 'errore', errore: e.message })
@@ -185,12 +194,67 @@ export function preparaAggiornamenti(): void {
 
   ipcMain.handle(IPC.aggiornamentoInstalla, () => {
     if (stato.fase !== 'pronto') return
-    // `false` sul secondo argomento: si chiude tutto per davvero invece di
-    // lasciare in giro una finestra che il programma di installazione poi non
-    // riesce a sostituire.
-    setImmediate(() => autoUpdater.quitAndInstall(false, true))
+    // Silenzioso, e rilancia.
+    //
+    // Il primo argomento diventa `/S` sulla riga di comando dell'installer, ed
+    // e' l'unica cosa che separa un aggiornamento da una reinstallazione: con
+    // `false` comparivano le schermate dell'installer NSIS — benvenuto,
+    // modalita', cartella, fine — a chi aveva chiesto soltanto di riavviare.
+    // Il secondo passa `--force-run`, che nell'installer assistito e' proprio
+    // il ramo che rilancia l'applicazione quando ha finito in silenzio.
+    //
+    // Perche' questo funzioni servono le righe `nsis:` di electron-builder.yml:
+    // per utente, cosi' non c'e' niente da elevare, e senza pagine da mostrare
+    // durante un aggiornamento.
+    setImmediate(() => autoUpdater.quitAndInstall(true, true))
   })
 
+  /**
+   * Il controllo all'avvio, una volta sola.
+   *
+   * Prima il primo controllo partiva da `aggiornamentoPrepara`, cioe' quando il
+   * server comunica il vincolo di versione: dopo l'accesso, e solo se il server
+   * risponde. Chi apriva l'applicazione per entrare in una chiamata non sapeva
+   * di essere indietro finche' non andava a cercarlo nelle impostazioni.
+   *
+   * L'installer pero' il feed lo conosce gia' — glielo scrive electron-builder
+   * dentro ad app-update.yml — quindi qui non serve niente e nessuno: si
+   * controlla e basta. Se poi il server dira' un feed diverso, `prepara` lo
+   * sostituisce e rifa' il giro.
+   *
+   * `scaricaSeObbligatorio` e' falso: all'avvio non si sa ancora se il server
+   * pretende una versione, e trecento megabyte scaricati senza chiedere sono
+   * l'ultima cosa che deve succedere a chi ha appena aperto il programma.
+   */
+  const allAvvio = (): void => {
+    if (operazione) return
+    operazione = controlla(false).finally(() => {
+      operazione = null
+    })
+  }
+
+  return { allAvvio }
+}
+
+/**
+ * Il feed non c'e', il che e' diverso dal feed rotto.
+ *
+ * electron-updater lo racconta come un 404 sul file di canale. Non si guarda
+ * solo il numero: un 404 su altro sarebbe comunque un errore da mostrare, e un
+ * "Cannot find channel" senza numero e' lo stesso caso detto in un altro modo
+ * dalla stessa libreria.
+ */
+function senzaFeed(errore: Error): boolean {
+  const testo = errore.message ?? ''
+  if (/cannot find channel/i.test(testo)) return true
+  if (/ERR_UPDATER_CHANNEL_FILE_NOT_FOUND/i.test(testo)) return true
+  if (/\b404\b/.test(testo) && /latest.*\.yml/i.test(testo)) return true
+  // E il caso di un server piu' vecchio di questa correzione: li' un
+  // `latest.yml` che non esiste non tornava 404 ma 200 con dentro l'HTML
+  // dell'applicazione — il ripiego della pagina singola se lo mangiava — e
+  // quello che electron-updater riporta non e' un codice ma un errore di
+  // lettura. Anche quello vuol dire "questo server non pubblica aggiornamenti".
+  return /<!doctype html|<html/i.test(testo) || /cannot parse update info/i.test(testo)
 }
 
 /**

@@ -469,3 +469,68 @@ textarea {
     animation-delay: 0ms;
   }
 }
+
+/*
+ * Le colonne che si ritirano quando la chiamata si prende la finestra.
+ *
+ * Il collasso e' una larghezza che va a zero, non uno smontaggio: un elemento
+ * tolto dall'albero non ha nessuno stato intermedio da disegnare, e la sala si
+ * allargava di scatto mentre le colonne sparivano nello stesso fotogramma.
+ *
+ * Il contenuto sta dentro a un figlio di larghezza fissa. Senza, ogni
+ * fotogramma dell'animazione sarebbe un riflusso: i nomi dei canali andrebbero
+ * a capo, poi si troncherebbero, e per duecento millisecondi la colonna
+ * sembrerebbe rompersi invece che ritirarsi.
+ *
+ * `--tempo-corto` e' la stessa durata dei pannelli laterali: la sala che si
+ * allarga e le colonne che se ne vanno sono un movimento solo, e due durate
+ * diverse si vedono.
+ */
+.colonna-collassabile {
+  overflow: hidden;
+  transition:
+    width var(--tempo-corto) var(--dolce),
+    opacity var(--tempo-lampo) var(--dolce);
+}
+
+/* Il bordo verticale sparisce insieme alla colonna: a larghezza zero
+   resterebbe la sua riga da un pixel, cioe' una colonna chiusa che si vede
+   ancora. */
+.colonna-collassata {
+  opacity: 0;
+  pointer-events: none;
+  border-right-width: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .colonna-collassabile {
+    transition: none;
+  }
+}
+
+/*
+ * Il pannello della voce, che se ne va di lato invece di stringersi.
+ *
+ * Sta sopra alle due colonne, in posizione assoluta, e dentro ha una tendina
+ * che si apre verso l'alto: con `overflow: hidden` — cioe' con la regola qui
+ * sopra — quella tendina verrebbe tagliata a meta' ogni volta che si apre. Si
+ * ritira scorrendo, nella stessa direzione delle colonne e con la stessa
+ * durata, e la radice dell'applicazione lo nasconde quando esce dal bordo.
+ */
+.pannello-scorrevole {
+  transition:
+    transform var(--tempo-corto) var(--dolce),
+    opacity var(--tempo-lampo) var(--dolce);
+}
+
+.pannello-ritirato {
+  transform: translateX(-101%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pannello-scorrevole {
+    transition: none;
+  }
+}
