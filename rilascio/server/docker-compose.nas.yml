@@ -1,0 +1,127 @@
+# PulseTalk su un NAS qualunque, senza il codice sorgente.
+#
+# Questo file e' il gemello di `docker-compose.yml`, con una differenza sola e
+# decisiva: quello **costruisce** l'immagine da `../server`, e quindi serve a
+# chi ha il repository clonato; questo la **scarica** gia' fatta da GHCR, e
+# quindi serve a chiunque altro.
+#
+# Sono due file e non uno con un interruttore perche' l'interruttore sarebbe
+# stato la cosa che si dimentica: chi sviluppa vuole che `up` ricompili cio' che
+# ha appena scritto, chi installa vuole che `up` non compili niente. Un file per
+# ciascuno, e nessuno dei due sorprende.
+#
+# Cosa serve avere prima:
+#
+#   1. una cartella per i dati (bastano pochi megabyte: dentro ci va talk.db)
+#   2. un `.env` accanto a questo file — `deploy/installa.sh` lo scrive
+#   3. `livekit.yaml` accanto a questo file
+#
+# Cosa NON puo' fare nessuno script, e va fatto a mano:
+#
+#   - il port forward sul router: 7881/TCP e 7882/UDP verso il NAS
+#   - i due record DNS: talk.<dominio> e sfu.<dominio> verso il tuo IP
+#
+# Senza il port forward le chiamate si collegano e restano mute, il che e' il
+# guasto piu' difficile da riconoscere di tutti: non c'e' nessun errore da
+# nessuna parte, semplicemente non si sente niente.
+
+services:
+  pulse-talk:
+    # La riga che separa questo file dall'altro.
+    #
+    # Fissata a una versione e non a `latest`: un'immagine che si aggiorna da
+    # sola sotto a una chiamata in corso non e' quello che si vuole su una
+    # macchina che sta in casa. Si alza a mano quando si decide di aggiornare,
+    # e `docker compose pull && docker compose up -d` fa il resto.
+    image: ${TALK_IMMAGINE:-ghcr.io/filippocaio/pulse-talk}:${TALK_VERSIONE:-latest}
+    container_name: pulse-talk
+    restart: unless-stopped
+    environment:
+      TALK_ROOT: /dati
+      SFU_API_KEY: ${SFU_API_KEY:-pulsetalk}
+      SFU_API_SECRET: "${SFU_API_SECRET:?manca SFU_API_SECRET nel .env}"
+      # Dove le app cercano la SFU. Va girato INSIEME a `use_external_ip` in
+      # livekit.yaml, e sono i due interruttori che vanno mossi insieme:
+      #
+      #   wss://sfu.<dominio>       + use_external_ip: true    da internet
+      #   ws://<ip-del-nas>:7880    + use_external_ip: false   in rete locale
+      #
+      # Mescolarli e' il modo piu' comune di ottenere una chiamata che entra e
+      # resta muta.
+      SFU_URL: ${SFU_URL:?manca SFU_URL nel .env}
+      SFU_API_URL: http://host.docker.internal:7880
+      TALK_GETTONE_TTL: ${TALK_GETTONE_TTL:-21600}
+      TALK_LOG_LEVEL: ${TALK_LOG_LEVEL:-info}
+      # Il vincolo di versione per l'app installata. Vuoti: entra qualunque
+      # versione. Da alzare solo insieme alla pubblicazione dell'installer sul
+      # proprio feed, mai prima — vedi `docs/NAS.md`.
+      TALK_CLIENT_MIN: ${TALK_CLIENT_MIN:-}
+      TALK_CLIENT_TARGET: ${TALK_CLIENT_TARGET:-}
+      TALK_CLIENT_MAX: ${TALK_CLIENT_MAX:-}
+      # I tetti. Alzarli qui e riavviare basta: le app li rileggono da
+      # /api/config a ogni ingresso, e nessuno deve reinstallare niente.
+      TALK_MAX_BITRATE_SCHERMO: ${TALK_MAX_BITRATE_SCHERMO:-50000000}
+      TALK_MAX_FPS_SCHERMO: ${TALK_MAX_FPS_SCHERMO:-60}
+      TALK_MAX_ALTEZZA_SCHERMO: ${TALK_MAX_ALTEZZA_SCHERMO:-2160}
+      TALK_MAX_BITRATE_CAMERA: ${TALK_MAX_BITRATE_CAMERA:-12000000}
+      TALK_MAX_BITRATE_VOCE: ${TALK_MAX_BITRATE_VOCE:-510000}
+      TALK_MAX_STREAM_PER_PERSONA: ${TALK_MAX_STREAM_PER_PERSONA:-4}
+      TALK_MAX_ALLEGATO: ${TALK_MAX_ALLEGATO:-4294967296}
+      TALK_PEZZO_ALLEGATO: ${TALK_PEZZO_ALLEGATO:-8388608}
+      # Tutte facoltative, tutte spente di serie. Senza, l'applicazione funziona
+      # lo stesso: le funzioni che le userebbero dicono che il server non e'
+      # configurato invece di sparire senza spiegazioni.
+      SPOTIFY_CLIENT_ID: ${SPOTIFY_CLIENT_ID:-}
+      SPOTIFY_CLIENT_SECRET: ${SPOTIFY_CLIENT_SECRET:-}
+      SPOTIFY_REDIRECT_URI: ${SPOTIFY_REDIRECT_URI:-}
+      TALK_TENOR_API_KEY: ${TALK_TENOR_API_KEY:-}
+      TALK_TENOR_CLIENT_KEY: ${TALK_TENOR_CLIENT_KEY:-pulse_talk}
+      TALK_GIPHY_API_KEY: ${TALK_GIPHY_API_KEY:-}
+      TALK_AI_CHIAVI: ${TALK_AI_CHIAVI:-istanza}
+      TALK_AI_BASE_URL: ${TALK_AI_BASE_URL:-https://api.openai.com/v1}
+      TALK_AI_FORMATO: ${TALK_AI_FORMATO:-auto}
+      TALK_AI_API_KEY: ${TALK_AI_API_KEY:-}
+      TALK_AI_CHAT_MODEL: ${TALK_AI_CHAT_MODEL:-}
+      TALK_AI_IMAGE_MODEL: ${TALK_AI_IMAGE_MODEL:-}
+      TALK_AI_STT_MODEL: ${TALK_AI_STT_MODEL:-}
+      TALK_AI_WEB_SEARCH: ${TALK_AI_WEB_SEARCH:-false}
+      TALK_AI_TIMEOUT_MS: ${TALK_AI_TIMEOUT_MS:-60000}
+      TALK_AI_CONTESTO_MESSAGGI: ${TALK_AI_CONTESTO_MESSAGGI:-20}
+      TALK_UNSPLASH_ACCESS_KEY: ${TALK_UNSPLASH_ACCESS_KEY:-}
+      TALK_IMMAGINI_PROVIDER: ${TALK_IMMAGINI_PROVIDER:-auto}
+      TALK_IMMAGINI_URL: ${TALK_IMMAGINI_URL:-}
+      TALK_IMMAGINI_PASSI: ${TALK_IMMAGINI_PASSI:-25}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      # L'unico punto in cui il container tocca il NAS. Dentro ci va talk.db,
+      # qualche decina di kilobyte, e la cartella `aggiornamenti/` se si decide
+      # di servire il proprio feed.
+      - "${TALK_DATASET:?manca TALK_DATASET nel .env}:/dati"
+    networks: [talk]
+    ports:
+      - "${TALK_PORTA:-8080}:8080"
+
+  livekit:
+    image: livekit/livekit-server:${SFU_VERSIONE:-latest}
+    container_name: pulse-talk-sfu
+    restart: unless-stopped
+    command: --config /etc/livekit.yaml
+    environment:
+      LIVEKIT_KEYS: "${SFU_API_KEY:-pulsetalk}: ${SFU_API_SECRET:?manca SFU_API_SECRET nel .env}"
+    volumes:
+      - ./livekit.yaml:/etc/livekit.yaml:ro
+    # `host` e non `bridge`, ed e' la riga piu' importante del file.
+    #
+    # WebRTC funziona scoprendo da che indirizzo e porta arrivano i pacchetti e
+    # rispondendo li'. Dentro una rete bridge ogni pacchetto viene riscritto dal
+    # NAT di Docker: la SFU vedrebbe tutti arrivare dallo stesso 172.x, e a
+    # cinquanta megabit al secondo quella riscrittura diventa il collo di
+    # bottiglia.
+    #
+    # Il prezzo e' che 7880, 7881 e 7882 devono essere libere sul NAS.
+    network_mode: host
+
+networks:
+  talk:
+    driver: bridge

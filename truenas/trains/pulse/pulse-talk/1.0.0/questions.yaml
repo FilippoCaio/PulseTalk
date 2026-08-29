@@ -1,0 +1,295 @@
+# Le domande dell'installazione, e non una di piu'.
+#
+# Il criterio: si chiede solo cio' che nessuno puo' indovinare al posto di chi
+# installa, e cio' che sbagliato produce un guasto silenzioso. Tutto il resto ha
+# un valore di serie che funziona.
+#
+# Le chiavi facoltative — AI, Spotify, GIF, immagini — stanno tutte in fondo,
+# tutte spente, e ognuna dice che senza di lei l'applicazione funziona lo
+# stesso: senza quella riga, un elenco di sei campi vuoti in cima
+# all'installazione fa credere che servano.
+
+groups:
+  - name: Dati
+    description: Dove PulseTalk tiene il suo database.
+  - name: Come ci si arriva
+    description: Da internet o dalla sola rete di casa. Sono due interruttori che si girano insieme.
+  - name: SFU
+    description: Il segreto con cui il piano di controllo e la SFU si riconoscono.
+  - name: Porte
+    description: La porta del piano di controllo. Quelle della SFU sono fisse.
+  - name: Utente e gruppo
+    description: Chi possiede i file sul dataset.
+  - name: Chiavi facoltative
+    description: Tutte spente. Senza, PulseTalk funziona lo stesso.
+
+questions:
+  # -- Dati -------------------------------------------------------------------
+  - variable: storage
+    label: ''
+    group: Dati
+    schema:
+      type: dict
+      attrs:
+        - variable: data
+          label: Cartella dei dati
+          description: |
+            Dentro ci va <b>talk.db</b>: qualche decina di kilobyte.</br>
+            Niente registrazioni, niente cache dei media, niente che cresca.</br>
+            Mettila su un dataset che fa gli snapshot: e' l'unica copia di
+            account, spazi e messaggi.
+          schema:
+            type: dict
+            attrs:
+              - variable: type
+                label: Tipo
+                schema:
+                  type: string
+                  required: true
+                  default: ix_volume
+                  enum:
+                    - value: ix_volume
+                      description: Dataset gestito da TrueNAS
+                    - value: host_path
+                      description: Una cartella scelta da te
+              - variable: ix_volume_config
+                label: Dataset
+                schema:
+                  type: dict
+                  show_if: [['type', '=', 'ix_volume']]
+                  $ref:
+                    - 'normalize/ixVolume'
+                  attrs:
+                    - variable: dataset_name
+                      label: Nome del dataset
+                      schema:
+                        type: string
+                        required: true
+                        hidden: true
+                        immutable: true
+                        default: dati
+              - variable: host_path_config
+                label: Cartella
+                schema:
+                  type: dict
+                  show_if: [['type', '=', 'host_path']]
+                  attrs:
+                    - variable: path
+                      label: Percorso
+                      schema:
+                        type: hostpath
+                        required: true
+
+  # -- Come ci si arriva ------------------------------------------------------
+  - variable: accesso
+    label: ''
+    group: Come ci si arriva
+    schema:
+      type: dict
+      attrs:
+        - variable: modo
+          label: Da dove ci si collega
+          description: |
+            <b>Da internet</b>: serve un dominio, due record DNS, un reverse
+            proxy davanti e due porte inoltrate sul router.</br>
+            <b>Solo rete locale</b>: non serve niente di tutto questo, e da fuori
+            non ci si entra.</br></br>
+            Questa scelta gira <b>due</b> interruttori insieme — l'indirizzo che
+            le app usano per la SFU e <code>use_external_ip</code> nella
+            configurazione della SFU. Girarne uno solo produce una chiamata che
+            si collega e resta muta, senza nessun errore da nessuna parte.
+          schema:
+            type: string
+            required: true
+            default: locale
+            enum:
+              - value: locale
+                description: Solo rete locale
+              - value: dominio
+                description: Da internet, con un dominio
+        - variable: dominio
+          label: Il tuo dominio
+          description: |
+            Senza <code>https://</code>. Per esempio <code>casa.it</code>.</br>
+            Le app cercheranno la SFU su <code>wss://sfu.&lt;dominio&gt;</code> e
+            il piano di controllo su <code>https://talk.&lt;dominio&gt;</code>.
+          schema:
+            type: string
+            show_if: [['modo', '=', 'dominio']]
+            required: true
+            default: ''
+        - variable: indirizzo_locale
+          label: Indirizzo del NAS nella rete locale
+          description: |
+            L'indirizzo IP di questa macchina. Le app cercheranno la SFU su
+            <code>ws://&lt;indirizzo&gt;:7880</code>.
+          schema:
+            type: string
+            show_if: [['modo', '=', 'locale']]
+            required: true
+            default: 192.168.1.10
+
+  # -- SFU --------------------------------------------------------------------
+  - variable: sfu
+    label: ''
+    group: SFU
+    schema:
+      type: dict
+      attrs:
+        - variable: chiave
+          label: Nome della chiave
+          description: "Non e' un segreto: dice quale segreto usare. Va bene quello di serie."
+          schema:
+            type: string
+            required: true
+            default: pulsetalk
+        - variable: segreto
+          label: Segreto della SFU
+          description: |
+            Una stringa lunga e casuale. Con questa si firmano i gettoni con cui
+            le app entrano nelle stanze: chi la conosce puo' entrare ovunque.</br></br>
+            TrueNAS non sa generarne una da solo — nello schema delle domande non
+            esiste un "valore casuale di serie" — quindi va incollata. Da un
+            terminale sul NAS:</br>
+            <code>openssl rand -hex 32</code></br>
+            oppure, se PulseTalk gira gia' da qualche parte:</br>
+            <code>docker run --rm --entrypoint node ghcr.io/filippocaio/pulse-talk:latest src/cli.mjs segreto</code>
+          schema:
+            type: string
+            required: true
+            private: true
+            min_length: 32
+            default: ''
+
+  # -- Porte ------------------------------------------------------------------
+  - variable: rete
+    label: ''
+    group: Porte
+    schema:
+      type: dict
+      attrs:
+        - variable: porta
+          label: Porta del piano di controllo
+          description: |
+            Quella che il reverse proxy dovra' raggiungere, o quella da aprire
+            nel browser in rete locale.
+          schema:
+            type: int
+            required: true
+            default: 30080
+            min: 1
+            max: 65535
+        - variable: host_ips
+          label: Indirizzi su cui ascoltare
+          description: "Vuoto: tutti quelli della macchina."
+          schema:
+            type: list
+            default: []
+            items:
+              - variable: host_ip
+                label: Indirizzo
+                schema:
+                  type: string
+                  required: true
+                  $ref:
+                    - definitions/node_bind_ip
+
+  # -- Utente e gruppo --------------------------------------------------------
+  - variable: run_as
+    label: ''
+    group: Utente e gruppo
+    schema:
+      type: dict
+      attrs:
+        - variable: user
+          label: UID
+          description: L'utente che possiede i file nel dataset dei dati.
+          schema:
+            type: int
+            min: 568
+            default: 568
+            required: true
+        - variable: group
+          label: GID
+          schema:
+            type: int
+            min: 568
+            default: 568
+            required: true
+
+  # -- Chiavi facoltative -----------------------------------------------------
+  - variable: extra
+    label: ''
+    group: Chiavi facoltative
+    schema:
+      type: dict
+      attrs:
+        - variable: ai_api_key
+          label: Chiave AI
+          description: |
+            <b>Senza, PulseTalk funziona lo stesso.</b> Le funzioni che la
+            userebbero — le risposte dell'assistente e la trascrizione — dicono
+            che il server non e' configurato, invece di sparire.
+          schema:
+            type: string
+            default: ''
+            private: true
+        - variable: ai_base_url
+          label: Indirizzo del servizio AI
+          description: 'Solo se non e'' OpenAI: per esempio un Ollama in casa.'
+          schema:
+            type: string
+            default: ''
+        - variable: spotify_client_id
+          label: Spotify — client id
+          description: '<b>Senza, PulseTalk funziona lo stesso:</b> resta la coda condivisa, manca il collegamento a Spotify.'
+          schema:
+            type: string
+            default: ''
+        - variable: spotify_client_secret
+          label: Spotify — client secret
+          schema:
+            type: string
+            default: ''
+            private: true
+        - variable: tenor_api_key
+          label: Tenor — chiave per le GIF
+          description: '<b>Senza, PulseTalk funziona lo stesso:</b> manca solo il pannello delle GIF.'
+          schema:
+            type: string
+            default: ''
+            private: true
+        - variable: giphy_api_key
+          label: Giphy — chiave per le GIF
+          schema:
+            type: string
+            default: ''
+            private: true
+        - variable: unsplash_access_key
+          label: Unsplash — chiave per le immagini
+          description: '<b>Senza, PulseTalk funziona lo stesso:</b> manca la ricerca delle immagini.'
+          schema:
+            type: string
+            default: ''
+            private: true
+        - variable: envs
+          label: Altre variabili d'ambiente
+          description: Per i tetti di banda e tutto cio' che il README chiama TALK_*.
+          schema:
+            type: list
+            default: []
+            items:
+              - variable: env
+                label: Variabile
+                schema:
+                  type: dict
+                  attrs:
+                    - variable: name
+                      label: Nome
+                      schema:
+                        type: string
+                        required: true
+                    - variable: value
+                      label: Valore
+                      schema:
+                        type: string

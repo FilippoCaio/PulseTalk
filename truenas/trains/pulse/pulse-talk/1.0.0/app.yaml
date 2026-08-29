@@ -1,0 +1,58 @@
+# I metadati dell'app, nel formato che truenas/apps usa oggi.
+#
+# Ricavato leggendo il repository ufficiale e il suo CONTRIBUTIONS.md, non a
+# memoria: la struttura del catalogo di TrueNAS e' cambiata piu' di una volta, e
+# dalla 24.10 le app sono basate su Docker Compose invece che su Helm.
+#
+# Due campi che gli app ufficiali hanno e questo no, di proposito:
+#
+#   lib_version / lib_version_hash   dichiarano quale versione della libreria
+#     Python di iX il template usa. Questo template non la usa: emette il
+#     Compose direttamente, cosi' non c'e' una libreria vendorizzata da tenere
+#     allineata a ogni rilascio di TrueNAS.
+#
+# `min_scale_version` e' la prima versione che sa leggere questo formato: la
+# 24.10.2.2, la stessa che dichiarano le app ufficiali.
+
+annotations:
+  min_scale_version: 24.10.2.2
+app_version: 1.0.0
+capabilities: []
+categories:
+  - media
+  - networking
+changelog_url: https://github.com/FilippoCaio/PulseTalk/releases
+date_added: '2026-08-29'
+description: Voce, video e schermo senza i tetti di Discord, su una macchina che e' tua.
+home: https://github.com/FilippoCaio/PulseTalk
+host_mounts: []
+icon: https://raw.githubusercontent.com/FilippoCaio/PulseTalk/main/app/build/icona.png
+keywords:
+  - voice
+  - video
+  - screen-sharing
+  - chat
+  - webrtc
+maintainers:
+  - name: FilippoCaio
+    url: https://github.com/FilippoCaio/PulseTalk
+    email: noreply@example.invalid
+name: pulse-talk
+run_as_context:
+  - description: Il piano di controllo gira come utente non privilegiato; il dataset dei dati deve appartenergli.
+    gid: 568
+    group_name: apps
+    uid: 568
+    user_name: apps
+  - description: La SFU (LiveKit) gira come utente non privilegiato e non scrive niente su disco.
+    gid: 568
+    group_name: apps
+    uid: 568
+    user_name: apps
+screenshots: []
+sources:
+  - https://github.com/FilippoCaio/PulseTalk
+  - https://github.com/livekit/livekit
+title: PulseTalk
+train: pulse
+version: 1.0.0

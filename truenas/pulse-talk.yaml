@@ -1,0 +1,206 @@
+# PulseTalk come app di TrueNAS — da incollare in "Install via YAML".
+#
+#   Apps → Discover Apps → ⋮ (in alto a destra) → Install via YAML
+#   Nome: pulse-talk
+#   Custom Config: tutto quello che sta sotto questa intestazione
+#
+# Da li' in poi PulseTalk compare fra le app installate come tutte le altre:
+# riparte da sola dopo un riavvio, ha i suoi log e il suo stato di salute nella
+# stessa interfaccia.
+#
+# Questo file e' volutamente **autosufficiente**: niente `.env`, niente
+# `livekit.yaml` accanto, niente `configs:`. Nella casella di TrueNAS si incolla
+# un file solo e non c'e' modo di metterne un secondo di fianco, quindi tutto
+# cio' che serve sta qui dentro — la configurazione della SFU compresa, che
+# viaggia in `LIVEKIT_CONFIG` (livekit-server la legge da li' esattamente come
+# la leggerebbe da un file).
+#
+# ─────────────────────────────────────────────────────────────────────────────
+#  LE SEI RIGHE DA CAMBIARE, e sono tutte segnate con  ⇦ CAMBIA
+# ─────────────────────────────────────────────────────────────────────────────
+#
+#   1. image              quale immagine del server usare
+#   2. SFU_API_SECRET     il segreto con cui si firmano i gettoni
+#   3. SFU_URL            dove le app cercano la SFU
+#   4. use_external_ip    va gira­to INSIEME a SFU_URL — vedi sotto
+#   5. source             la cartella dei dati sul NAS
+#   6. ports              la porta su cui rispondera' il piano di controllo
+#
+# **Il 3 e il 4 sono un aut-aut, non un "anche".** Sbagliarli produce il guasto
+# piu' difficile da riconoscere di tutti: la chiamata si collega e resta muta,
+# senza nessun errore da nessuna parte.
+#
+#     da internet     SFU_URL: wss://sfu.<dominio>      use_external_ip: true
+#     rete locale     SFU_URL: ws://<ip-del-nas>:7880   use_external_ip: false
+#
+# Con `true` la SFU annuncia SOLO il proprio indirizzo pubblico, e un computer
+# che sta nella stessa casa proverebbe a raggiungerlo da dentro casa — cosa che
+# quasi nessun router domestico sa fare. Con `false` annuncia 192.168.x.x, che
+# da internet non esiste.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+#  E DUE COSE CHE QUESTO FILE NON PUO' FARE
+# ─────────────────────────────────────────────────────────────────────────────
+#
+#   • le porte sul router, verso questo NAS:
+#       7881/TCP   il ripiego per le reti che bloccano l'UDP
+#       7882/UDP   audio, video e schermo passano di qui
+#     Non passano dal reverse proxy e nessun proxy le aiuta: vanno aperte.
+#
+#   • i due record DNS, se ci si vuole parlare da fuori casa:
+#       talk.<dominio>   A   <il tuo indirizzo pubblico>
+#       sfu.<dominio>    A   <il tuo indirizzo pubblico>
+#     piu' le due voci nel reverse proxy — vedi deploy/proxy.md.
+#
+# Il primo accesso, perche' non esiste ancora nessun account:
+#
+#     docker exec -it pulse-talk node src/cli.mjs invita --ruolo admin
+
+services:
+  pulse-talk:
+    # ⇦ CAMBIA (1) — quale immagine.
+    #
+    #   ghcr.io/filippocaio/pulse-talk:latest   quella pubblicata su GHCR, che
+    #                                           esiste solo dopo che il workflow
+    #                                           `.github/workflows/immagine.yml`
+    #                                           e' partito su un tag.
+    #   pulse-talk:1.0.0                        quella gia' costruita su questo
+    #                                           NAS da `deploy/docker-compose.yml`.
+    #                                           TrueNAS usa lo stesso demone
+    #                                           Docker, quindi la trova senza
+    #                                           passare da nessun registry.
+    image: ghcr.io/filippocaio/pulse-talk:latest
+    # `missing` e non `always`: se l'immagine e' gia' su questa macchina la si
+    # usa, e non si va a cercarla in un registry dove magari non c'e'. E' cio'
+    # che fa funzionare la seconda riga qui sopra.
+    pull_policy: missing
+    container_name: pulse-talk
+    restart: unless-stopped
+    depends_on:
+      pulse-talk-sfu:
+        condition: service_started
+    # L'utente `apps` di TrueNAS. Il dataset dei dati deve appartenergli, o il
+    # server non riesce a scrivere talk.db e non parte.
+    user: "568:568"
+    environment:
+      TALK_ROOT: /dati
+      TALK_PORT: "8080"
+      TALK_HOST: 0.0.0.0
+
+      SFU_API_KEY: pulsetalk
+      # ⇦ CAMBIA (2) — una stringa lunga e casuale.
+      #
+      # Con questa si firmano i gettoni con cui le app entrano nelle stanze: chi
+      # la conosce puo' entrare ovunque. Se stai spostando un'installazione che
+      # gia' esisteva, incolla **la stessa** che hai nel `.env`, o i gettoni in
+      # giro smettono di valere e tutti vengono buttati fuori.
+      #
+      # Una nuova:  openssl rand -hex 32
+      SFU_API_SECRET: CAMBIAMI-CON-UNA-STRINGA-LUNGA-E-CASUALE
+
+      # ⇦ CAMBIA (3) — va d'accordo con use_external_ip qui sotto.
+      SFU_URL: wss://sfu.esempio.it
+
+      # La SFU gira sulla rete dell'host e non ha un nome dentro alla rete di
+      # Compose: la si raggiunge passando dal gateway. Questa non si tocca.
+      SFU_API_URL: http://host.docker.internal:7880
+
+      TALK_LOG_LEVEL: info
+      TALK_GETTONE_TTL: "21600"
+
+      # Il vincolo di versione per l'app installata. Vuoti: entra qualunque
+      # versione. Da alzare solo insieme alla pubblicazione dell'installer sul
+      # proprio feed, mai prima — vedi docs/NAS.md.
+      TALK_CLIENT_MIN: ""
+      TALK_CLIENT_TARGET: ""
+      TALK_CLIENT_MAX: ""
+
+      # I tetti. Alzarli qui e riavviare basta: le app li rileggono da
+      # /api/config a ogni ingresso, e nessuno deve reinstallare niente.
+      TALK_MAX_BITRATE_SCHERMO: "50000000"
+      TALK_MAX_FPS_SCHERMO: "60"
+      TALK_MAX_ALTEZZA_SCHERMO: "2160"
+      TALK_MAX_BITRATE_CAMERA: "12000000"
+      TALK_MAX_BITRATE_VOCE: "510000"
+      TALK_MAX_STREAM_PER_PERSONA: "4"
+
+      # Tutte facoltative, tutte spente. Senza, PulseTalk funziona lo stesso: le
+      # funzioni che le userebbero dicono che il server non e' configurato,
+      # invece di sparire senza spiegazioni. Si aggiungono anche dopo, dal
+      # pannello Server dentro all'applicazione.
+      TALK_AI_API_KEY: ""
+      TALK_TENOR_API_KEY: ""
+      TALK_GIPHY_API_KEY: ""
+      TALK_UNSPLASH_ACCESS_KEY: ""
+      SPOTIFY_CLIENT_ID: ""
+      SPOTIFY_CLIENT_SECRET: ""
+      SPOTIFY_REDIRECT_URI: ""
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - type: bind
+        # ⇦ CAMBIA (5) — la cartella sul NAS.
+        #
+        # Dentro ci va talk.db: qualche decina di kilobyte. Niente
+        # registrazioni, niente cache dei media, niente che cresca. Mettila su
+        # un dataset che fa gli snapshot: e' l'unica copia di account, spazi e
+        # messaggi.
+        source: /mnt/pool/pulsetalk/dati
+        target: /dati
+    ports:
+      # ⇦ CAMBIA (6) — la porta a cui puntera' il reverse proxy, o quella da
+      # aprire nel browser in rete locale. Sotto la 9000 TrueNAS si lamenta.
+      - "30080:8080"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:8080/salute').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+  pulse-talk-sfu:
+    image: livekit/livekit-server:v1.13.5
+    pull_policy: missing
+    container_name: pulse-talk-sfu
+    restart: unless-stopped
+    environment:
+      # Le chiavi non stanno nella configurazione: la configurazione si legge,
+      # il segreto no. Deve combaciare con SFU_API_SECRET qui sopra.
+      LIVEKIT_KEYS: "pulsetalk: CAMBIAMI-CON-UNA-STRINGA-LUNGA-E-CASUALE"
+      # Il file di configurazione della SFU, senza il file.
+      LIVEKIT_CONFIG: |
+        port: 7880
+        rtc:
+          # Una porta UDP sola invece dell'intervallo 50000-60000 di default: su
+          # un router di casa aprire diecimila porte per un servizio che ne usa
+          # una e' sproporzionato, e quasi nessuna interfaccia lo lascia fare
+          # senza dolore.
+          udp_port: 7882
+          tcp_port: 7881
+          # ⇦ CAMBIA (4) — insieme a SFU_URL qui sopra. true da internet,
+          # false in sola rete locale. Vedi la nota in cima al file.
+          use_external_ip: true
+        room:
+          # Le stanze le crea il piano di controllo, non chi arriva.
+          auto_create: false
+          # Cinque minuti di grazia dopo l'uscita dell'ultimo: chi cade e
+          # rientra ritrova la stanza invece di ricominciare da zero.
+          empty_timeout: 300
+          departure_timeout: 20
+        logging:
+          level: info
+    # La riga piu' importante del file.
+    #
+    # WebRTC funziona scoprendo da che indirizzo e porta arrivano i pacchetti e
+    # rispondendo li'. Dentro una rete bridge il NAT di Docker riscrive ogni
+    # pacchetto: la SFU vedrebbe tutti i partecipanti arrivare dallo stesso
+    # 172.x, e a cinquanta megabit al secondo quella riscrittura diventa il
+    # collo di bottiglia.
+    #
+    # Il prezzo e' che 7880, 7881 e 7882 devono essere libere sul NAS — quindi
+    # se ci gira gia' un PulseTalk messo su a mano, va fermato prima.
+    network_mode: host

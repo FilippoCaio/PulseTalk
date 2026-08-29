@@ -1,0 +1,65 @@
+# L'altro caso: da internet, con un dominio, e qualche chiave accesa.
+#
+# Serve a provare il ramo che il file di serie non tocca — `use_external_ip: true`,
+# l'indirizzo `wss://sfu.<dominio>`, e le variabili facoltative che compaiono solo
+# quando qualcuno le riempie.
+#
+# E' anche il file da cui parte `truenas/prova.py`, che rende il template con
+# questi valori e controlla che cio' che esce sia un Compose valido. Non prova
+# che l'app funzioni su TrueNAS — quello lo puo' dire solo un TrueNAS — ma
+# prova che il file che TrueNAS eseguirebbe si possa almeno leggere.
+
+images:
+  image:
+    repository: ghcr.io/filippocaio/pulse-talk
+    tag: latest
+  sfu_image:
+    repository: livekit/livekit-server
+    tag: v1.13.5
+
+consts:
+  talk_container_name: pulse-talk
+  sfu_container_name: pulse-talk-sfu
+  base_data_path: /dati
+  sfu_config_path: /etc/livekit.yaml
+  sfu_signal_port: 7880
+  sfu_tcp_port: 7881
+  sfu_udp_port: 7882
+
+storage:
+  data:
+    type: ix_volume
+    ix_volume_config:
+      dataset_name: dati
+
+ix_volumes:
+  data: /mnt/pool/ix-apps/pulse-talk/dati
+
+accesso:
+  modo: dominio
+  dominio: casa.it
+  indirizzo_locale: 192.168.1.10
+
+sfu:
+  chiave: pulsetalk
+  segreto: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+
+rete:
+  porta: 30080
+  host_ips: []
+
+run_as:
+  user: 568
+  group: 568
+
+extra:
+  ai_api_key: 'sk-finta'
+  ai_base_url: ''
+  spotify_client_id: ''
+  spotify_client_secret: ''
+  tenor_api_key: ''
+  giphy_api_key: ''
+  unsplash_access_key: ''
+  envs:
+    - name: TALK_MAX_BITRATE_SCHERMO
+      value: '25000000'

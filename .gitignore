@@ -44,3 +44,20 @@ app/build/icona.png
 # L'indirizzo del proprio server, cotto dentro alle build fatte in casa.
 # Fuori dal repo di proposito: la versione pubblica resta neutra.
 app/server.local
+# Dove caricare gli aggiornamenti: utente@host e cartella del proprio NAS.
+# Sta fuori da git per la stessa ragione di server.local — e' la rete di casa
+# di qualcuno, e non e' un valore predefinito per nessun altro.
+app/nas.local
+# Le copie del .env che installa.sh mette da parte prima di riscriverlo.
+deploy/.env.prima-di-*
+# Lo schema della Compose Specification, scaricato per far girare il controllo
+# facoltativo di truenas/prova.py. E' di qualcun altro e non va vendorizzato.
+truenas/compose-spec.json
+
+# Gli archivi che `rilascio/assembla.ps1 -Zip` mette insieme per una release.
+# Si rifanno in un secondo dai file che stanno gia' in `rilascio/server/`, e un
+# .zip in git e' un binario che cambia per intero a ogni versione.
+/rilascio/pacchetti/
+
+# La cache dei moduli Python, lasciata da truenas/prova.py.
+__pycache__/

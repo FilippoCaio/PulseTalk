@@ -33,24 +33,21 @@ files:
   - '!node_modules/@capacitor/android/**'
   - '!node_modules/@capacitor/*/android/**'
 
-# Dove l'app installata va a cercare le versioni nuove, e dove electron-builder
-# carica quando gli si passa --publish.
+# Dove l'app installata va a cercare le versioni nuove.
+#
+# Il server di PulseTalk stesso, non GitHub: e' lo stesso indirizzo a cui il
+# client e' gia' collegato, quindi non c'e' un nome nuovo da esporre ne' un
+# repository da tenere pubblico. Chi puo' entrare in una stanza puo' gia'
+# scaricare l'aggiornamento, e non serve altro permesso.
 #
 # Il file che conta e' latest.yml: lo genera la build accanto all'installer, e
-# senza quello caricato nella release l'aggiornatore non trova niente anche se
-# l'exe c'e'. Vale solo per l'installer: il portabile non si aggiorna da solo,
-# e l'app lo sa e lo dice invece di provarci.
-# Dove l app installata cerca le versioni nuove.
+# senza quello caricato nel feed non si aggiorna nessuno, anche con l'exe al suo
+# posto. Vale solo per l'installer — il portabile non si aggiorna da solo, e
+# l'app lo sa e lo dice invece di provarci.
 #
-# Il server di PulseTalk stesso, non GitHub: e lo stesso indirizzo a cui il
-# client e gia collegato, quindi non c e un nome nuovo da esporre ne un
-# repository da tenere pubblico. Chi puo entrare in una stanza puo gia
-# scaricare l aggiornamento, e non serve altro permesso.
-#
-# L indirizzo qui e un segnaposto: quello vero lo passa la compilazione,
-# letto da server.local, cosi il repo pubblico resta senza riferimenti a
-# nessuna rete. Il file che conta e latest.yml, che electron-builder genera
-# accanto all installer.
+# L'indirizzo qui e' un segnaposto: quello vero lo passa la compilazione,
+# letto da `server.local`, cosi' il repo pubblico resta senza riferimenti a
+# nessuna rete.
 publish:
   provider: generic
   url: https://esempio.invalid/aggiornamenti
@@ -62,10 +59,78 @@ win:
     - portable
   signAndEditExecutable: true
 
+# L'installer, e la combinazione che rende l'aggiornamento silenzioso.
+#
+# Il punto di partenza e' `quitAndInstall(true, true)` in `main/aggiorna.ts`: il
+# primo argomento diventa `/S` sulla riga di comando dell'installer. Perche' /S
+# faccia davvero quello che dice, la configurazione qui sotto deve reggerlo.
+#
+# `oneClick: false` RESTA, e non e' una concessione: nei template NSIS di
+# electron-builder 26 l'installer assistito ha rami espliciti per il silenzio —
+# `installer.nsi` eleva da solo quando deve aggiornare un'installazione per
+# tutti gli utenti trovata muta, e `installSection.nsh` rilancia l'applicazione
+# alla fine proprio nel caso "assistito e silenzioso" (`isForceRun && Silent`),
+# che e' il secondo argomento di `quitAndInstall`. Prima installazione guidata e
+# aggiornamento silenzioso, oggi, non sono in conflitto.
+#
+# `perMachine: false` e' la riga che toglie di mezzo l'unica interruzione che
+# resterebbe. Un'installazione per tutti gli utenti vive in Program Files e
+# aggiornarla vuole i diritti di amministratore: l'installer li chiede da solo,
+# ma li chiede con la finestra di Windows in faccia, e un aggiornamento che
+# apre una finestra di sistema non e' silenzioso. Per utente si installa in
+# %LOCALAPPDATA%\Programs e non serve niente a nessuno.
+#
+# `allowElevation` resta acceso lo stesso: chi nella pagina della modalita' ha
+# scelto "tutti gli utenti" deve poter continuare ad aggiornarsi, con la sua
+# conferma, invece di restare fermo per sempre a una versione.
+#
+# `allowToChangeInstallationDirectory` resta: la pagina della cartella e'
+# marcata `skipPageIfUpdated` nei template, quindi non compare mai durante un
+# aggiornamento — silenzioso o no.
+#
+# `differentialPackage` e' gia' il comportamento di serie (`!isPortable &&
+# differentialPackage !== false`), ed e' scritto per non perderlo per
+# distrazione: e' cio' che fa scaricare i pezzi cambiati invece di 95 MB ogni
+# volta, e ha bisogno che accanto all'installer resti anche il `.blockmap` —
+# `rilascia.ps1` e `rilascia-nas.ps1` lo caricano gia'.
+#
+# `artifactName` con i trattini, e non il nome di serie con gli SPAZI.
+#
+# Il nome di serie e' "${productName} Setup ${version}.exe", e su un feed
+# generico funziona: `latest.yml` lo scrive con l'URL codificato e nessuno se ne
+# accorge. Su GitHub no, e si rompe in due punti diversi che si sommano:
+#
+#   - GitHub non accetta spazi nei nomi degli allegati e li sostituisce da solo
+#     quando li carichi;
+#   - electron-updater, dalla sua parte, costruisce l'indirizzo da scaricare
+#     rimpiazzando ogni spazio con un TRATTINO — `GitHubProvider.resolveFiles`
+#     nella 6.8.9 fa letteralmente `p.replace(/ /g, "-")`.
+#
+# Due sostituzioni diverse sullo stesso nome: l'allegato finisce li' con un
+# nome, e l'aggiornamento automatico ne chiede un altro. Il risultato e' un 404
+# che si vede solo dal client, e solo al momento dell'aggiornamento.
+#
+# Senza spazi il problema non esiste da nessuna delle due parti, ed e' anche il
+# nome che aveva la release 0.3.1 — questa riga la rimette, non la inventa.
+#
+# NON si tocca senza toccare anche `rilascia-nas.ps1` e
+# `.github/workflows/rilascio.yml`: sono loro che cercano il file in `release/`
+# per nome e lo caricano accanto a `latest.yml`. Un nome cambiato qui e non li'
+# produce un feed che punta a un file che non esiste.
+#
+# Cambiarlo costa una cosa sola, ed e' accettabile: l'aggiornamento parziale
+# salta per il solo passaggio dal vecchio nome al nuovo, perche' il `.blockmap`
+# della versione installata sta sul feed con l'altro nome. electron-updater se
+# ne accorge e scarica il pacchetto intero, che e' esattamente cosa deve fare.
+# Dalla versione dopo torna parziale da solo.
 nsis:
   oneClick: false
+  perMachine: false
+  allowElevation: true
   allowToChangeInstallationDirectory: true
+  differentialPackage: true
   shortcutName: PulseTalk
+  artifactName: PulseTalk-Setup-${version}.exe
 
 portable:
   artifactName: PulseTalk-portable-${version}.exe

@@ -1,0 +1,44 @@
+{
+    "pulse": {
+        "pulse-talk": {
+            "app_readme": "# PulseTalk\n\nSpazi, canali di testo e di voce, condivisione dello schermo **senza i tetti che\nmette Discord**, su una macchina che e' tua.\n\nSchermo fino a 4K60 a 50 Mbit/s con la nitidezza tenuta sopra ai fotogrammi —\nche e' la differenza fra del codice condiviso leggibile e una macchia colorata —\nvoce fino a 510 kbit/s stereo, e l'audio di sistema che parte insieme a cio' che\nstai mostrando.\n\n## Due container\n\n- **pulse-talk** — decide chi entra e in quale stanza. Non vede un byte di audio.\n- **pulse-talk-sfu** — LiveKit: riceve i pacchetti e li ripete. Non transcodifica\n  niente, ed e' la ragione per cui tutto questo gira su un NAS invece che su una\n  scheda video.\n\n## Prima di installare\n\nServe avere presenti tre cose, perche' due l'installazione non le puo' fare:\n\n1. **7881/TCP e 7882/UDP inoltrate sul router** verso questo NAS, se ci si vuole\n   parlare da fuori casa. Senza, la chiamata si collega e resta muta — e non\n   compare nessun errore da nessuna parte.\n2. **Due record DNS** (`talk.` e `sfu.` del tuo dominio) e due voci nel reverse\n   proxy, sempre solo se si vuole entrare da internet.\n3. **Un segreto per la SFU**: una stringa lunga e casuale, da incollare nel\n   campo apposta. `openssl rand -hex 32` ne produce una.\n\nIn sola rete locale non serve niente di tutto questo.\n\n## Il primo accesso\n\nNon esiste nessun account finche' non se ne crea uno, e il primo invito si crea\nda qui:\n\n```\ndocker exec -it pulse-talk node src/cli.mjs invita --ruolo admin\n```\n",
+            "categories": [
+                "media",
+                "networking"
+            ],
+            "description": "Voce, video e schermo senza i tetti di Discord, su una macchina che e' tua.",
+            "healthy": true,
+            "healthy_error": null,
+            "home": "https://github.com/FilippoCaio/PulseTalk",
+            "location": "/trains/pulse/pulse-talk",
+            "latest_version": "1.0.0",
+            "latest_app_version": "1.0.0",
+            "latest_human_version": "1.0.0_1.0.0",
+            "last_update": "2026-08-29 00:00:00",
+            "name": "pulse-talk",
+            "recommended": false,
+            "title": "PulseTalk",
+            "description_url": "https://github.com/FilippoCaio/PulseTalk",
+            "maintainers": [
+                {
+                    "name": "FilippoCaio",
+                    "url": "https://github.com/FilippoCaio/PulseTalk",
+                    "email": "noreply@example.invalid"
+                }
+            ],
+            "tags": [
+                "voice",
+                "video",
+                "screen-sharing",
+                "chat",
+                "webrtc"
+            ],
+            "screenshots": [],
+            "sources": [
+                "https://github.com/FilippoCaio/PulseTalk",
+                "https://github.com/livekit/livekit"
+            ],
+            "icon_url": "https://raw.githubusercontent.com/FilippoCaio/PulseTalk/main/app/build/icona.png"
+        }
+    }
+}

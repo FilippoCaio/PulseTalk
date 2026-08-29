@@ -1,0 +1,29 @@
+# I valori fissi: quelli che non si chiedono a nessuno.
+#
+# Stanno qui e non dentro al template per la ragione per cui esiste questo file
+# nel formato di TrueNAS: le immagini si aggiornano a ogni rilascio, e vanno
+# trovate in un posto solo invece che sparse dentro alla logica.
+
+images:
+  image:
+    repository: ghcr.io/filippocaio/pulse-talk
+    tag: latest
+  sfu_image:
+    repository: livekit/livekit-server
+    # Non `latest`, e non e' pignoleria: la SFU che si aggiorna da sola sotto a
+    # una chiamata in corso e' esattamente la cosa che non si vuole su una
+    # macchina che sta in casa. Si alza qui, quando lo si decide.
+    tag: v1.13.5
+
+consts:
+  talk_container_name: pulse-talk
+  sfu_container_name: pulse-talk-sfu
+  # Dentro al container. Sul NAS ci finisce talk.db e, se si decide di servire
+  # il proprio feed, la cartella `aggiornamenti`.
+  base_data_path: /dati
+  sfu_config_path: /etc/livekit.yaml
+  # Le porte della SFU non si spostano: livekit gira sulla rete dell'host per
+  # non far passare i pacchetti dal NAT di Docker, e li' i numeri sono quelli.
+  sfu_signal_port: 7880
+  sfu_tcp_port: 7881
+  sfu_udp_port: 7882

@@ -1,0 +1,161 @@
+{#-
+  Il Compose che TrueNAS finisce per eseguire.
+
+  Jinja2 puro: nessuna chiamata a `ix_lib`. Gli app del catalogo ufficiale
+  passano da una libreria Python di iX che va vendorizzata dentro all'app e
+  tenuta allineata versione per versione, con tanto di hash dichiarato in
+  app.yaml. Per un train di terze parti quella dipendenza e' il pezzo che si
+  rompe per primo: basta un rilascio di TrueNAS e l'app non renderizza piu'.
+  Qui il Compose lo scriviamo noi, e cio' che esce e' lo stesso file che
+  `deploy/docker-compose.nas.yml` mette in mano a chi installa a mano.
+
+  Due cose che vale la pena sapere leggendo:
+
+  1. la SFU gira sulla rete dell'host (`network_mode: host`) e non in bridge.
+     Dentro una rete bridge il NAT di Docker riscrive ogni pacchetto e la SFU
+     vedrebbe tutti i partecipanti arrivare dallo stesso indirizzo 172.x: a
+     cinquanta megabit al secondo quella riscrittura diventa il collo di
+     bottiglia. Il prezzo e' che 7880, 7881 e 7882 devono essere libere.
+
+  2. la configurazione della SFU nasce dalle risposte, non da un file da
+     modificare a mano dopo. `use_external_ip` e `SFU_URL` sono i due
+     interruttori che vanno girati insieme, e qui li gira la stessa risposta:
+     e' l'unico modo per non ritrovarsi una chiamata che si collega e resta
+     muta senza nessun errore da nessuna parte.
+-#}
+{%- set c = values.consts -%}
+{%- set daInternet = values.accesso.modo == 'dominio' -%}
+{%- set sfuUrl = 'wss://sfu.' ~ values.accesso.dominio if daInternet else 'ws://' ~ values.accesso.indirizzo_locale ~ ':' ~ c.sfu_signal_port -%}
+{%- set datiHost = values.storage.data.host_path_config.path if values.storage.data.type == 'host_path' else values.ix_volumes.data -%}
+
+{#- La configurazione della SFU, che viaggia in una variabile d'ambiente.
+
+    `LIVEKIT_CONFIG` e' il modo che livekit-server offre per ricevere il proprio
+    file di configurazione senza avere un file: si legge in `cmd/server/main.go`,
+    accanto a `LIVEKIT_KEYS`. Prima questa stessa cosa stava in un `configs:` con
+    il contenuto in linea — che e' Compose valido, ma e' una funzione arrivata
+    con Compose 2.23 e su una macchina che ne ha una piu' vecchia fallisce.
+    Dentro alla casella "Install via YAML" di TrueNAS non c'e' modo di
+    aggiungere un file accanto, quindi meno cose devono esistere fuori dal
+    Compose e meglio e'.
+
+    Una porta UDP sola invece dell'intervallo 50000-60000 di default: su un
+    router di casa aprire diecimila porte per un servizio che ne usa una e'
+    sproporzionato, e quasi nessuna interfaccia lo lascia fare senza dolore. -#}
+{%- set livekit -%}
+port: {{ c.sfu_signal_port }}
+rtc:
+  udp_port: {{ c.sfu_udp_port }}
+  tcp_port: {{ c.sfu_tcp_port }}
+  # true: annuncia SOLO l'indirizzo pubblico. Da dentro casa quell'indirizzo
+  # quasi nessun router lo sa rimandare indietro, quindi in rete locale va false.
+  use_external_ip: {{ 'true' if daInternet else 'false' }}
+room:
+  # Le stanze le crea il piano di controllo, non chi arriva.
+  auto_create: false
+  empty_timeout: 300
+  departure_timeout: 20
+logging:
+  level: info
+{%- endset %}
+
+services:
+  {{ c.talk_container_name }}:
+    image: {{ values.images.image.repository }}:{{ values.images.image.tag }}
+    user: "{{ values.run_as.user }}:{{ values.run_as.group }}"
+    restart: unless-stopped
+    depends_on:
+      {{ c.sfu_container_name }}:
+        condition: service_started
+    environment:
+      TALK_ROOT: {{ c.base_data_path }}
+      TALK_PORT: "8080"
+      TALK_HOST: 0.0.0.0
+      SFU_API_KEY: {{ values.sfu.chiave }}
+      SFU_API_SECRET: {{ values.sfu.segreto }}
+      SFU_URL: {{ sfuUrl }}
+      # La SFU sta sulla rete dell'host e non ha un nome dentro alla rete di
+      # Compose: la si raggiunge passando dal gateway.
+      SFU_API_URL: http://host.docker.internal:{{ c.sfu_signal_port }}
+      TALK_LOG_LEVEL: info
+{%- if values.extra.ai_api_key %}
+      TALK_AI_API_KEY: {{ values.extra.ai_api_key }}
+{%- endif %}
+{%- if values.extra.ai_base_url %}
+      TALK_AI_BASE_URL: {{ values.extra.ai_base_url }}
+{%- endif %}
+{%- if values.extra.spotify_client_id %}
+      SPOTIFY_CLIENT_ID: {{ values.extra.spotify_client_id }}
+      SPOTIFY_CLIENT_SECRET: {{ values.extra.spotify_client_secret }}
+      SPOTIFY_REDIRECT_URI: {{ 'https://talk.' ~ values.accesso.dominio ~ '/api/musica/spotify/ritorno' if daInternet else '' }}
+{%- endif %}
+{%- if values.extra.tenor_api_key %}
+      TALK_TENOR_API_KEY: {{ values.extra.tenor_api_key }}
+{%- endif %}
+{%- if values.extra.giphy_api_key %}
+      TALK_GIPHY_API_KEY: {{ values.extra.giphy_api_key }}
+{%- endif %}
+{%- if values.extra.unsplash_access_key %}
+      TALK_UNSPLASH_ACCESS_KEY: {{ values.extra.unsplash_access_key }}
+{%- endif %}
+{%- for e in values.extra.envs %}
+      {{ e.name }}: {{ e.value }}
+{%- endfor %}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - type: bind
+        source: {{ datiHost }}
+        target: {{ c.base_data_path }}
+    ports:
+{%- if values.rete.host_ips %}
+{%- for ip in values.rete.host_ips %}
+      - "{{ ip }}:{{ values.rete.porta }}:8080"
+{%- endfor %}
+{%- else %}
+      - "{{ values.rete.porta }}:8080"
+{%- endif %}
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/salute').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+  {{ c.sfu_container_name }}:
+    image: {{ values.images.sfu_image.repository }}:{{ values.images.sfu_image.tag }}
+    restart: unless-stopped
+    environment:
+      LIVEKIT_KEYS: "{{ values.sfu.chiave }}: {{ values.sfu.segreto }}"
+      LIVEKIT_CONFIG: |
+{{ livekit | indent(8, true) }}
+    # La riga piu' importante del file: vedi la nota in cima.
+    network_mode: host
+
+x-portals:
+  - name: PulseTalk
+    scheme: {{ 'https' if daInternet else 'http' }}
+    host: {{ ('talk.' ~ values.accesso.dominio) if daInternet else values.accesso.indirizzo_locale }}
+    port: {{ 443 if daInternet else values.rete.porta }}
+    path: /
+
+x-notes: |
+  Restano due cose che nessun installatore puo' fare al posto tuo.
+
+  1. LE PORTE SUL ROUTER, verso questo NAS:
+       7881/TCP   ripiego per le reti che bloccano UDP
+       7882/UDP   audio, video e schermo passano di qui
+
+     Senza, le chiamate si collegano e restano MUTE. Non compare nessun
+     errore da nessuna parte: e' il guasto piu' difficile da riconoscere.
+
+  2. I DUE RECORD DNS, se hai scelto "da internet":
+       talk.<dominio>   A   <il tuo indirizzo pubblico>
+       sfu.<dominio>    A   <il tuo indirizzo pubblico>
+
+     E le due voci nel reverse proxy che gia' gira su questa macchina:
+       talk.<dominio>  ->  http://<ip-del-nas>:{{ values.rete.porta }}
+       sfu.<dominio>   ->  http://<ip-del-nas>:{{ c.sfu_signal_port }}   (con WebSocket)
+
+  Il primo invito si crea da qui, perche' non esiste ancora nessun account:
+     docker exec -it {{ c.talk_container_name }} node src/cli.mjs invita --ruolo admin

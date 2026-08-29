@@ -1,0 +1,19 @@
+# La scheda dell'app nell'elenco.
+#
+# Nel catalogo ufficiale la genera la CI di iX a partire da app.yaml. Qui e'
+# scritta a mano e non c'e' niente che la tenga allineata: categorie, icona e
+# tag sono ripetuti in `1.0.0/app.yaml`, e cambiarli in un posto solo lascia i
+# due file a raccontare due cose diverse. Cambiandone uno, cambiare anche
+# l'altro — e `python truenas/prova.py` non se ne accorge, perche' guarda il
+# Compose e non i metadati.
+categories:
+  - media
+  - networking
+icon_url: https://raw.githubusercontent.com/FilippoCaio/PulseTalk/main/app/build/icona.png
+screenshots: []
+tags:
+  - voice
+  - video
+  - screen-sharing
+  - chat
+  - webrtc

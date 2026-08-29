@@ -23,9 +23,21 @@ param(
     [ValidateSet('patch', 'minor', 'major')]
     [string]$Tipo = 'patch',
     [string]$Versione = '',
-    # Dove copiare. L'utente e l'host del NAS, e la cartella servita da /aggiornamenti.
-    [string]$Nas = 'root@192.168.1.10',
-    [string]$Cartella = '/mnt/Ratchet/pulsetalk/dati/aggiornamenti',
+    # Dove copiare: utente@host del NAS, e la cartella che il server espone su
+    # /aggiornamenti.
+    #
+    # Vuoti di proposito. Prima qui c'erano un indirizzo IP e un percorso veri,
+    # e voleva dire che chiunque clonasse il repository si portava dietro la
+    # rete di casa di qualcun altro — e che chi voleva pubblicare sulla propria
+    # istanza doveva modificare lo script invece di usarlo.
+    #
+    # Si passano sulla riga di comando, oppure si scrivono una volta sola in
+    # `app/nas.local`, che non finisce in git:
+    #
+    #     nas=root@192.168.1.10
+    #     cartella=/mnt/pool/pulsetalk/dati/aggiornamenti
+    [string]$Nas = '',
+    [string]$Cartella = '',
     [switch]$Prova
 )
 
@@ -50,6 +62,46 @@ $server = (Get-Content $fileServer | Where-Object { $_.Trim() -and -not $_.Start
 $feed = "$server/aggiornamenti"
 Nota "server: $server"
 Nota "feed:   $feed"
+
+# -- 1b. Dove caricare ------------------------------------------------------
+#
+# Prima erano due costanti dentro allo script, e quindi lo script funzionava
+# per una macchina sola. Adesso: prima i parametri, poi `app/nas.local`, e se
+# non c'e' ne' l'uno ne' l'altro si dice cosa scrivere invece di provare a
+# indovinare un indirizzo.
+
+$fileNas = Join-Path $app 'nas.local'
+if (Test-Path $fileNas) {
+    foreach ($riga in Get-Content $fileNas) {
+        $pulita = $riga.Trim()
+        if (-not $pulita -or $pulita.StartsWith('#')) { continue }
+        $pezzi = $pulita.Split('=', 2)
+        if ($pezzi.Count -ne 2) { continue }
+        switch ($pezzi[0].Trim().ToLower()) {
+            'nas'      { if (-not $Nas)      { $Nas = $pezzi[1].Trim() } }
+            'cartella' { if (-not $Cartella) { $Cartella = $pezzi[1].Trim() } }
+        }
+    }
+}
+
+if (-not $Nas -or -not $Cartella) {
+    throw @"
+Non so dove caricare.
+
+Passali sulla riga di comando:
+  .\rilascia-nas.ps1 -Nas root@192.168.1.10 -Cartella /mnt/pool/pulsetalk/dati/aggiornamenti
+
+oppure scrivili una volta sola in $fileNas (non finisce in git):
+  nas=root@192.168.1.10
+  cartella=/mnt/pool/pulsetalk/dati/aggiornamenti
+
+La cartella e' quella montata su /dati nel container, con dentro
+'aggiornamenti'. Il server la espone su /aggiornamenti solo se esiste
+all'avvio: se l'hai appena creata, riavvia il container.
+"@
+}
+Nota "nas:    $Nas"
+Nota "dove:   $Cartella"
 
 # -- 2. La versione ---------------------------------------------------------
 
@@ -95,9 +147,13 @@ try {
 
 Passo "Carico sul NAS"
 $rilascio = Join-Path $app 'release'
+# I trattini vengono da `artifactName` in electron-builder.yml, dove c'e'
+# scritto perche' non sono il nome di serie. Questi tre nomi e quelli li' sono
+# la stessa cosa scritta due volte: cambiarne uno solo produce un feed che
+# punta a un file che non esiste.
 $file = @(
-    (Join-Path $rilascio "PulseTalk Setup $nuova.exe"),
-    (Join-Path $rilascio "PulseTalk Setup $nuova.exe.blockmap"),
+    (Join-Path $rilascio "PulseTalk-Setup-$nuova.exe"),
+    (Join-Path $rilascio "PulseTalk-Setup-$nuova.exe.blockmap"),
     (Join-Path $rilascio 'latest.yml')
 )
 foreach ($f in $file) { if (-not (Test-Path $f)) { throw "Manca $f" } }

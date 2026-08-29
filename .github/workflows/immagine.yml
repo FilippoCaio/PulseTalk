@@ -1,0 +1,127 @@
+# Costruisce e pubblica l'immagine del server su GHCR.
+#
+# Parte SOLO su un tag `vX.Y.Z`. Non su ogni push, e non a mano da qui: una
+# pubblicazione e' una cosa che si decide, non una conseguenza di aver salvato
+# un file. Il tag e' quella decisione.
+#
+# Perche' due architetture e non una: i NAS ARM esistono e sono meta' del
+# pubblico di questa funzione — un Synology recente, un Raspberry con dei dischi
+# attaccati, un mini PC ARM. Un'immagine solo amd64 su quelle macchine non parte
+# e basta, e il messaggio che Docker restituisce ("exec format error") non dice
+# a nessuno cosa fare.
+#
+# La build arm64 gira sotto QEMU, ma non e' lenta quanto ci si aspetterebbe:
+# `better-sqlite3` e' un modulo nativo e pubblica i binari gia' pronti — per la
+# 12.11.1 c'e' `node-v137-linux-arm64`, che e' l'ABI di Node 24, cioe' proprio
+# quella dell'immagine di base. `prebuild-install` lo scarica e non compila
+# niente.
+#
+# Il toolchain nel Dockerfile resta comunque, ed e' la rete sotto: il giorno in
+# cui una versione di better-sqlite3 non pubblica il prebuild per quell'ABI, la
+# build rallenta di parecchio invece di fallire.
+
+name: Immagine del server
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+  # Un giro a mano resta possibile, ma va chiesto: serve a provare la ricetta
+  # senza dover creare un tag finto.
+  workflow_dispatch:
+    inputs:
+      versione:
+        description: 'Versione da etichettare (X.Y.Z). Vuota: solo "prova".'
+        required: false
+        default: ''
+
+env:
+  # GHCR vuole il nome del proprietario tutto minuscolo, e il nome utente su
+  # GitHub non lo e' per forza.
+  IMMAGINE: ghcr.io/${{ github.repository_owner }}/pulse-talk
+
+jobs:
+  pubblica:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # L'unico permesso di scrittura che serve, e riguarda solo il registry.
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Il nome dell'immagine, minuscolo
+        id: nome
+        run: echo "immagine=$(echo '${{ env.IMMAGINE }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+      - name: La versione
+        id: versione
+        run: |
+          set -eu
+          if [ -n "${{ inputs.versione }}" ]; then
+            versione='${{ inputs.versione }}'
+          elif [ "${GITHUB_REF_TYPE}" = 'tag' ]; then
+            versione="${GITHUB_REF_NAME#v}"
+          else
+            versione=''
+          fi
+          echo "versione=$versione" >> "$GITHUB_OUTPUT"
+          # Il minore si ricava dal completo: chi scrive `:1.2` nel compose
+          # riceve l'ultima patch di quella riga senza toccare piu' niente.
+          case "$versione" in
+            *.*.*) echo "minore=${versione%.*}" >> "$GITHUB_OUTPUT" ;;
+            *) echo "minore=" >> "$GITHUB_OUTPUT" ;;
+          esac
+
+      # QEMU serve a costruire arm64 su una macchina amd64. Senza, il passo
+      # successivo dichiara di saper fare arm64 e poi fallisce dentro a `npm ci`.
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          # Il gettone di serie del job. Nessun segreto da configurare a mano, e
+          # nessun segreto che possa restare valido dopo la fine del job.
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Etichette
+        id: meta
+        run: |
+          set -eu
+          immagine='${{ steps.nome.outputs.immagine }}'
+          versione='${{ steps.versione.outputs.versione }}'
+          minore='${{ steps.versione.outputs.minore }}'
+          if [ -n "$versione" ]; then
+            # `latest` si sposta solo sui tag veri: una prova a mano non deve
+            # diventare l'immagine che scaricano tutti.
+            echo "tag=$immagine:$versione,$immagine:$minore,$immagine:latest" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=$immagine:prova" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: ./server
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tag }}
+          # La cache di GitHub Actions: senza, ogni rilascio ricompila
+          # better-sqlite3 sotto QEMU da capo, e sono decine di minuti.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false
+          labels: |
+            org.opencontainers.image.title=PulseTalk
+            org.opencontainers.image.description=Il piano di controllo di PulseTalk
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.licenses=MIT
+            org.opencontainers.image.version=${{ steps.versione.outputs.versione }}
+
+      - name: Dove e' finita
+        run: |
+          echo "Pubblicata: ${{ steps.meta.outputs.tag }}"
+          echo "Ricordati che un pacchetto GHCR nasce privato: va reso pubblico"
+          echo "una volta sola, dalla pagina del pacchetto su GitHub."

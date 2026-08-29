@@ -194,6 +194,22 @@ non farcela e' il processore o la linea.
 
 ## Installazione
 
+> **Non hai mai visto questo progetto?** Non serve clonare niente ne' compilare
+> niente. Tutto quello che si scarica e si installa sta in
+> **[`rilascio/`](rilascio/)**, diviso nei due lati che si installano su
+> macchine diverse:
+>
+> - [`rilascio/server/`](rilascio/server/) — sei file, un `installa.sh` che fa
+>   le domande, e la strada per TrueNAS;
+> - [`rilascio/client/`](rilascio/client/) — dove si scarica l'applicazione e
+>   cosa succede alla prima apertura.
+>
+> Le guide lunghe, per quando qualcosa non torna, restano
+> [`docs/NAS.md`](docs/NAS.md) e [`truenas/README.md`](truenas/README.md).
+>
+> Quello che segue e' l'installazione **dal sorgente**: serve a chi ha il
+> repository clonato e vuole che `up` ricompili cio' che ha appena scritto.
+
 Serve Docker con il plugin compose, su qualunque macchina che resti accesa: un
 NAS, un mini PC, un vecchio portatile. Su TrueNAS SCALE Docker c'e' nativo
 dalla 24.10 (*Electric Eel*); su Debian, Ubuntu o Synology si installa come al

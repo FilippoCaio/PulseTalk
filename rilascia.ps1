@@ -131,6 +131,15 @@ try {
     } finally { Pop-Location }
     Bene "compila"
 
+    # Lo stesso controllo che fa `rilascio.yml` come primo passo, ma qui, prima
+    # che il tag esista. Una copia scaduta scoperta dall'Action costa un tag da
+    # togliere a mano da due posti; scoperta adesso costa una riga di comando.
+    Passo "Controllo le copie del lato server"
+    & (Join-Path $radice 'rilascio/assembla.ps1') -Verifica
+    if ($LASTEXITCODE -ne 0) {
+        throw "rilascio/server/ e' fuori sincrono. Rimetti a posto con .\rilascio\assembla.ps1 e ricomincia."
+    }
+
     if ($Prova) {
         Write-Host ""
         Write-Host "  -Prova: mi fermo qui. Non ho toccato git." -ForegroundColor Yellow
@@ -175,8 +184,14 @@ try {
     Write-Host "  Fatto. Adesso tocca a GitHub:" -ForegroundColor Green
     Write-Host "    $url/actions" -ForegroundColor White
     Write-Host ""
-    Write-Host "  Quando l'Action diventa verde, la release $tag e' pubblica e i" -ForegroundColor DarkGray
-    Write-Host "  client la trovano alla prima riapertura." -ForegroundColor DarkGray
+    Write-Host "  Sul tag $tag partono due workflow:" -ForegroundColor DarkGray
+    Write-Host "    immagine.yml   pubblica l'immagine del server su GHCR" -ForegroundColor DarkGray
+    Write-Host "    rilascio.yml   compila l'installer e apre la release COME BOZZA" -ForegroundColor DarkGray
+    Write-Host ""
+    Write-Host "  La bozza e' l'ultimo passo che resta a mano, ed e' voluto: finche'" -ForegroundColor DarkGray
+    Write-Host "  resta tale i suoi allegati non sono raggiungibili e nessuno si" -ForegroundColor DarkGray
+    Write-Host "  aggiorna. Scarica l'installer, provalo, e solo dopo premi Publish." -ForegroundColor DarkGray
+    Write-Host "    $url/releases" -ForegroundColor White
     Write-Host ""
 
     Start-Process "$url/actions"

@@ -1,0 +1,200 @@
+# Compila l'applicazione e prepara la release, con dentro tutti e due i lati.
+#
+# Il gemello di `immagine.yml`, e parte sullo stesso tag: quello pubblica il
+# server su GHCR, questo compila il client per Windows e mette insieme la
+# pagina della release. Due workflow e non uno perche' girano su sistemi
+# operativi diversi — `electron-builder --win` un `.exe` da Linux non lo fa — e
+# perche' se uno dei due fallisce l'altro non ha motivo di essere trascinato
+# giu' con lui.
+#
+# LA RELEASE NASCE COME BOZZA, sempre. Finche' resta tale i suoi allegati non
+# sono raggiungibili, `latest.yml` nemmeno, e quindi nessuno si aggiorna. Il
+# momento in cui una versione diventa quella che scaricano tutti resta una
+# decisione presa a mano, con un pulsante, dopo aver provato l'installer.
+#
+# Cosa finisce fra gli allegati:
+#
+#   lato client   PulseTalk-Setup-X.Y.Z.exe      l'installer
+#                 ...exe.blockmap                i pezzi, per l'aggiornamento parziale
+#                 latest.yml                     senza questo non si aggiorna nessuno
+#                 PulseTalk-portable-X.Y.Z.exe   un file solo, che non si aggiorna
+#
+#   lato server   pulsetalk-server-<sua versione>.zip
+#
+# Il numero del pacchetto del server non e' quello del tag, ed e' voluto: il
+# piano di controllo ha una sua versione, che cammina piu' lentamente
+# dell'interfaccia. Vedi `rilascio/LEGGIMI.md`.
+
+name: Rilascio
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+  # A mano si puo', ma va chiesto: serve a provare la ricetta senza creare un
+  # tag finto. Senza un numero compila e allega gli artefatti al workflow,
+  # invece di aprire una release.
+  workflow_dispatch:
+    inputs:
+      versione:
+        description: 'Versione da rilasciare (X.Y.Z). Vuota: compila e basta, nessuna release.'
+        required: false
+        default: ''
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    permissions:
+      # L'unico permesso di scrittura, e serve solo a creare la bozza.
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      # Prima di compilare qualunque cosa: i file in `rilascio/server/` sono
+      # copie, e le copie invecchiano in silenzio. Una copia scaduta deve
+      # fermare la pubblicazione, non finirci dentro.
+      - name: Le copie del lato server sono allineate
+        shell: pwsh
+        run: .\rilascio\assembla.ps1 -Verifica
+
+      - name: Il numero
+        id: versione
+        shell: bash
+        run: |
+          set -eu
+          if [ -n "${{ inputs.versione }}" ]; then
+            versione='${{ inputs.versione }}'
+          elif [ "${GITHUB_REF_TYPE}" = 'tag' ]; then
+            versione="${GITHUB_REF_NAME#v}"
+          else
+            versione=''
+          fi
+          echo "versione=$versione" >> "$GITHUB_OUTPUT"
+          echo "server=$(node -p "require('./server/package.json').version")" >> "$GITHUB_OUTPUT"
+          # Il numero in app/package.json decide come electron-builder chiama i
+          # file. Se il tag dice altro ha ragione il tag: e' quello che la
+          # gente vede, ed e' quello che finira' nei nomi degli allegati.
+          if [ -n "$versione" ]; then
+            ( cd app && npm version "$versione" --no-git-tag-version --allow-same-version )
+          fi
+
+      - name: Le dipendenze
+        working-directory: app
+        run: npm ci
+
+      - name: Compilo
+        working-directory: app
+        run: |
+          npm run build
+          npm run icon
+
+      # `--publish never`: gli allegati li decide il passo finale, in un posto
+      # solo. Se pubblicasse anche electron-builder ci sarebbero due cose che
+      # scrivono sulla stessa release, e la seconda troverebbe i file gia' li'.
+      #
+      # Il provider invece diventa `github`, ed e' quello che finisce in
+      # `app-update.yml` dentro all'applicazione: un installer scaricato da qui
+      # cerca gli aggiornamenti qui. Chi ospita un server proprio non resta
+      # legato a questa scelta — il feed dichiarato dal server vince su quello
+      # incorporato, ed e' il motivo per cui questa riga non e' una decisione
+      # presa per tutti.
+      - name: L'installer
+        working-directory: app
+        run: >
+          npx electron-builder --win
+          -c.publish.provider=github
+          -c.publish.owner=${{ github.repository_owner }}
+          -c.publish.repo=${{ github.event.repository.name }}
+          --publish never
+
+      - name: Il pacchetto del server
+        shell: pwsh
+        run: .\rilascio\assembla.ps1 -Zip -Versione '${{ steps.versione.outputs.server }}'
+
+      - name: Cosa e' uscito
+        shell: bash
+        run: |
+          ls -la app/release/ || true
+          ls -la rilascio/pacchetti/ || true
+
+      # Senza numero — il giro a mano di prova — ci si ferma qui: gli artefatti
+      # restano attaccati al workflow, dove si scaricano e si provano, e
+      # nessuna release viene toccata.
+      - name: Gli artefatti, se e' una prova
+        if: steps.versione.outputs.versione == ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: pulsetalk-prova
+          path: |
+            app/release/*.exe
+            app/release/*.blockmap
+            app/release/latest.yml
+            rilascio/pacchetti/*.zip
+          if-no-files-found: error
+
+      - name: La bozza della release
+        if: steps.versione.outputs.versione != ''
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          V: ${{ steps.versione.outputs.versione }}
+          VS: ${{ steps.versione.outputs.server }}
+          PROPRIETARIO: ${{ github.repository_owner }}
+        run: |
+          set -eu
+          # Le note si scrivono con un heredoc *quotato*: dentro ci sono
+          # backtick e simboli di dollaro che appartengono al testo, e senza le
+          # virgolette la shell proverebbe a eseguirli.
+          {
+            echo 'PulseTalk sono due cose che si installano separatamente. Prendi quella che ti serve.'
+            echo
+            echo "### Per parlare — l'applicazione"
+            echo
+            echo "**\`PulseTalk-Setup-$V.exe\`** — si installa, mette il collegamento, e si aggiorna da sola."
+            echo 'Windows mostra SmartScreen alla prima apertura: *Ulteriori informazioni → Esegui comunque*.'
+            echo
+            echo "\`PulseTalk-portable-$V.exe\` e' un file solo, si apre e basta, e non si aggiorna."
+            echo
+            echo "Alla prima apertura chiede **prima l'indirizzo di un server**, e poi l'account su quello."
+            echo "Non c'e' nessun indirizzo gia' scritto dentro: questo installer non appartiene a nessun server in particolare."
+            echo
+            echo "\`latest.yml\` e \`.blockmap\` non si scaricano a mano — servono all'aggiornamento automatico."
+            echo
+            echo '### Per ospitare — il server'
+            echo
+            echo "**\`pulsetalk-server-$VS.zip\`** — compose, configurazione della SFU, lo script che fa le domande, e il file per TrueNAS."
+            echo "Sei file, e nessun altro da cercare. Dentro c'e' il \`LEGGIMI.md\` con la strada dritta."
+            echo
+            echo "Oppure l'immagine, gia' pronta per amd64 e arm64:"
+            echo
+            echo '```'
+            # GHCR vuole il nome del proprietario tutto minuscolo, e su GitHub
+            # non lo e' per forza. Stessa conversione che fa `immagine.yml`.
+            echo "ghcr.io/$(echo "$PROPRIETARIO" | tr '[:upper:]' '[:lower:]')/pulse-talk:$V"
+            echo '```'
+            echo
+            echo "Il numero del server ($VS) non e' quello del tag ($V), ed e' voluto: il piano di controllo ha una sua versione e cammina piu' lentamente dell'interfaccia. Restano compatibili perche' e' il server a dichiarare quali versioni dell'app accetta, non il contrario."
+            echo
+            echo '---'
+          } > note.md
+
+          gh release create "v$V" \
+            --draft \
+            --title "PulseTalk $V" \
+            --notes-file note.md \
+            --generate-notes \
+            "app/release/PulseTalk-Setup-$V.exe" \
+            "app/release/PulseTalk-Setup-$V.exe.blockmap" \
+            "app/release/latest.yml" \
+            "app/release/PulseTalk-portable-$V.exe" \
+            "rilascio/pacchetti/pulsetalk-server-$VS.zip"
+
+          echo "Bozza pronta: ${{ github.server_url }}/${{ github.repository }}/releases"
+          echo "Finche' resta bozza non si aggiorna nessuno. Provala, poi premi Publish."

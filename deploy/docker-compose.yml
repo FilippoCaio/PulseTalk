@@ -21,7 +21,11 @@
 services:
   pulse-talk:
     build: ../server
-    image: pulse-talk:1.0.0
+    # Il tag sale a ogni rilascio del server, e non e' burocrazia: con un tag
+    # fisso l'immagine di prima resta senza nome e tornare indietro vuol dire
+    # ricostruirla. Cosi' il rollback e' questa riga rimessa a 1.0.0 e un
+    # `docker compose up -d`.
+    image: pulse-talk:1.1.0
     container_name: pulse-talk
     restart: unless-stopped
     environment:
