@@ -1,0 +1,41 @@
+# Gli a capo, e perche' questo file esiste.
+#
+# Su questa macchina git ha `core.autocrlf=true`: nell'indice tiene LF, e nella
+# copia di lavoro scrive CRLF. Per il codice che si legge in un editor va
+# benissimo. Per i file che finiscono su una macchina Linux no, e il modo in cui
+# si rompe non e' leggibile: `installa.sh` con gli a capo di Windows, dato in
+# pasto alla shell di un NAS, risponde «syntax error: unexpected end of file»
+# oppure «\r: not found». Nessuno dei due messaggi nomina il vero problema.
+#
+# C'era anche un secondo effetto, piu' sottile: `rilascio/assembla.ps1` verifica
+# che le copie in `rilascio/server/` siano identiche alle sorgenti confrontando
+# le impronte SHA256 dei file su disco. Con meta' repository in LF e meta' in
+# CRLF quel confronto falliva su file dal contenuto identico, e il controllo
+# diventava rumore da ignorare — che e' il modo in cui un controllo smette di
+# servire a qualcosa.
+#
+# `eol=lf` vuol dire: nell'indice LF, e sul disco LF, su qualunque sistema. Non
+# tocca cosa vede git, tocca cosa trova chi apre il file.
+
+# Il comportamento di serie per tutto il resto: git decide cosa e' testo.
+* text=auto
+
+# Questi girano, o vengono letti, su Linux.
+*.sh            text eol=lf
+Dockerfile      text eol=lf
+.dockerignore   text eol=lf
+deploy/**       text eol=lf
+rilascio/server/** text eol=lf
+server/**       text eol=lf
+truenas/**      text eol=lf
+docs/**         text eol=lf
+.github/**      text eol=lf
+
+# E questi non sono testo: normalizzarli li corrompe.
+*.exe     binary
+*.ico     binary
+*.png     binary
+*.jpg     binary
+*.webp    binary
+*.blockmap binary
+*.db      binary
