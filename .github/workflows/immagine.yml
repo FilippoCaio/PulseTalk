@@ -74,6 +74,41 @@ jobs:
             *) echo "minore=" >> "$GITHUB_OUTPUT" ;;
           esac
 
+      # Il client web va costruito QUI, prima della build dell'immagine, e non
+      # e' un dettaglio: `server/public/` in git contiene soltanto `.gitkeep`
+      # — un bundle minimizzato dentro a un repository rende illeggibile ogni
+      # diff, e per questo e' ignorato. Ma il Dockerfile fa `COPY public
+      # ./public`, e su un checkout pulito quella COPY porterebbe dentro
+      # all'immagine il segnaposto e nient'altro.
+      #
+      # Il guasto sarebbe silenzioso da tutte le parti: la build riesce,
+      # l'immagine parte, `/salute` risponde, le API rispondono. Solo che
+      # aprendo l'indirizzo nel browser non c'e' niente. La riga `COPY` non
+      # puo' accorgersene — vedi il commento che ha accanto nel Dockerfile,
+      # dove la cartella vuota e' un caso previsto e legittimo per chi il
+      # client web non lo vuole affatto.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Il client web, che finisce dentro all'immagine
+        working-directory: app
+        run: |
+          npm ci
+          npm run build:web
+
+      - name: E c'e' davvero
+        run: |
+          set -eu
+          # `emptyOutDir` cancella e riscrive: se il passo di prima fosse
+          # fallito a meta' senza che npm se ne accorgesse, qui la cartella
+          # sarebbe vuota. Meglio fermarsi ora che pubblicare un'immagine che
+          # non serve nessuna pagina.
+          test -f server/public/index.html || { echo "server/public/index.html non c'e': il client web non e' stato costruito."; exit 1; }
+          ls -la server/public server/public/assets
+
       # QEMU serve a costruire arm64 su una macchina amd64. Senza, il passo
       # successivo dichiara di saper fare arm64 e poi fallisce dentro a `npm ci`.
       - uses: docker/setup-qemu-action@v3
