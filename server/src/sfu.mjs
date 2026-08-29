@@ -9,7 +9,7 @@
 // tre cose: firma i gettoni con cui le app entrano, chiede chi c'e' dentro, e
 // caccia fuori chi deve uscire.
 
-import { AccessToken, RoomServiceClient, WebhookReceiver } from 'livekit-server-sdk';
+import { AccessToken, RoomServiceClient, TrackSource, WebhookReceiver } from 'livekit-server-sdk';
 
 /**
  * Il gettone con cui l'app entra in un canale vocale.
@@ -29,8 +29,16 @@ import { AccessToken, RoomServiceClient, WebhookReceiver } from 'livekit-server-
  * l'identita' per decidere chi buttare fuori quando la stessa persona si
  * ricollega da un'altra macchina.
  */
-export async function creaGettone({ utente, stanza, config, moderatore = false }) {
+export async function creaGettone({
+  utente,
+  stanza,
+  config,
+  moderatore = false,
+  puoCondividere = true,
+  restrizioni = new Set(),
+}) {
   const puoTrasmettere = !stanza.soloAscolto;
+  const permessi = permessiPartecipante({ puoTrasmettere, puoCondividere, restrizioni });
 
   const gettone = new AccessToken(config.sfuChiave, config.sfuSegreto, {
     identity: `u${utente.id}`,
@@ -45,12 +53,13 @@ export async function creaGettone({ utente, stanza, config, moderatore = false }
   gettone.addGrant({
     room: stanza.chiave,
     roomJoin: true,
-    canSubscribe: true,
-    canPublish: puoTrasmettere,
-    canPublishData: true,
+    canSubscribe: permessi.canSubscribe,
+    canPublish: permessi.canPublish,
+    canPublishSources: permessi.canPublishSources,
+    canPublishData: permessi.canPublishData,
     // Serve per la mano alzata e per il "sto scrivendo": sono attributi
     // dell'utente su se stesso, non su altri.
-    canUpdateOwnMetadata: true,
+    canUpdateOwnMetadata: permessi.canUpdateMetadata,
     // Volutamente assente: `roomAdmin`. Cacciare e zittire passano dalle
     // nostre rotte, che controllano il ruolo nel nostro database. Se il
     // permesso vivesse nel gettone, un gettone vecchio continuerebbe a
@@ -58,6 +67,78 @@ export async function creaGettone({ utente, stanza, config, moderatore = false }
   });
 
   return gettone.toJwt();
+}
+
+/** Le quattro sorgenti che LiveKit distingue, nell'ordine in cui le pensiamo. */
+const TUTTE_LE_SORGENTI = [
+  TrackSource.CAMERA,
+  TrackSource.MICROPHONE,
+  TrackSource.SCREEN_SHARE,
+  TrackSource.SCREEN_SHARE_AUDIO,
+];
+
+/**
+ * Cosa questa persona puo' mandare e ricevere in questa stanza.
+ *
+ * Un posto solo, e ci passano tutti e due i momenti in cui la domanda si pone:
+ * quando si firma il gettone (all'ingresso) e quando si riscrivono i permessi
+ * a caldo (moderando chi e' gia' dentro). Due calcoli in due posti avrebbero
+ * prodotto la cosa peggiore possibile — una restrizione che vale finche' non
+ * esci e rientri.
+ *
+ * Tre cose vanno sapute di come LiveKit legge questi campi, e tutte e tre sono
+ * il genere di dettaglio che si scopre tardi:
+ *
+ *   1. `canPublishSources` vuoto vuol dire "tutte", non "nessuna". Quindi per
+ *      togliere una sorgente bisogna elencare per esteso quelle che restano,
+ *      non togliere quella di troppo da una lista vuota.
+ *   2. i permessi si sostituiscono in blocco. `UpdateFromPermission` riscrive
+ *      l'intero grant dal messaggio ricevuto, quindi ogni campo che si vuole
+ *      conservare va rimandato ogni volta.
+ *   3. togliere una sorgente chiude cio' che sta gia' viaggiando: alla
+ *      modifica dei permessi il server scorre le tracce pubblicate e stacca
+ *      quelle non piu' consentite. E' esattamente cio' che serve per "togli la
+ *      condivisione", che deve anche chiudere quella in corso.
+ *
+ * Una nota per chi un giorno leggera' i log della SFU e si preoccupera': in
+ * `UpdateParticipant` i campi booleani falsi **non compaiono** nel JSON. Non e'
+ * un pezzo che si perde per strada — e' proto3, dove il valore di serie di un
+ * bool e' `false` e chi serializza lo omette. Dall'altra parte il campo assente
+ * torna `false`, che e' esattamente quello che si voleva dire. Quindi un
+ * `UpdateParticipant` senza `canSubscribe` e' un "non sente", non un "non l'ho
+ * detto".
+ *
+ * `canSubscribe: false` e' l'unica applicazione onesta delle cuffie forzate.
+ * Abbassare il volume nel client lascia la sottoscrizione aperta, e con la
+ * sottoscrizione aperta l'audio arriva davvero al computer di chi non dovrebbe
+ * sentirlo: bastano due righe per riascoltarlo. Tolta la sottoscrizione, il
+ * server smette proprio di mandare — e, sempre in `SetPermission`, chiude
+ * anche quelle gia' aperte.
+ */
+export function permessiPartecipante({
+  puoTrasmettere = true,
+  puoCondividere = true,
+  restrizioni = new Set(),
+}) {
+  const sorgenti = TUTTE_LE_SORGENTI.filter((sorgente) => {
+    if (sorgente === TrackSource.CAMERA) return !restrizioni.has('camera');
+    if (sorgente === TrackSource.MICROPHONE) return !restrizioni.has('microfono');
+    // Lo schermo e il suo audio sono una cosa sola: consentirne uno solo dei
+    // due vorrebbe dire una condivisione muta o un suono senza immagine, che
+    // non e' nessuna delle cose che qualcuno ha chiesto.
+    return puoCondividere && !restrizioni.has('condivisione');
+  });
+
+  return {
+    // Nessuna sorgente consentita vuol dire che non c'e' niente da pubblicare:
+    // lasciare `canPublish` acceso con una lista vuota sarebbe la trappola del
+    // punto 1 qui sopra, cioe' "tutte".
+    canPublish: puoTrasmettere && sorgenti.length > 0,
+    canPublishSources: sorgenti,
+    canSubscribe: !restrizioni.has('cuffie'),
+    canPublishData: true,
+    canUpdateMetadata: true,
+  };
 }
 
 /**
@@ -177,6 +258,47 @@ export class Presenze {
   async zittisci(chiaveStanza, identita, sid, muto = true) {
     await this.#cliente.mutePublishedTrack(chiaveStanza, identita, sid, muto);
     this.invalida();
+  }
+
+  /**
+   * Riscrive i permessi di chi e' gia' dentro, senza farlo uscire.
+   *
+   * E' la meta' che mancava alla moderazione. Scrivere la restrizione nel
+   * database la rende vera al prossimo ingresso; questa la rende vera adesso,
+   * che e' l'unico momento in cui a qualcuno interessa.
+   *
+   * `updateParticipant` sostituisce l'intero blocco dei permessi — non ne
+   * aggiorna un campo — quindi cio' che arriva qui dentro deve essere gia'
+   * completo. Lo produce `permessiPartecipante`, che e' anche quello che firma
+   * il gettone: una regola sola per i due momenti.
+   *
+   * Se la persona nel frattempo e' uscita dalla stanza, LiveKit risponde che
+   * non c'e': non e' un errore da propagare, e' la condizione normale di chi
+   * viene moderato mentre sta chiudendo l'applicazione. Il database resta la
+   * verita', e al rientro il gettone porta gia' le restrizioni giuste.
+   */
+  async aggiornaPermessi(chiaveStanza, identita, permessi) {
+    try {
+      await this.#cliente.updateParticipant(chiaveStanza, identita, { permission: permessi });
+      this.invalida();
+      return true;
+    } catch (errore) {
+      this.log?.debug?.(
+        { err: errore, stanza: chiaveStanza, identita },
+        "permessi non aggiornati: probabilmente non e' piu' nella stanza",
+      );
+      return false;
+    }
+  }
+
+  /** Le tracce che una persona sta pubblicando adesso, cosi' come le vede la SFU. */
+  async tracceDi(chiaveStanza, identita) {
+    try {
+      const partecipante = await this.#cliente.getParticipant(chiaveStanza, identita);
+      return partecipante?.tracks ?? [];
+    } catch {
+      return [];
+    }
   }
 
   async chiudiStanza(chiaveStanza) {

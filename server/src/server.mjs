@@ -49,6 +49,8 @@ import { rotteEmail } from './routes/email.mjs';
 import { rotteCompatibilita } from './routes/compatibilita.mjs';
 import { rotteDiretti } from './routes/diretti.mjs';
 import { rotteEventiSpazio } from './routes/eventi-spazio.mjs';
+import { rotteModerazione } from './routes/moderazione.mjs';
+import { creaModerazione } from './moderazione.mjs';
 import { rotteInviti } from './routes/inviti.mjs';
 import { rotteInvitiSpazio } from './routes/inviti-spazio.mjs';
 import { rotteMedia } from './routes/media.mjs';
@@ -150,6 +152,10 @@ export async function creaTalk(configIniziale, { ambiente = process.env } = {}) 
   // eventi perche' e' da li' che sa chi ha l'applicazione aperta.
   const stati = creaStati({ eventi, db });
   const chiamate = creaChiamate({ eventi, presenze, log: app.log });
+  // Le restrizioni vocali scritte sul disco, portate fin dentro alla SFU. Vive
+  // qui e non dentro alle rotte perche' ci passa anche lo spazzino che le fa
+  // decadere alla fine di un evento.
+  const moderazione = creaModerazione({ db, eventi, presenze, log: app.log });
 
   // I servizi di musica disponibili. Registrarli sempre, anche senza
   // credenziali: cosi' l'interfaccia puo' dire "Spotify c'e', ma questo server
@@ -232,6 +238,7 @@ export async function creaTalk(configIniziale, { ambiente = process.env } = {}) 
   rotteRuoli(app, { db, eventi, presenze });
   rotteInvitiSpazio(app, { db, eventi });
   rotteEventiSpazio(app, { db, eventi });
+  rotteModerazione(app, { db, presenze, moderazione });
   rotteDiretti(app, { db, config, presenze, eventi, chiamate, stati });
   rotteMedia(app, { db, eventi });
   rotteMusica(app, { db, registro: registroMusica, config });
@@ -288,11 +295,27 @@ export async function creaTalk(configIniziale, { ambiente = process.env } = {}) 
       if (richiesta.url.startsWith('/api') || richiesta.url.startsWith('/webhook')) {
         return risposta.code(404).send({ errore: 'rotta inesistente' });
       }
+      // E gli aggiornamenti, che non sono pagine.
+      //
+      // Senza questa riga un `latest.yml` che non c'e' — cioe' un'istanza che
+      // non pubblica aggiornamenti, che e' il caso normale di chi installa
+      // PulseTalk senza compilarlo — riceveva **200 con dentro l'HTML
+      // dell'applicazione**. electron-updater provava a leggerlo come YAML e
+      // moriva con un errore di parsing: chi apriva il pannello degli
+      // aggiornamenti si trovava un guasto incomprensibile al posto di "questo
+      // server non ne pubblica".
+      //
+      // Si e' visto solo facendo partire il server davvero: dai test non
+      // emerge, perche' li' la cartella `public/` e' vuota e questo ripiego non
+      // viene nemmeno registrato.
+      if (richiesta.url.startsWith('/aggiornamenti')) {
+        return risposta.code(404).send({ errore: 'questo server non pubblica aggiornamenti' });
+      }
       return risposta.sendFile('index.html');
     });
   }
 
-  return { app, db, config, presenze, eventi, chiamate, registroMusica, stati };
+  return { app, db, config, presenze, eventi, chiamate, registroMusica, stati, moderazione };
 }
 
 export async function avvia(config = leggiConfig()) {
@@ -325,9 +348,23 @@ export async function avvia(config = leggiConfig()) {
   const spazzino = setInterval(spazza, 6 * 3600_000);
   spazzino.unref();
 
+  // Le restrizioni imposte dall'organizzatore di un evento cadono con
+  // l'evento, e cadono anche per chi in quel momento e' ancora in stanza: il
+  // database le butta via da solo alla prima lettura, ma i permessi gia'
+  // scritti nella SFU vanno riscritti da qualcuno. Ogni minuto, perche' e' la
+  // granularita' con cui una fine annunciata alle 23:00 si sente alle 23:00 e
+  // non l'indomani.
+  const decadenza = setInterval(() => {
+    void talk.moderazione
+      .spazzaScadute()
+      .catch((e) => talk.app.log.error({ err: e }, 'decadenza delle restrizioni fallita'));
+  }, 60_000);
+  decadenza.unref();
+
   const chiudi = async () => {
     talk.app.log.info('chiusura');
     clearInterval(spazzino);
+    clearInterval(decadenza);
     talk.chiamate.spegni();
     await talk.app.close();
     talk.db.close();

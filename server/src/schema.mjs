@@ -370,6 +370,41 @@ CREATE TABLE IF NOT EXISTS eventi_spazio (
 );
 CREATE INDEX IF NOT EXISTS idx_eventi_spazio ON eventi_spazio(spazio, inizio);
 
+-- Le restrizioni vocali -------------------------------------------------------
+--
+-- Camera spenta d'ufficio, condivisione tolta, microfono muto, cuffie mute.
+-- Sono stato e non messaggi: chi si disconnette e rientra le ritrova, e un
+-- riavvio del server non le perde. Un "muto" che valesse solo per la traccia
+-- viva sarebbe una moderazione che si aggira uscendo e rientrando dalla
+-- stanza, cioe' nessuna moderazione.
+--
+-- La chiave e' canale + utente + genere: le restrizioni vivono dentro a un
+-- canale vocale e non nello spazio, perche' e' li' che si parla e perche' un
+-- provvedimento preso in una stanza non deve seguire nessuno in tutte le
+-- altre.
+--
+-- La colonna evento dice sotto quale autorita' e' stata imposta. Nulla vuol
+-- dire "un amministratore dello spazio", e allora dura finche' qualcuno non la
+-- toglie. Valorizzata vuol dire "l'organizzatore di quell'evento li'", e allora
+-- vale quanto l'evento: alla sua chiusura decade da sola. Senza questa colonna
+-- un potere temporaneo lascerebbe conseguenze permanenti.
+--
+-- La colonna daUtente e' chi l'ha imposta, e serve a chi la subisce: "non puoi
+-- accendere il microfono" senza un nome accanto e' un guasto, con un nome
+-- accanto e' una decisione a cui si puo' rispondere.
+CREATE TABLE IF NOT EXISTS restrizioni_voce (
+  id       INTEGER PRIMARY KEY,
+  canale   INTEGER NOT NULL REFERENCES canali(id) ON DELETE CASCADE,
+  utente   INTEGER NOT NULL REFERENCES utenti(id) ON DELETE CASCADE,
+  genere   TEXT    NOT NULL,
+  evento   INTEGER REFERENCES eventi_spazio(id) ON DELETE CASCADE,
+  daUtente INTEGER REFERENCES utenti(id) ON DELETE SET NULL,
+  istante  INTEGER NOT NULL,
+  UNIQUE (canale, utente, genere)
+);
+CREATE INDEX IF NOT EXISTS idx_restrizioni_canale ON restrizioni_voce(canale);
+CREATE INDEX IF NOT EXISTS idx_restrizioni_utente ON restrizioni_voce(utente);
+
 CREATE TABLE IF NOT EXISTS eventi_interesse (
   evento  INTEGER NOT NULL REFERENCES eventi_spazio(id) ON DELETE CASCADE,
   utente  INTEGER NOT NULL REFERENCES utenti(id) ON DELETE CASCADE,

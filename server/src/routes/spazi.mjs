@@ -12,6 +12,7 @@ import {
   richiedePermesso,
 } from '../permessi.mjs';
 import { creaGettone } from '../sfu.mjs';
+import { poteriDiModerazione, puoEspellereDallaVoce } from '../permessi/moderazione.mjs';
 
 /** Quale permesso serve per creare/modificare/eliminare un canale di questo tipo. */
 const PERMESSO_CANALE = {
@@ -808,18 +809,37 @@ export function rotteSpazi(app, { db, config, presenze, eventi }) {
     '/api/canali/:canale/caccia',
     { onRequest: richiedeRuolo('membro') },
     async (richiesta, risposta) => {
-      const esito = accessoAlCanale(db, richiesta.utente, richiesta.params.canale);
-      if (esito.errore) return risposta.code(esito.stato).send({ errore: esito.errore });
-      if (!esito.permessi.has('manageVoiceMembers')) {
-        return risposta.code(403).send({ errore: 'non puoi moderare questo canale vocale' });
-      }
-
       const identita = richiesta.body?.identita;
       if (typeof identita !== 'string' || !identita) {
         return risposta.code(400).send({ errore: 'serve l\'identita\' di chi va cacciato' });
       }
 
-      await presenze.caccia(db.chiaveSfu(esito.canale), identita);
+      // L'identita' sulla SFU e' `u<id>`: da li' si ricava chi e', e chi e' va
+      // saputo prima di decidere. La gerarchia dei ruoli e i poteri
+      // dell'organizzatore di un evento valgono anche qui, e prima questa
+      // rotta guardava soltanto il permesso nello spazio — quindi chi
+      // organizzava una serata poteva togliere il microfono a qualcuno e non
+      // poteva mandarlo fuori, che e' il provvedimento piu' lieve dei due.
+      const bersaglio = Number(identita.slice(1));
+      if (!identita.startsWith('u') || !Number.isInteger(bersaglio) || bersaglio <= 0) {
+        return risposta.code(400).send({ errore: 'identita\' non valida' });
+      }
+
+      const esito = puoEspellereDallaVoce(db, richiesta.utente, richiesta.params.canale, bersaglio);
+      if (esito.errore) return risposta.code(esito.stato).send({ errore: esito.errore });
+
+      try {
+        await presenze.caccia(db.chiaveSfu(esito.canale), identita);
+      } catch (errore) {
+        // Cacciare qualcuno lo fa la SFU, non noi: se non risponde, la persona
+        // e' ancora dentro e dirlo e' l'unica cosa onesta. Prima l'eccezione
+        // usciva nuda e diventava un 500 con uno stack nel log, cioe' "non ho
+        // capito" invece di "non ci sono riuscito, ed ecco perche'".
+        richiesta.log.warn({ err: errore, canale: esito.canale.id }, 'la SFU non risponde');
+        return risposta
+          .code(502)
+          .send({ errore: 'la SFU non risponde: non sono riuscito a mandarlo fuori' });
+      }
       avvisa(esito.spazio.id, { tipo: 'presenza', spazio: esito.spazio.id });
       richiesta.log.info(
         { da: richiesta.utente.id, chi: identita, canale: esito.canale.id },
@@ -863,11 +883,29 @@ export function rotteSpazi(app, { db, config, presenze, eventi }) {
         permessi: esito.permessi,
       });
 
+      // Le restrizioni entrano nel gettone, non solo nella traccia viva.
+      //
+      // E' la differenza fra una moderazione e un fastidio: `mutePublishedTrack`
+      // vale finche' quella traccia esiste, e chi esce e rientra ne ottiene una
+      // nuova con un gettone nuovo. Scritte qui, invece, valgono da prima che
+      // la connessione si apra — e valgono anche dopo un riavvio del server,
+      // perche' sono righe sul disco e non stato in memoria.
+      const restrizioni = db.restrizioni.di(esito.canale.id, richiesta.utente.id);
+      const condivide = esito.permessi.has('stream');
+
+      const poteri = poteriDiModerazione(db, richiesta.utente, {
+        canale: esito.canale,
+        spazio: esito.spazio,
+        permessi: esito.permessi,
+      });
+
       const gettone = await creaGettone({
         utente: richiesta.utente,
         stanza: { chiave, soloAscolto: !trasmette },
         config,
-        moderatore: esito.permessi.has('manageVoiceMembers'),
+        moderatore: poteri.moderatore,
+        puoCondividere: condivide,
+        restrizioni,
       });
 
       return {
@@ -880,12 +918,33 @@ export function rotteSpazi(app, { db, config, presenze, eventi }) {
           soloAscolto: esito.canale.soloAscolto,
         },
         permessi: {
+          // I quattro `puo*` restano quello che erano: cosa consente il ruolo.
+          // Le restrizioni sono un'altra cosa e viaggiano a parte, perche' si
+          // raccontano in un altro modo — "non puoi" e "ti e' stato tolto" non
+          // sono la stessa frase, e chi legge la seconda vuole sapere da chi.
           puoTrasmettere: trasmette,
           puoAscoltare: true,
           puoScrivere: esito.permessi.has('sendMessages'),
-          puoCondividere: esito.permessi.has('stream'),
-          moderatore: esito.permessi.has('manageVoiceMembers'),
+          puoCondividere: condivide,
+          // Cosa si puo' fare a qualcun altro, qui dentro. Serve alla UI per
+          // decidere quali voci mostrare nel menu; a dire di no e' comunque il
+          // server, su ogni richiesta.
+          //
+          // Ci sta dentro anche chi non amministra lo spazio ma sta
+          // organizzando un evento qui adesso: senza, le voci del menu non gli
+          // comparirebbero e i poteri che ha davvero resterebbero invisibili.
+          ...poteri,
         },
+        // Le proprie, gia' pronte: chi entra con il microfono bloccato deve
+        // vederlo scritto subito, non scoprirlo premendo.
+        restrizioni: db.restrizioni.righeDi(esito.canale.id, richiesta.utente.id).map((r) => ({
+          genere: r.genere,
+          istante: r.istante,
+          evento: r.evento,
+          da: r.daUtente
+            ? { id: r.daUtente, nome: db.utente(r.daUtente)?.nome ?? null }
+            : null,
+        })),
         limiti: config.limiti,
       };
     },

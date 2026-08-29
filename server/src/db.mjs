@@ -19,6 +19,7 @@ import { RUOLI } from './config.mjs';
 import { creaCollegamenti } from './dati/collegamenti.mjs';
 import { creaDiretti } from './dati/diretti.mjs';
 import { creaEventiSpazio } from './dati/eventi-spazio.mjs';
+import { creaRestrizioni } from './dati/restrizioni.mjs';
 import { creaInvitiSpazio } from './dati/inviti-spazio.mjs';
 import { creaMedia } from './dati/media.mjs';
 import { creaRuoli } from './dati/ruoli.mjs';
@@ -232,6 +233,9 @@ export class TalkDb {
     this.ruoli = creaRuoli(this.sql);
     this.invitiSpazio = creaInvitiSpazio(this.sql);
     this.eventiSpazio = creaEventiSpazio(this.sql);
+    // Dopo gli eventi, e non prima: una restrizione legata a un evento deve
+    // poterlo interrogare per sapere se e' ancora in corso.
+    this.restrizioni = creaRestrizioni(this.sql, this);
     this.media = creaMedia(this.sql);
     this.collegamenti = creaCollegamenti(this.sql);
     this.diretti = creaDiretti(this.sql, this);
