@@ -92,17 +92,6 @@ export function nomeDaIndirizzo(indirizzo: string): string {
   }
 }
 
-/** Le iniziali per il quadratino nella barra. */
-export function siglaServer(nome: string): string {
-  const parole = String(nome ?? '')
-    .trim()
-    .split(/[\s._-]+/)
-    .filter(Boolean)
-  if (parole.length === 0) return '?'
-  if (parole.length === 1) return parole[0].slice(0, 2).toUpperCase()
-  return (parole[0][0] + parole[1][0]).toUpperCase()
-}
-
 /** Lo stesso server, riconosciuto anche se scritto in un altro modo. */
 export function stessoServer(a: string, b: string): boolean {
   return normalizzaIndirizzo(a).toLowerCase() === normalizzaIndirizzo(b).toLowerCase()

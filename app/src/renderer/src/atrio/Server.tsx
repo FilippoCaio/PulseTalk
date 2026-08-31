@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { Impostazioni, ServerCollegato } from '@shared/tipi'
-import { nomeDaIndirizzo, siglaServer, stessoServer, trovaServer } from '@shared/collegamenti'
+import { nomeDaIndirizzo, stessoServer, trovaServer } from '@shared/collegamenti'
 import { ponte } from '../ponte'
 import { Avviso, Bottone, Campo, BottoneIcona, Conferma, classiInput } from '../ui'
 import { Chiudi, Macchina, Matita, Piu, Spunta } from '../icone'
@@ -42,9 +42,15 @@ export function BottoneServer({
       onClick={apri}
       title={`${nome} — cambia server`}
       aria-label={`Server: ${nome}. Cambia server.`}
-      className={`group relative flex h-9 w-12 shrink-0 items-center justify-center rounded-xl border border-bordo bg-fondo-2 text-[11px] font-semibold tracking-wide text-testo-2 transition-all hover:border-vivo hover:text-vivo ${className}`}
+      className={`group relative flex h-9 w-12 shrink-0 items-center justify-center rounded-xl border border-bordo bg-fondo-2 text-testo-2 transition-all hover:border-vivo hover:text-vivo ${className}`}
     >
-      {siglaServer(nome)}
+      {/* Lo stack di server, e non piu' due lettere ricavate dal nome.
+          Le iniziali sembravano scelte a caso perche' in un certo senso lo
+          erano: «TA» per talk.madebyfil.it non e' il nome di niente, e' il
+          taglio di una stringa. Il disegno invece dice cos'e' quel quadratino
+          — una macchina — che e' l'unica cosa che serve sapere guardandolo,
+          visto che il nome per esteso ce l'ha gia' nel cartellino. */}
+      <Macchina className="h-[18px] w-[18px]" />
       {/* Il pallino compare solo quando i server sono piu' d'uno: con uno solo
           direbbe "ce n'e' uno", che non e' una notizia. */}
       {quanti > 1 && (
@@ -151,11 +157,11 @@ export default function PannelloServer({
                     className="flex min-w-0 flex-1 items-center gap-3 text-left"
                   >
                     <span
-                      className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-sm font-semibold ${
+                      className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
                         attivo ? 'bg-vivo text-fondo' : 'bg-fondo-3 text-testo-2'
                       }`}
                     >
-                      {siglaServer(server.nome)}
+                      <Macchina className="h-5 w-5" />
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="flex items-center gap-1.5">
