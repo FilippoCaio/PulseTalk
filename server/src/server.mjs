@@ -139,9 +139,24 @@ export async function creaTalk(configIniziale, { ambiente = process.env } = {}) 
   // autenticata per conto di chi la visita, che e' esattamente il rischio da
   // cui la restrizione sull'origine proteggerebbe. In cambio, l'app installata
   // — che gira su file:// e non ha un'origine — puo' parlare col server.
+  //
+  // PUT c'e', e per un po' non c'era: mancava dall'elenco, e il modo in cui si
+  // rompeva non nominava mai la causa. Il client manda l'authorization in
+  // un'intestazione, quindi ogni richiesta e' "non semplice" e il browser fa
+  // prima un preflight; il preflight rispondeva senza PUT fra i metodi
+  // ammessi, e la richiesta vera non partiva. `fetch` la' non riceve una
+  // risposta da leggere - riceve un TypeError - e il client lo traduceva in
+  // «non riesco a raggiungere il server», mandando a controllare l'indirizzo e
+  // se il NAS fosse acceso. Nei log del server non compariva niente, perche'
+  // dal suo punto di vista non era arrivato niente: solo OPTIONS senza la
+  // richiesta che dovevano precedere, che e' la firma esatta di questo guasto.
+  //
+  // Erano ferme cinque cose - le preferenze di avviso, il caricamento degli
+  // allegati a pezzi, le impostazioni dell'istanza, la chiave AI personale e
+  // gli override dei permessi - e nessuna diceva perche'.
   await app.register(cors, {
     origin: true,
-    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['authorization', 'content-type', 'x-nome'],
     maxAge: 86400,
   });
