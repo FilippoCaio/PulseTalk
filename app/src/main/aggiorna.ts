@@ -1,5 +1,8 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
-import { mostraSchermataAggiornamento } from './schermataAggiornamento'
+import {
+  mostraSchermataAggiornamento,
+  segnaAggiornamentoInCorso
+} from './schermataAggiornamento'
 import electronUpdater from 'electron-updater'
 import { IPC } from '@shared/tipi'
 import type { PreparazioneAggiornamento, StatoAggiornamento } from '@shared/tipi'
@@ -216,7 +219,12 @@ export function preparaAggiornamenti(): { allAvvio: () => void } {
     // altrimenti sarebbe un lampo grigio; se non ci riesce entro un secondo si
     // va avanti comunque, perche' l'aggiornamento non si ferma per
     // un'animazione.
-    void mostraSchermataAggiornamento().finally(() => {
+    // Il segnale resta sul disco e sopravvive al riavvio: e' cosi' che il
+    // processo che nascera' fra qualche secondo sapra' di essere tornato da un
+    // aggiornamento invece che da un doppio clic, e mostrera' la schermata
+    // anche in entrata.
+    segnaAggiornamentoInCorso()
+    void mostraSchermataAggiornamento('esce').finally(() => {
       setImmediate(() => autoUpdater.quitAndInstall(true, true))
     })
   })

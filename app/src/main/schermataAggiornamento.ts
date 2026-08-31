@@ -1,4 +1,6 @@
-import { BrowserWindow } from 'electron'
+import { app, BrowserWindow } from 'electron'
+import { existsSync, rmSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 
 /**
  * La finestrella che copre il buco dell'aggiornamento.
@@ -70,7 +72,7 @@ const FONDO = '#0b0e14'
 const VIVO = '#4f9cf9'
 const TESTO = '#98a2b8'
 
-function pagina(): string {
+function pagina(titolo: string, sotto: string): string {
   const punti = PROFILO.map(([x, y]) => `${(x * 100).toFixed(1)},${(y * 100).toFixed(1)}`).join(' ')
 
   const lineette = VOCE.map((v, i) => {
@@ -134,9 +136,48 @@ function pagina(): string {
     <polyline class="profilo" points="${punti}" />
     ${lineette}
   </svg>
-  <p><b>Sto installando l&rsquo;aggiornamento</b>PulseTalk si riapre da sola.</p>
+  <p><b>${titolo}</b>${sotto}</p>
   <div class="binario"><div class="corsa"></div></div>
 </div>`
+}
+
+/**
+ * Il segnale che sopravvive al riavvio.
+ *
+ * Un file vuoto in `userData`, e non una variabile: fra il momento in cui si
+ * chiede l'aggiornamento e quello in cui l'applicazione torna su c'e' un
+ * processo che muore e uno che nasce, e l'unica cosa che passa da uno all'altro
+ * e' il disco.
+ *
+ * Serve a sapere **perche'** si sta aprendo. Un avvio normale non deve
+ * mostrare niente: chi apre l'app la sta aprendo e lo sa. Chi invece se la
+ * vede tornare su da sola dopo un aggiornamento non ha chiesto niente in quel
+ * momento, e senza una riga che lo dica quella finestra che compare da sola
+ * e' solo una finestra che compare da sola.
+ */
+function segnale(): string {
+  return join(app.getPath('userData'), 'aggiornamento-in-corso')
+}
+
+/** Lasciato prima di uscire, letto e cancellato al ritorno. */
+export function segnaAggiornamentoInCorso(): void {
+  try {
+    writeFileSync(segnale(), String(Date.now()))
+  } catch {
+    // Se non si riesce a scrivere si perde la schermata al ritorno, non
+    // l'aggiornamento: non c'e' niente da riferire a nessuno.
+  }
+}
+
+/** Vero una volta sola: la lettura consuma il segnale. */
+export function tornaDaAggiornamento(): boolean {
+  try {
+    if (!existsSync(segnale())) return false
+    rmSync(segnale())
+    return true
+  } catch {
+    return false
+  }
 }
 
 let aperta: BrowserWindow | null = null
@@ -150,7 +191,9 @@ let aperta: BrowserWindow | null = null
  * un secondo si va avanti lo stesso: l'aggiornamento non si ferma perche' non
  * si e' riusciti a mostrare un'animazione.
  */
-export async function mostraSchermataAggiornamento(): Promise<void> {
+export async function mostraSchermataAggiornamento(
+  fase: 'esce' | 'rientra' = 'esce'
+): Promise<void> {
   if (aperta) return
 
   aperta = new BrowserWindow({
@@ -174,7 +217,13 @@ export async function mostraSchermataAggiornamento(): Promise<void> {
   })
 
   const finestra = aperta
-  await finestra.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(pagina())}`)
+  const [titolo, sotto] =
+    fase === 'esce'
+      ? ['Sto installando l&rsquo;aggiornamento', 'PulseTalk si riapre da sola.']
+      : ['Aggiornamento installato', 'Sto riaprendo PulseTalk.']
+  await finestra.loadURL(
+    `data:text/html;charset=utf-8,${encodeURIComponent(pagina(titolo, sotto))}`
+  )
 
   await new Promise<void>((risolvi) => {
     const vai = (): void => {
@@ -188,4 +237,10 @@ export async function mostraSchermataAggiornamento(): Promise<void> {
       vai()
     }
   })
+}
+
+/** La chiude, se c'e'. Chiamata quando la finestra vera ha finito di caricare. */
+export function chiudiSchermataAggiornamento(): void {
+  if (aperta && !aperta.isDestroyed()) aperta.close()
+  aperta = null
 }

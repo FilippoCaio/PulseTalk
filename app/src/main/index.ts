@@ -16,6 +16,11 @@ import { preparaAggiornamenti } from './aggiorna'
 import { avviaSito, type Sito } from './sito'
 import { coloriDi } from '@shared/tema'
 import {
+  chiudiSchermataAggiornamento,
+  mostraSchermataAggiornamento,
+  tornaDaAggiornamento
+} from './schermataAggiornamento'
+import {
   IPC,
   type Impostazioni,
   type Puntata,
@@ -89,6 +94,23 @@ function registraDiagnosticaAudio(testo: string): void {
 app.commandLine.appendSwitch('force_high_performance_gpu')
 
 async function creaFinestra(): Promise<void> {
+  /**
+   * Si sta riaprendo dopo un aggiornamento? Allora si dice.
+   *
+   * Il segnale l'ha lasciato il processo di prima, un istante prima di
+   * morire, e leggerlo lo consuma: vale per questa apertura e basta. Un avvio
+   * normale non mostra niente, perche' chi apre l'applicazione la sta aprendo
+   * e lo sa gia'.
+   *
+   * Questa e' la meta' della finestra di aggiornamento che si vede davvero.
+   * L'altra - quella all'uscita - dura il tempo di un battito, perche' subito
+   * dopo il processo muore; e in mezzo, mentre l'installer lavora, non c'e'
+   * nessun processo nostro che possa disegnare qualcosa. Coprire la riapertura
+   * e' cio' che toglie il silenzio piu' lungo: quello in cui si aspetta senza
+   * sapere se sta tornando su.
+   */
+  const dopoAggiornamento = tornaDaAggiornamento()
+  if (dopoAggiornamento) await mostraSchermataAggiornamento('rientra')
   finestra = new BrowserWindow({
     width: 1360,
     height: 860,
@@ -144,6 +166,16 @@ async function creaFinestra(): Promise<void> {
     if (/^https?:\/\//.test(url)) shell.openExternal(url)
     return { action: 'deny' }
   })
+
+  // La schermata se ne va quando c'e' qualcosa che la sostituisce, non
+  // quando il caricamento e' *partito*: chiuderla prima lascerebbe scoperto
+  // proprio l'ultimo pezzo di attesa, che e' quello che si nota.
+  if (dopoAggiornamento) {
+    finestra.webContents.once('did-finish-load', () => chiudiSchermataAggiornamento())
+    // Rete di sicurezza: se il caricamento non arriva mai in fondo, la
+    // finestrella non deve restare li' sopra a tutto per sempre.
+    setTimeout(() => chiudiSchermataAggiornamento(), 20_000)
+  }
 
   if (DEV) {
     await finestra.loadURL(process.env.ELECTRON_RENDERER_URL!)
