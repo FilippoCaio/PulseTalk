@@ -11,6 +11,7 @@ import {
   personalizzato,
   PRESET,
   RUOLI,
+  soloSuperficie,
   temaDaPalette,
   type Colori
 } from './lib/tema'
@@ -113,7 +114,7 @@ export default function Aspetto({
         )}
       </Sezione>
 
-      <Tavolozza colori={colori} applica={applicaTutti} />
+      <Tavolozza colori={colori} applica={(nuovi) => applicaTutti(soloSuperficie(nuovi, colori))} />
 
       <Sezione
         titolo="I dodici colori"
@@ -415,6 +416,22 @@ function Tavolozza({
 
           <Anteprima colori={proposta} />
 
+          {/* Cosa si prende e cosa no, detto prima di premere.
+
+              L'anteprima qui sopra mostra il tema intero — accenti compresi —
+              perche' e' cio' che la tavolozza saprebbe fare, ed e' giusto
+              vederlo. Applicando pero' si prendono solo fondi, bordi e testi:
+              verde uguale «va bene» e rosso uguale «esci» sono le due cose che
+              in una chiamata si obbediscono senza leggerle, e riscriverle con
+              un accordo cromatico preso da un poster vuol dire due pulsanti
+              importanti dello stesso colore. */}
+          <p className="text-[11px] leading-relaxed text-testo-3">
+            Si prendono <span className="text-testo-2">fondi, bordi e testi</span>. Verde, ambra,
+            rosso e il colore vivo restano quelli che sono: dicono cosa fa un pulsante prima che
+            uno lo legga, e una tavolozza non sa che significato hanno. Cambiarli si puo&rsquo; uno
+            per uno, qui sotto.
+          </p>
+
           {conto?.scarso && (
             <Avviso tono="attenzione">
               Con questa tavolozza il contrasto piu' basso e' {conto.minimo.toFixed(1)} a 1, sotto
@@ -426,7 +443,7 @@ function Tavolozza({
 
           <div className="flex flex-wrap items-center gap-2">
             <Bottone tono="vivo" onClick={() => applica(proposta)}>
-              Usa questa tavolozza
+              Usa i fondi di questa tavolozza
             </Bottone>
             <Bottone
               tono="fantasma"

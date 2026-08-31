@@ -689,11 +689,19 @@ export default function OverlayChiamata({
 /**
  * Un pulsante della barra in basso: quadrato, con gli angoli smussati.
  *
- * I dieci pixel di raggio non sono scelti a occhio. La scatola che li contiene
- * ha `rounded-2xl` — sedici pixel — e sei di spaziatura interna: sedici meno
- * sei fa dieci, ed e' il raggio che corre parallelo a quello esterno invece di
+ * I quattordici pixel di raggio non sono scelti a occhio. La scatola che li
+ * contiene ha `rounded-2xl` e sei di spaziatura interna: raggio esterno meno
+ * spaziatura da' il raggio che corre parallelo a quello di fuori, invece di
  * stringersi o allargarsi rispetto a lui. E' una differenza che si vede anche
  * senza saper dire cosa non va.
+ *
+ * Il numero era dieci, ed era giusto finche' `rounded-2xl` valeva sedici. Poi
+ * la scala dei raggi si e' alzata di un gradino per ammorbidire i pannelli, il
+ * contenitore e' passato a venti e questo e' rimasto indietro: l'esterno si e'
+ * allargato e l'interno no, ed e' esattamente il disallineamento che questo
+ * commento serviva a impedire. Vale la pena dirlo perche' e' il modo in cui
+ * una misura ricavata a mano si rompe — in silenzio, quando cambia quella da
+ * cui era ricavata.
  */
 function Tasto({
   children,
@@ -724,7 +732,7 @@ function Tasto({
       onClick={premi}
       title={titolo}
       aria-label={titolo}
-      className={`flex h-10 w-10 items-center justify-center rounded-[10px] transition-colors ${colore} [&>svg]:h-[18px] [&>svg]:w-[18px]`}
+      className={`flex h-10 w-10 items-center justify-center rounded-[14px] transition-colors ${colore} [&>svg]:h-[18px] [&>svg]:w-[18px]`}
     >
       {children}
     </button>

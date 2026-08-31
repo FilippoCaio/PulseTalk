@@ -446,6 +446,46 @@ const ACCENTI: { chiave: 'vivo' | 'ok' | 'attenzione' | 'male'; tinta: number }[
  *    piu' colorato che c'e', cosi' resta parente degli altri invece di essere
  *    un colore capitato li'.
  */
+/**
+ * Cosa una tavolozza puo' toccare, e cosa no.
+ *
+ * Fondi, bordi e testi si': sono la superficie su cui l'app e' disegnata, e
+ * cambiarli e' esattamente cio' che si vuole incollando una tavolozza.
+ *
+ * Gli accenti no. Verde uguale «sta andando», rosso uguale «esci di qui»,
+ * ambra uguale «guarda che». Non sono decorazione: sono l'unica cosa che nella
+ * barra della chiamata distingue il pulsante che chiude una chiamata da quello
+ * che accende la camera, e li si obbedisce senza leggerli. Una tavolozza presa
+ * da un poster non sa niente di questo, e sostituendoli produce due pulsanti
+ * importanti dello stesso colore — bello a vedersi, e sbagliato da premere.
+ *
+ * Restano modificabili a mano, uno per uno, dai dodici colori: li' si sta
+ * cambiando *quel* colore sapendo cos'e', che e' un'altra cosa dal vederseli
+ * riscritti in blocco da un accordo cromatico.
+ */
+const DALLA_TAVOLOZZA: ChiaveColore[] = [
+  'fondo',
+  'fondo-2',
+  'fondo-3',
+  'bordo',
+  'testo',
+  'testo-2',
+  'testo-3'
+]
+
+/**
+ * I dodici colori, ma con gli accenti lasciati dov'erano.
+ *
+ * `temaDaPalette` continua a calcolarli tutti — servono all'anteprima, che
+ * mostra cosa la tavolozza saprebbe fare — e questa e' la funzione che poi ne
+ * applica solo la parte che tocca la superficie.
+ */
+export function soloSuperficie(nuovi: Colori, attuali: Colori): Colori {
+  const fuori = { ...attuali }
+  for (const chiave of DALLA_TAVOLOZZA) fuori[chiave] = nuovi[chiave]
+  return fuori
+}
+
 export function temaDaPalette(palette: string[], verso: 'scuro' | 'chiaro' = 'scuro'): Colori {
   const colori = palette.map(leggiEsadecimale).filter((c): c is Rgb => c !== null)
   if (colori.length === 0) return PRESET[verso === 'chiaro' ? 'chiaro' : 'pulse']

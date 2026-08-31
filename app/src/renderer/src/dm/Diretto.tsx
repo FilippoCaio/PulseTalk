@@ -84,9 +84,10 @@ export default function Diretto({
       io={io}
       profili={profili}
       nomeVisibile={`la conversazione con ${conversazione.con.nome}`}
+      accantoAllaLinguetta
       mostraAnteprimeLink={mostraAnteprimeLink}
       intestazione={
-        <header className="flex items-center gap-3 border-b border-bordo px-5 py-2.5">
+        <header className="flex items-center gap-3 border-b border-bordo px-5 py-2.5 md:pl-10">
           <span className="relative shrink-0">
             {conversazione.con.avatar ? (
               <img

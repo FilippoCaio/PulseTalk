@@ -24,7 +24,8 @@ export default function Chat({
   profili,
   intestazione,
   nomeVisibile,
-  mostraAnteprimeLink = true
+  mostraAnteprimeLink = true,
+  accantoAllaLinguetta = false
 }: {
   api: Api
   canale: Canale
@@ -43,7 +44,27 @@ export default function Chat({
   /** Come si chiama questo posto nelle frasi. Di serie: #nome-del-canale. */
   nomeVisibile?: string
   mostraAnteprimeLink?: boolean
+  /**
+   * Questa chat confina a sinistra con la linguetta che chiude le colonne.
+   *
+   * La linguetta sta in posizione assoluta sul bordo delle colonne ed e' larga
+   * venti pixel, quindi sporge dentro a cio' che ha a destra: contro il
+   * contenuto di una chat andava a finire sopra agli avatar e dentro allo
+   * sfondo che si accende passando su un messaggio. Con questo, le tre fasce —
+   * intestazione, messaggi, compositore — cominciano tutte a quaranta pixel
+   * dal bordo, e alla linguetta resta il suo spazio vuoto.
+   *
+   * E' una prop e non una regola per tutti perche' la linguetta non c'e'
+   * sempre: dentro alla sala il pannello della chat e' stretto e non confina
+   * con niente, e quaranta pixel di margine sarebbero soltanto quaranta pixel
+   * di chat in meno.
+   */
+  accantoAllaLinguetta?: boolean
 }): React.JSX.Element {
+  // Le tre fasce si allineano fra loro, oltre a scansare la linguetta: prima
+  // cominciavano a 20, 16 e 12 pixel, e il bordo sinistro della colonna era
+  // leggermente frastagliato.
+  const margine = accantoAllaLinguetta ? 'md:pl-10' : ''
   const scorrevole = useRef<HTMLDivElement>(null)
   const [rispondiA, setRispondiA] = useState<Dati | null>(null)
   const [inFondo, setInFondo] = useState(true)
@@ -90,7 +111,7 @@ export default function Chat({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {intestazione ?? (
-        <header className="flex items-baseline gap-3 border-b border-bordo px-5 py-3">
+        <header className={`flex items-baseline gap-3 border-b border-bordo px-5 py-3 ${margine}`}>
           <h1 className="font-medium">
             <span className="text-testo-3">#</span> {canale.nome}
           </h1>
@@ -109,7 +130,7 @@ export default function Chat({
         // orizzontale in fondo alla chat. Dichiararlo toglie quella barra dai
         // casi possibili; che poi non ci sia niente da nascondere lo garantisce
         // il contenuto, che adesso va a capo invece di allargarsi.
-        className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4 py-3"
+        className={`min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4 py-3 ${margine}`}
       >
         {chat.caricando && chat.messaggi.length === 0 && (
           <p className="respiro py-8 text-center text-sm text-testo-3">carico…</p>
@@ -187,6 +208,7 @@ export default function Chat({
       <Compositore
         api={api}
         canale={canale}
+        margine={margine}
         rispondiA={rispondiA}
         profili={profili}
         annullaRisposta={() => setRispondiA(null)}

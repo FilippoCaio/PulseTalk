@@ -25,20 +25,20 @@ import { Fumetto, Piu, Utenti } from '../icone'
  * tondo, e il passaggio a scelto dimezza il raggio, che e' il salto che si
  * vede senza doverlo cercare.
  */
-const RAGGIO_SCELTO = 'rounded-md'
+const RAGGIO_SCELTO = 'rounded-[6px]'
 /**
  * Il riposo porta con se' il suo `group-hover`, e non e' pignoleria di stile.
  *
  * Tailwind non gira: legge i sorgenti e genera solo le classi che ci trova
  * scritte per intero. `group-hover:${RAGGIO_SCELTO}` diventa
- * `group-hover:rounded-md` soltanto a schermo acceso — nel file c'e' un
+ * `group-hover:rounded-[6px]` soltanto a schermo acceso — nel file c'e' un
  * pezzo di template, quindi quella regola nel foglio di stile non nascerebbe
  * mai e il cambio di forma sotto al cursore sparirebbe senza un errore da
  * nessuna parte. Scritte intere, invece, si vedono.
  */
-const RAGGIO_RIPOSO = 'rounded-xl group-hover:rounded-md'
+const RAGGIO_RIPOSO = 'rounded-[12px] group-hover:rounded-[6px]'
 /** Lo stesso, per chi si accende da solo invece che dentro a un `group`. */
-const RAGGIO_RIPOSO_SOLO = 'rounded-xl hover:rounded-md'
+const RAGGIO_RIPOSO_SOLO = 'rounded-[12px] hover:rounded-[6px]'
 
 /**
  * La colonna delle icone, a sinistra di tutto.

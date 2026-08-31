@@ -34,7 +34,8 @@ export default function Compositore({
   rispondiA,
   profili,
   annullaRisposta,
-  manda
+  manda,
+  margine = ''
 }: {
   api: Api
   canale: Canale
@@ -42,6 +43,14 @@ export default function Compositore({
   profili: Map<number, { nome: string; avatar: string | null }>
   annullaRisposta: () => void
   manda: (dati: { testo?: string; allegati?: number[] }) => Promise<void>
+  /**
+   * Classi di margine sinistro, per allinearsi al resto della chat.
+   *
+   * Arriva da fuori invece di essere decisa qui perche' dipende da cosa c'e'
+   * a sinistra della chat, che il compositore non puo' sapere: vedi
+   * `accantoAllaLinguetta` in `Chat`.
+   */
+  margine?: string
 }): React.JSX.Element {
   const [testo, setTesto] = useState('')
   const [allegati, setAllegati] = useState<Allegato[]>([])
@@ -235,7 +244,7 @@ export default function Compositore({
 
   return (
     <div
-      className="border-t border-bordo p-3"
+      className={`border-t border-bordo p-3 ${margine}`}
       onDragOver={(e) => {
         e.preventDefault()
         setSopra(true)

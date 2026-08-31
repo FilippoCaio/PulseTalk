@@ -59,6 +59,32 @@
   --color-attenzione: var(--pt-attenzione);
   --color-male: var(--pt-male);
 
+  /*
+   * Gli angoli, tutti un gradino piu' morbidi di quelli di serie.
+   *
+   * Qui e non in quaranta file: `rounded-lg` e compagnia leggono queste
+   * variabili, quindi il fondo di un pannello, la riga di un messaggio, un
+   * campo di testo e una scheda si ammorbidiscono insieme e restano d'accordo
+   * fra loro. Ritoccarli uno per uno avrebbe voluto dire, entro un mese, tre
+   * raggi diversi per tre cose che stanno una accanto all'altra.
+   *
+   * Il gradino cresce con la misura invece di essere una percentuale fissa: su
+   * un campo alto 34 pixel due pixel in piu' si vedono, sullo stesso rapporto
+   * un pannello grande diventerebbe un fagiolo. Quindi +2 in basso, +4 in
+   * mezzo, +6 in cima.
+   *
+   * Le icone dei server NON passano di qui: le tengono due valori scritti in
+   * pixel in `BarraSpazi.tsx`, apposta, perche' quelle sono state appena
+   * portate a raggi piu' PICCOLI e ammorbidirle di nuovo disferebbe la cosa
+   * che si era chiesta.
+   */
+  --radius-sm: 0.3125rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.6875rem;
+  --radius-xl: 0.9375rem;
+  --radius-2xl: 1.25rem;
+  --radius-3xl: 1.75rem;
+
   /* Anche i passaggi di colore e i passaggi al passaggio del mouse, che in
      Tailwind sono 150ms di serie. Un pannello che si posa lento sopra a un
      pulsante che si accende di scatto e' un'interfaccia con due velocita'.
