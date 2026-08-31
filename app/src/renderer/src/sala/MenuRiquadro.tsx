@@ -154,13 +154,22 @@ export default function MenuRiquadro({
   // Prima si misura, poi si mostra: aperto vicino al bordo destro il menu
   // uscirebbe dalla finestra, e in una finestra senza barra di scorrimento
   // quello che esce non torna piu'.
+  //
+  // Due limiti per asse, e il secondo mancava. `Math.min` da solo tira il menu
+  // su finche' il suo fondo rientra, e con un menu piu' alto dello spazio
+  // disponibile quel conto da' un numero negativo: il fondo rientrava e la
+  // cima usciva dall'altra parte. Succedeva a chi modera, che ha qualche voce
+  // in piu' - cioe' proprio a chi il menu lo apre per farci qualcosa.
+  //
+  // Il `max` da solo pero' non basta, perche' un menu piu' alto della finestra
+  // non ci sta e basta: da li' l'altezza massima e lo scorrimento qui sotto.
   useLayoutEffect(() => {
     const e = scatola.current
     if (!e) return
     const { width, height } = e.getBoundingClientRect()
     setPosto({
-      sinistra: Math.min(x, window.innerWidth - width - MARGINE),
-      alto: Math.min(y, window.innerHeight - height - MARGINE),
+      sinistra: Math.max(MARGINE, Math.min(x, window.innerWidth - width - MARGINE)),
+      alto: Math.max(MARGINE, Math.min(y, window.innerHeight - height - MARGINE)),
       pronto: true
     })
   }, [x, y])
@@ -229,10 +238,18 @@ export default function MenuRiquadro({
       role="menu"
       tabIndex={-1}
       onContextMenu={(e) => e.preventDefault()}
-      className={`menu-comparsa fixed z-50 w-56 rounded-xl border border-bordo bg-fondo-2 p-2 shadow-xl shadow-black/40 ${
+      className={`menu-comparsa fixed z-50 w-56 overflow-y-auto overscroll-contain rounded-xl border border-bordo bg-fondo-2 p-2 shadow-xl shadow-black/40 ${
         posto.pronto ? 'opacity-100' : 'opacity-0'
       }`}
-      style={{ left: posto.sinistra, top: posto.alto }}
+      // L'altezza massima e' la finestra meno i due margini: piu' alto di
+      // cosi' non ci sta, e invece di uscire si scorre. Con le voci di chi
+      // modera il menu supera i seicento pixel, che su un portatile in
+      // orizzontale e' gia' oltre.
+      style={{
+        left: posto.sinistra,
+        top: posto.alto,
+        maxHeight: `calc(100dvh - ${MARGINE * 2}px)`
+      }}
     >
       {intestazione ?? (
         <div className="truncate px-1.5 pt-0.5 pb-2 text-xs font-semibold text-testo-2">
