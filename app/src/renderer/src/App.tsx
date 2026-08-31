@@ -27,6 +27,8 @@ import Accesso, { Completa } from './atrio/Accesso'
 import Avvio from './atrio/Avvio'
 import PannelloServer, { BottoneServer } from './atrio/Server'
 import { applicaTema } from './lib/tema'
+import { caricaLingua } from './lib/pacchettiLingua'
+import { linguaDaUsare } from './atrio/ScegliLingua'
 import BarraSpazi from './spazi/BarraSpazi'
 import ColonnaCanali from './spazi/ColonnaCanali'
 import PannelloVoce from './spazi/PannelloVoce'
@@ -191,6 +193,24 @@ export default function App(): React.JSX.Element {
    * impostazione; legarsi al suo contenuto lo fa solo quando i colori cambiano
    * davvero.
    */
+  /**
+   * La lingua, accesa da qui come i colori.
+   *
+   * Le due dipendenze sono la scelta e il server, e sono due cose diverse: la
+   * scelta decide *quale* lingua, il server decide se esiste un pacchetto
+   * aggiornato da scaricare oltre a quello compilato dentro. Cambiare server
+   * ricarica quindi la stessa lingua, che e' giusto: il pacchetto potrebbe
+   * essere un altro.
+   *
+   * Senza scelta si guarda il sistema, e non si scrive niente: `lingua` resta
+   * vuota finche' qualcuno non la sceglie davvero, cosi' chi apre l'app su un
+   * computer in inglese la trova in inglese, e chi ha scelto l'italiano se lo
+   * tiene ovunque.
+   */
+  useEffect(() => {
+    void caricaLingua(linguaDaUsare(impostazioni?.lingua), impostazioni?.server || null)
+  }, [impostazioni?.lingua, impostazioni?.server])
+
   const temaScritto = JSON.stringify(impostazioni?.tema ?? null)
   useEffect(() => {
     const tema = JSON.parse(temaScritto) as Impostazioni['tema'] | null

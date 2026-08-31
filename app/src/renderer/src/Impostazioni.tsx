@@ -37,6 +37,7 @@ import {
 } from './icone'
 import { ImpostazioniServer, MiaAi } from './ChiaviAi'
 import Aspetto from './Aspetto'
+import ScegliLingua from './atrio/ScegliLingua'
 import { configuraSuoni, suona } from './lib/suoni'
 
 /**
@@ -443,6 +444,13 @@ export default function PannelloImpostazioni({
 
             {pagina === 'app' && (
               <>
+                <Sezione
+                  titolo="Lingua"
+                  sotto="Le lingue oltre all'italiano arrivano con l'app, e il server puo' aggiungerne o correggerne senza aspettare una versione nuova."
+                >
+                  <ScegliLingua server={impostazioni.server || null} />
+                </Sezione>
+
                 <SezioneAggiornamenti inChiamata={inChiamata} />
 
                 {ponte.elettrone ? (

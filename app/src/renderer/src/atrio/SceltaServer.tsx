@@ -4,6 +4,8 @@ import { nomeDaIndirizzo, normalizzaIndirizzo } from '@shared/collegamenti'
 import { provaServer } from '../lib/api'
 import { Avviso, Bottone, Campo, classiInput } from '../ui'
 import { Chevron } from '../icone'
+import { usaT } from '../lib/usaLingua'
+import ScegliLingua from './ScegliLingua'
 
 /**
  * La prima domanda, e viene prima di tutte le altre: dove.
@@ -32,6 +34,7 @@ export default function SceltaServer({
   /** L'indirizzo verificato, gia' normalizzato. */
   quandoScelto: (indirizzo: string) => Promise<void> | void
 }): React.JSX.Element {
+  const { t } = usaT()
   const [indirizzo, setIndirizzo] = useState('')
   const [inCorso, setInCorso] = useState(false)
   const [errore, setErrore] = useState<string | null>(null)
@@ -63,23 +66,34 @@ export default function SceltaServer({
   return (
     <div className="flex h-full items-center justify-center overflow-y-auto p-4 sm:p-8">
       <div className="pannello w-full max-w-md py-4 sm:py-8">
+        {/* La lingua si sceglie qui, prima di tutto il resto.
+
+            E' la prima schermata che l'applicazione mostra, quindi e' l'unico
+            posto in cui chi non capisce l'italiano puo' rimediare da solo:
+            metterla nelle impostazioni voleva dire chiedergli di attraversare
+            in italiano l'accesso, la creazione dell'account e mezzo pannello
+            per arrivare al comando che gli serviva subito. */}
+        <div className="mb-6 flex justify-end">
+          <ScegliLingua />
+        </div>
+
         <div className="mb-8">
           <h1 className="text-2xl font-semibold tracking-tight">PulseTalk</h1>
           <p className="mt-1.5 text-sm leading-relaxed text-testo-2">
-            A quale server ti colleghi?
+            {t('A quale server ti colleghi?')}
           </p>
         </div>
 
         <div className="space-y-4 rounded-xl border border-bordo bg-fondo-2 p-5">
           <p className="text-sm leading-relaxed text-testo-2">
-            PulseTalk non e&apos; un servizio: e&apos; un programma che gira su una macchina di
-            qualcuno. L&apos;indirizzo te lo da&apos; chi l&apos;ha acceso, insieme al codice di
-            invito.
+            {t(
+              'PulseTalk non e’ un servizio: e’ un programma che gira su una macchina di qualcuno. L’indirizzo te lo da’ chi l’ha acceso, insieme al codice di invito.'
+            )}
           </p>
 
           <Campo
-            etichetta="Indirizzo del server"
-            aiuto="Per esempio talk.casa.it, oppure http://192.168.1.10:8080 in rete locale."
+            etichetta={t('Indirizzo del server')}
+            aiuto={t('Per esempio talk.casa.it, oppure http://192.168.1.10:8080 in rete locale.')}
           >
             <input
               className={classiInput}
@@ -104,7 +118,7 @@ export default function SceltaServer({
             disabled={inCorso || !indirizzo.trim()}
             onClick={() => void vai(indirizzo)}
           >
-            {inCorso ? 'Guardo se c’e’…' : 'Continua'}
+            {inCorso ? t('Guardo se c’e’…') : t('Continua')}
           </Bottone>
         </div>
 
@@ -113,7 +127,7 @@ export default function SceltaServer({
         {conosciuti.length > 0 && (
           <div className="mt-6">
             <p className="mb-2 text-[11px] tracking-wide text-testo-3 uppercase">
-              Gia&apos; collegati
+              {t('Gia’ collegati')}
             </p>
             <div className="space-y-1.5">
               {conosciuti.map((s) => (
@@ -140,8 +154,9 @@ export default function SceltaServer({
         )}
 
         <p className="mt-6 text-center text-xs leading-relaxed text-testo-3">
-          Non ce l&apos;hai? Non c&apos;e&apos; un elenco pubblico da cui sceglierne uno: chiedi
-          l&apos;indirizzo a chi ti ha invitato.
+          {t(
+            'Non ce l’hai? Non c’e’ un elenco pubblico da cui sceglierne uno: chiedi l’indirizzo a chi ti ha invitato.'
+          )}
         </p>
       </div>
     </div>

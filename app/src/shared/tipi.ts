@@ -361,6 +361,17 @@ export interface Impostazioni {
    * intende cambiarlo anche a chi sta dall'altra parte della chiamata.
    */
   tema: Tema
+
+  /**
+   * In che lingua e' scritta l'interfaccia.
+   *
+   * Vuoto vuol dire "non ho ancora scelto", e non e' la stessa cosa di
+   * "italiano": alla prima apertura si guarda cosa dice il sistema e si parte
+   * da li', ma chi sceglie l'italiano di proposito deve restarci anche se
+   * domani apre l'app su un computer in inglese. Un valore scelto e uno
+   * indovinato non si possono distinguere se si scrivono nello stesso modo.
+   */
+  lingua: string
 }
 
 /**
@@ -457,7 +468,8 @@ export const IMPOSTAZIONI_INIZIALI: Impostazioni = {
   colonneChiuse: false,
   spaziSilenziati: [],
   dispositivoMusica: null,
-  tema: { preset: 'pulse', colori: {} }
+  tema: { preset: 'pulse', colori: {} },
+  lingua: ''
 }
 
 /** I quattro lati a cui si puo' agganciare la striscia dei riquadri. */

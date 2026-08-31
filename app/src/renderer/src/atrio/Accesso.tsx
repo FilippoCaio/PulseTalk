@@ -5,6 +5,7 @@ import { Api, ErroreApi } from '../lib/api'
 import { ponte } from '../ponte'
 import { Avviso, Bottone, Campo, classiInput } from '../ui'
 import { Globo } from '../icone'
+import { usaT } from '../lib/usaLingua'
 
 /**
  * Entrare.
@@ -58,6 +59,7 @@ export function ModuloAccesso({
   quandoCambiaModo?: (modo: Modo) => void
   quandoEntra: (entrata: Entrata) => Promise<void> | void
 }): React.JSX.Element {
+  const { t } = usaT()
   const [modo, setModo] = useState<Modo>(modoIniziale ?? (codiceIniziale ? 'registra' : 'accedi'))
   /**
    * Il server su cui si sta entrando, e da qui non si cambia.
@@ -133,14 +135,14 @@ export function ModuloAccesso({
     // strade non ce ne sono. Il controllo resta perche' costa una riga, e
     // l'alternativa e' un pulsante che premuto non fa niente.
     const base = normalizzaIndirizzo(server)
-    if (!base) return setErrore('Serve l\'indirizzo del server: torna indietro e scegline uno.')
+    if (!base) return setErrore(t('Serve l’indirizzo del server: torna indietro e scegline uno.'))
 
     if (modo === 'accedi') {
-      if (!utente.trim() || !password) return setErrore('Servono nome utente e password.')
+      if (!utente.trim() || !password) return setErrore(t('Servono nome utente e password.'))
     } else {
-      if (!codice.trim()) return setErrore('Serve il codice di invito.')
-      if (!utente.trim()) return setErrore('Scegli un nome utente.')
-      if (password !== conferma) return setErrore('Le due password non coincidono.')
+      if (!codice.trim()) return setErrore(t('Serve il codice di invito.'))
+      if (!utente.trim()) return setErrore(t('Scegli un nome utente.'))
+      if (password !== conferma) return setErrore(t('Le due password non coincidono.'))
     }
 
     setInCorso(true)
@@ -170,7 +172,9 @@ export function ModuloAccesso({
       } else {
         setErrore(
           problema.stato === 403 && modo === 'registra'
-            ? 'Il codice non e\' valido, o e\' gia\' stato usato. I codici valgono una volta sola: fattene dare un altro.'
+            ? t(
+                'Il codice non e’ valido, o e’ gia’ stato usato. I codici valgono una volta sola: fattene dare un altro.'
+              )
             : problema.message
         )
       }
@@ -184,7 +188,7 @@ export function ModuloAccesso({
   }
 
   const azione =
-    etichettaAzione ?? { accedi: 'Entra', registra: 'Crea l\'account' }
+    etichettaAzione ?? { accedi: t('Entra'), registra: t('Crea l’account') }
   const nomePreso = preso?.nome === utente.trim().toLowerCase() ? preso : null
 
   if (recupero) {
@@ -208,8 +212,8 @@ export function ModuloAccesso({
 
         {modo === 'registra' && (
           <Campo
-            etichetta="Codice di invito"
-            aiuto="Te lo da' chi amministra il server. Vale una volta sola."
+            etichetta={t('Codice di invito')}
+            aiuto={t('Te lo da’ chi amministra il server. Vale una volta sola.')}
           >
             <input
               className={classiInput}
@@ -224,7 +228,7 @@ export function ModuloAccesso({
         )}
 
         <Campo
-          etichetta="Nome utente"
+          etichetta={t('Nome utente')}
           aiuto={
             modo === 'registra'
               ? 'Minuscolo, senza spazi. E\' quello con cui entrerai qui d\'ora in poi.'
@@ -272,7 +276,7 @@ export function ModuloAccesso({
 
         {modo === 'registra' && (
           <Campo
-            etichetta="Nome visibile"
+            etichetta={t('Nome visibile')}
             aiuto="Come ti vedono gli altri. Facoltativo: senza, usa il nome utente."
           >
             <input
@@ -285,7 +289,10 @@ export function ModuloAccesso({
           </Campo>
         )}
 
-        <Campo etichetta="Password" aiuto={modo === 'registra' ? 'Almeno 10 caratteri.' : undefined}>
+        <Campo
+          etichetta={t('Password')}
+          aiuto={modo === 'registra' ? t('Almeno 10 caratteri.') : undefined}
+        >
           <input
             className={classiInput}
             type="password"
@@ -297,7 +304,7 @@ export function ModuloAccesso({
         </Campo>
 
         {modo === 'registra' && (
-          <Campo etichetta="Ripeti la password">
+          <Campo etichetta={t('Ripeti la password')}>
             <input
               className={classiInput}
               type="password"
@@ -317,7 +324,7 @@ export function ModuloAccesso({
           disabled={inCorso || !!nomePreso}
           onClick={() => void prova()}
         >
-          {inCorso ? 'un momento…' : modo === 'accedi' ? azione.accedi : azione.registra}
+          {inCorso ? t('un momento…') : modo === 'accedi' ? azione.accedi : azione.registra}
         </Bottone>
 
         {/* Solo entrando: in registrazione una password da dimenticare non
@@ -331,7 +338,7 @@ export function ModuloAccesso({
             }}
             className="w-full text-center text-xs text-testo-3 underline underline-offset-2 hover:text-testo-2"
           >
-            Ho dimenticato la password
+            {t('Ho dimenticato la password')}
           </button>
         )}
 
@@ -343,13 +350,13 @@ export function ModuloAccesso({
             }}
             className="w-full text-center text-xs text-testo-3 underline underline-offset-2 hover:text-testo-2"
           >
-            Ho un codice da un altro dispositivo
+            {t('Ho un codice da un altro dispositivo')}
           </button>
         )}
       </div>
 
       <p className="mt-4 text-center text-sm text-testo-3">
-        {modo === 'accedi' ? 'Hai un codice di invito?' : 'Hai gia\' un account qui?'}{' '}
+        {modo === 'accedi' ? t('Hai un codice di invito?') : t('Hai gia’ un account qui?')}{' '}
         <button
           onClick={() => {
             const prossimo = modo === 'accedi' ? 'registra' : 'accedi'
@@ -362,7 +369,7 @@ export function ModuloAccesso({
           }}
           className="text-vivo underline underline-offset-2 hover:text-vivo-2"
         >
-          {modo === 'accedi' ? 'Crea un account' : 'Entra'}
+          {modo === 'accedi' ? t('Crea un account') : t('Entra')}
         </button>
       </p>
     </>
@@ -416,6 +423,7 @@ export default function Accesso({
   const invitoDalLink =
     typeof location !== 'undefined' ? new URLSearchParams(location.search).get('invito') : null
 
+  const { t } = usaT()
   const [avvertenza, setAvvertenza] = useState<string | null>(null)
   const [modo, setModo] = useState<Modo>(invitoDalLink ? 'registra' : 'accedi')
 
@@ -439,13 +447,15 @@ export default function Accesso({
         <div className="mb-8">
           <h1 className="text-2xl font-semibold tracking-tight">PulseTalk</h1>
           <p className="mt-1.5 text-sm leading-relaxed text-testo-2">
-            {modo === 'accedi' ? 'Bentornato.' : 'Un codice di invito, e poi le credenziali sono tue.'}
+            {modo === 'accedi'
+              ? t('Bentornato.')
+              : t('Un codice di invito, e poi le credenziali sono tue.')}
           </p>
           {dove && (
             <p className="mt-2 flex items-center gap-1.5 text-xs text-testo-3">
               <Globo className="h-3.5 w-3.5 shrink-0" />
               <span className="min-w-0 truncate" title={indirizzo}>
-                su <span className="text-testo-2">{dove}</span>
+                {t('su')} <span className="text-testo-2">{dove}</span>
               </span>
             </p>
           )}
@@ -489,12 +499,12 @@ export default function Accesso({
             passo — e sta dopo il pulsante che porta avanti, non prima. */}
         {tornaAllaScelta && (
           <p className="mt-6 text-center text-xs text-testo-3">
-            Non e&apos; questo il server?{' '}
+            {t('Non e’ questo il server?')}{' '}
             <button
               onClick={tornaAllaScelta}
               className="text-vivo underline underline-offset-2 hover:text-vivo-2"
             >
-              Cambialo
+              {t('Cambialo')}
             </button>
           </p>
         )}
