@@ -1101,6 +1101,7 @@ export default function Sala({
                 impostazioni.presetSchermo
               }
               audioIniziale={impostazioni.audioSistema}
+              altoparlanteScelto={impostazioni.altoparlanteId}
               modalita={
                 !scegliSorgente.modifica
                   ? 'nuova'

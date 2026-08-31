@@ -63,3 +63,32 @@ export function missaggioFraLeUscite(dispositivi: MediaDeviceInfo[]): string | n
 function pulisci(etichetta: string): string {
   return etichetta.replace(/^(predefinito|default|comunicazioni|communications)\s*-\s*/i, '').trim()
 }
+
+/**
+ * Vero quando le voci degli altri finiscono di sicuro nella condivisione.
+ *
+ * E' l'altra faccia del missaggio, e capita molto piu' spesso. Il loopback
+ * prende cio' che esce dall'uscita **predefinita** di Windows; se PulseTalk
+ * suona proprio li' - e ci suona finche' nessuno ha scelto un'uscita a mano -
+ * allora nella condivisione ci sono anche le voci di tutti quelli in chiamata.
+ * Chi guarda lo schermo si sente rimandare indietro la propria voce, e sente
+ * gli altri due volte, la seconda in ritardo.
+ *
+ * Non e' un difetto da riparare: e' come funziona il loopback, e non esiste
+ * un'API - ne' in Electron ne' in Chromium - per catturare l'audio di una
+ * singola applicazione escludendo la propria. `getDisplayMedia` offre
+ * `loopback` e `loopbackWithMute`, e sono tutti e due tutto il sistema.
+ *
+ * Quello che si puo' fare e' dirlo prima, perche' la via d'uscita esiste ed e'
+ * a due clic: mandare PulseTalk su un'uscita diversa da quella predefinita -
+ * le cuffie, tipicamente - e il loopback smette di sentirla.
+ *
+ * Si risponde solo quando la risposta e' certa. Con un'uscita scelta a mano
+ * non si puo' sapere da qui se sia anche quella predefinita di Windows, e un
+ * avviso che compare a caso e' un avviso che si impara a chiudere senza
+ * leggere.
+ */
+export function vociNellaCondivisione(altoparlanteScelto: string | null | undefined): boolean {
+  const scelto = String(altoparlanteScelto ?? '').trim()
+  return scelto === '' || scelto === 'default'
+}

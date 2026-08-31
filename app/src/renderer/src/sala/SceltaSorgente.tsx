@@ -3,7 +3,7 @@ import type { ModoAudioSistema, Sorgente } from '@shared/tipi'
 import { PRESET_SCHERMO, type PresetSchermo } from '@shared/qualita'
 import { ponte } from '../ponte'
 import { usaDispositivi } from '../lib/usaDispositivi'
-import { missaggioFraLeUscite } from '../lib/loopbackSporco'
+import { missaggioFraLeUscite, vociNellaCondivisione } from '../lib/loopbackSporco'
 import { Avviso, Bottone } from '../ui'
 import { Altoparlante, Giu, Lente, SchermoCondividi, Spunta } from '../icone'
 
@@ -40,12 +40,21 @@ const BITRATE_AUDIO: [number, string, string][] = [
 export default function SceltaSorgente({
   presetIniziale,
   audioIniziale,
+  altoparlanteScelto,
   modalita = 'nuova',
   conferma,
   chiudi
 }: {
   presetIniziale: string
   audioIniziale: ModoAudioSistema
+  /**
+   * Su quale uscita suona PulseTalk, se qualcuno l'ha scelta.
+   *
+   * Serve a sapere se le voci degli altri finiranno nella condivisione: vedi
+   * `vociNellaCondivisione`. Vuoto vuol dire «quella predefinita di Windows»,
+   * che e' esattamente quella che il loopback cattura.
+   */
+  altoparlanteScelto: string | null
   modalita?: ModalitaSceltaSorgente
   conferma: (
     sorgente: Sorgente | null,
@@ -212,6 +221,29 @@ export default function SceltaSorgente({
             finisce anche il microfono, e dall'altra parte si sente chi parla
             due volte — una dalla sua traccia, una dentro alla condivisione,
             leggermente in ritardo. */}
+        {/* Le voci degli altri dentro alla condivisione.
+
+            Capita molto piu' spesso del missaggio, e per una ragione banale:
+            basta non aver mai scelto un'uscita a mano. Si dice solo quando e'
+            certo - con un'uscita scelta non si puo' sapere da qui se sia anche
+            quella predefinita - perche' un avviso che compare a caso e' un
+            avviso che si impara a chiudere senza leggere. */}
+        {vociNellaCondivisione(altoparlanteScelto) &&
+          ponte.audioDiSistema &&
+          audio !== 'niente' && (
+            <div className="shrink-0 border-t border-bordo px-5 pt-3">
+              <Avviso tono="attenzione">
+                PulseTalk sta suonando sull&apos;uscita predefinita di Windows, che e&apos;
+                esattamente quella che questa condivisione cattura: dentro ci finiranno anche{' '}
+                <strong>le voci di chi e&apos; in chiamata</strong>, e chi guarda si sentira&apos;
+                rimandare indietro la propria. Non e&apos; una cosa che si possa togliere dopo -
+                Windows non sa isolare l&apos;audio di una singola applicazione. Per evitarlo:
+                manda PulseTalk sulle cuffie, o su un&apos;altra uscita, da Impostazioni &rsaquo;
+                Audio.
+              </Avviso>
+            </div>
+          )}
+
         {missaggio && ponte.audioDiSistema && audio !== 'niente' && (
           <div className="shrink-0 border-t border-bordo px-5 pt-3">
             <Avviso tono="attenzione">
