@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Impostazioni } from '@shared/tipi'
 import ControlliAudio from '../ControlliAudio'
+import { LinguettaColonne } from '../LinguettaColonne'
 import type { AudioCondiviso, AudioRemoto } from '../lib/usaSessione'
 import { scegli, usaDispositivi, vociTendina } from '../lib/usaDispositivi'
 import {
@@ -16,7 +17,6 @@ import {
   MicrofonoSpento,
   Sottotitoli,
   Onde,
-  Pile,
   Riavvolgi,
   SchermoCondividi,
   SchermoIntero,
@@ -68,6 +68,7 @@ export default function OverlayChiamata({
   soloGrande,
   invita,
   impostazioni,
+  colonne,
   schermoIntero,
   tornaAiServer,
   alternaMicrofono,
@@ -146,6 +147,24 @@ export default function OverlayChiamata({
    */
   invita?: () => void
   impostazioni: Impostazioni
+  /**
+   * La sezione di sinistra: com'e' adesso, e come la si apre e si chiude.
+   *
+   * Non e' roba della chiamata — quelle colonne sono dell'applicazione — ma la
+   * linguetta per aprirle e chiuderle sta qui dentro, nell'involucro che va e
+   * viene col cursore. Ferma sul bordo di un video sarebbe una cosa in piu' da
+   * guardare per tutta la sera, e non c'e' niente da guardare: e' un pulsante.
+   */
+  colonne: { ritirate: boolean; alterna: () => void }
+  /**
+   * Il tutto schermo della sala, che e' un'altra cosa dalle colonne qui sopra.
+   *
+   * Sembrano lo stesso comando — tutti e due fanno sparire la sezione di
+   * sinistra — e non lo sono. La linguetta e' una preferenza: chiusa resta
+   * chiusa, anche domani, anche fuori dalla chiamata. Questo e' un modo di
+   * stare dentro alla stanza per un po', si spegne da solo uscendo, e con un
+   * riquadro solo in primo piano toglie di mezzo anche i margini.
+   */
   schermoIntero: { attivo: boolean; alterna: () => void }
   /** Esce dalla vista della sala, non dalla chiamata. Solo telefono. */
   tornaAiServer?: () => void
@@ -494,13 +513,13 @@ export default function OverlayChiamata({
             aperto={aperto === 'microfono'}
             apri={() => setAperto(aperto === 'microfono' ? null : 'microfono')}
           >
-            <Tondo
+            <Tasto
               tono={microfonoAcceso ? 'normale' : 'male'}
               titolo={microfonoAcceso ? 'Zittisci il microfono' : 'Riaccendi il microfono'}
               premi={alternaMicrofono}
             >
               {microfonoAcceso ? <Microfono /> : <MicrofonoSpento />}
-            </Tondo>
+            </Tasto>
           </ConFreccia>
 
           {puoTrasmettere && (
@@ -508,38 +527,46 @@ export default function OverlayChiamata({
               aperto={aperto === 'camera'}
               apri={() => setAperto(aperto === 'camera' ? null : 'camera')}
             >
-              <Tondo
+              <Tasto
                 acceso={cameraAccesa}
                 titolo={cameraAccesa ? 'Spegni la camera' : 'Accendi la camera'}
                 premi={alternaCamera}
               >
                 {cameraAccesa ? <Camera /> : <CameraSpenta />}
-              </Tondo>
+              </Tasto>
             </ConFreccia>
           )}
 
+          {/* L'elenco di cio' che sta uscendo da qui sta sotto alla freccia,
+              come il microfono e la camera hanno la loro.
+
+              Prima era un secondo pulsante accanto a questo, con l'icona delle
+              pile, e compariva dal nulla appena partiva una condivisione: due
+              icone vicine che parlano della stessa cosa, e nessuna delle due
+              che dice di essere l'elenco dell'altra. La freccia invece si sa
+              gia' leggere — e' la stessa di li' accanto — e dice a chi
+              appartiene quello che apre.
+
+              La freccia c'e' solo condividendo: senza condivisioni quell'elenco
+              non elenca niente. */}
           {puoTrasmettere && (
-            <>
-              <Tondo
+            <ConFreccia
+              aperto={aperto === 'condivisioni'}
+              etichetta={`${schermiAttivi.length} in corso: apri l'elenco`}
+              apri={
+                schermiAttivi.length > 0
+                  ? () => setAperto(aperto === 'condivisioni' ? null : 'condivisioni')
+                  : undefined
+              }
+            >
+              <Tasto
                 acceso={schermiAttivi.length > 0}
                 titolo="Condividi uno schermo o una finestra"
                 premi={apriCondivisione}
               >
                 <SchermoCondividi />
-              </Tondo>
-
-              {/* Compare solo condividendo: e' la porta sull'elenco di cio' che
-                  sta uscendo da qui, e senza condivisioni non elenca niente. */}
-              {schermiAttivi.length > 0 && (
-                <Tondo
-                  acceso={aperto === 'condivisioni'}
-                  titolo={`${schermiAttivi.length} in corso: apri l'elenco`}
-                  premi={() => setAperto(aperto === 'condivisioni' ? null : 'condivisioni')}
-                >
-                  <Pile />
-                </Tondo>
-              )}
-            </>
+              </Tasto>
+            </ConFreccia>
           )}
 
           {/* Gli audio condivisi hanno una porta tutta loro, e non stanno
@@ -549,13 +576,13 @@ export default function OverlayChiamata({
               uno, tuo o di qualcun altro. */}
           {quantiAudio > 0 && (
             <span className="relative">
-              <Tondo
+              <Tasto
                 acceso={aperto === 'audio'}
                 titolo={`${quantiAudio} audio condivisi: volumi e muto`}
                 premi={() => setAperto(aperto === 'audio' ? null : 'audio')}
               >
                 <Onde attivo={qualcunoSuona} className="h-[18px] w-[18px]" />
-              </Tondo>
+              </Tasto>
               {/* Il numero nel cerchio verde, come il pallino di stato
                   sull'icona dell'utente: dice quante ce ne sono senza dover
                   aprire niente. */}
@@ -572,7 +599,7 @@ export default function OverlayChiamata({
               nessuna striscia da nascondere, e sarebbe un pulsante che non fa
               niente. */}
           {soloGrande && (
-            <Tondo
+            <Tasto
               acceso={soloGrande.attivo}
               titolo={
                 soloGrande.attivo
@@ -582,7 +609,7 @@ export default function OverlayChiamata({
               premi={soloGrande.alterna}
             >
               <Utenti />
-            </Tondo>
+            </Tasto>
           )}
 
           {/* Sempre presente, anche spento.
@@ -591,7 +618,7 @@ export default function OverlayChiamata({
               volte c'e' e a volte no e' un pulsante che non si impara mai: chi
               l'ha disattivato senza accorgersene non ha modo di capire dove sia
               finito. Spento dice dov'e' e come riaccenderlo. */}
-          <Tondo
+          <Tasto
             titolo={
               riascoltoAttivo
                 ? `Riascolta gli ultimi ${secondiRiascolto} secondi`
@@ -601,7 +628,7 @@ export default function OverlayChiamata({
             spento={!riascoltoAttivo}
           >
             <Riavvolgi />
-          </Tondo>
+          </Tasto>
         </div>
 
         {/* Uscire, fuori dalla scatola e a destra di tutto.
@@ -637,13 +664,38 @@ export default function OverlayChiamata({
       >
         {schermoIntero.attivo ? <SchermoNormale /> : <SchermoIntero />}
       </button>
+
+      {/* La linguetta delle colonne, appoggiata al bordo sinistro.
+
+          Sta dentro a questo involucro, e non nell'applicazione, perche' e'
+          l'unico modo di farla sparire con tutto il resto quando il cursore
+          esce dalla chiamata.
+
+          `left-0` e non una misura: il bordo sinistro di qui e' gia' quello
+          delle colonne, larghe, strette o ritirate che siano — un conto in
+          meno da rifare a mano il giorno in cui una colonna cambia
+          larghezza. */}
+      <LinguettaColonne
+        ritirate={colonne.ritirate}
+        alterna={colonne.alterna}
+        className="pointer-events-auto absolute top-1/2 left-0 -translate-y-1/2 transition"
+      />
     </div>
   )
 }
 
 // -- I pezzi ------------------------------------------------------------------
 
-function Tondo({
+/**
+ * Un pulsante della barra in basso: quadrato, con gli angoli smussati.
+ *
+ * I dieci pixel di raggio non sono scelti a occhio. La scatola che li contiene
+ * ha `rounded-2xl` — sedici pixel — e sei di spaziatura interna: sedici meno
+ * sei fa dieci, ed e' il raggio che corre parallelo a quello esterno invece di
+ * stringersi o allargarsi rispetto a lui. E' una differenza che si vede anche
+ * senza saper dire cosa non va.
+ */
+function Tasto({
   children,
   titolo,
   premi,
@@ -672,35 +724,48 @@ function Tondo({
       onClick={premi}
       title={titolo}
       aria-label={titolo}
-      className={`flex h-10 w-10 items-center justify-center rounded-full transition-colors ${colore} [&>svg]:h-[18px] [&>svg]:w-[18px]`}
+      className={`flex h-10 w-10 items-center justify-center rounded-[10px] transition-colors ${colore} [&>svg]:h-[18px] [&>svg]:w-[18px]`}
     >
       {children}
     </button>
   )
 }
 
-/** Un pulsante con la sua freccetta attaccata sotto. */
+/**
+ * Un pulsante con la sua freccetta attaccata sotto.
+ *
+ * Senza `apri` la freccetta non c'e' e resta il solo pulsante: serve a chi
+ * l'aggancio ce l'ha soltanto ogni tanto — l'elenco delle condivisioni esiste
+ * finche' si condivide qualcosa — e cosi' il pulsante sotto non si sposta di
+ * mezzo pixel quando la freccia compare.
+ */
 function ConFreccia({
   children,
   aperto,
-  apri
+  apri,
+  etichetta = 'Altre impostazioni'
 }: {
   children: React.ReactNode
   aperto: boolean
-  apri: () => void
+  apri?: () => void
+  /** Cosa apre: lo leggono il passaggio del mouse e chi non vede la freccia. */
+  etichetta?: string
 }): React.JSX.Element {
   return (
     <div className="relative">
       {children}
-      <button
-        onClick={apri}
-        aria-label="Altre impostazioni"
-        className={`absolute -bottom-0.5 left-1/2 flex h-4 w-5 -translate-x-1/2 items-center justify-center rounded-full border border-bordo bg-fondo-2 transition-colors ${
-          aperto ? 'text-vivo' : 'text-testo-3 hover:text-testo'
-        }`}
-      >
-        <Su className="h-3 w-3" />
-      </button>
+      {apri && (
+        <button
+          onClick={apri}
+          title={etichetta}
+          aria-label={etichetta}
+          className={`absolute -bottom-0.5 left-1/2 flex h-4 w-5 -translate-x-1/2 items-center justify-center rounded-full border border-bordo bg-fondo-2 transition-colors ${
+            aperto ? 'text-vivo' : 'text-testo-3 hover:text-testo'
+          }`}
+        >
+          <Su className="h-3 w-3" />
+        </button>
+      )}
     </div>
   )
 }

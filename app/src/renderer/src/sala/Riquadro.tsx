@@ -66,7 +66,7 @@ export default function Riquadro({
   guarda,
   nonGuardare,
   puoiGuardare = true,
-  senzaCornice = false,
+  aTuttaSuperficie = false,
   specchiaCamera = false,
   nuovo = true
 }: {
@@ -99,8 +99,22 @@ export default function Riquadro({
   nonGuardare?: () => void
   /** Falso quando i posti sono gia' occupati: il pulsante lo dice invece di non fare niente. */
   puoiGuardare?: boolean
-  /** Riempie la sala a filo: niente raggi e nessun bordo, nemmeno mentre parla. */
-  senzaCornice?: boolean
+  /**
+   * Questo riquadro e' la sala: niente raggi, nessun bordo, e l'angolo non e'
+   * piu' suo.
+   *
+   * Le prime due cose sono di forma — a filo dei bordi della finestra un
+   * riquadro arrotondato con la sua cornice si legge come una figurina
+   * appiccicata sopra allo schermo. La terza e' una collisione vera: il
+   * comando della sovraimpressione sta in basso a destra, e li' in basso a
+   * destra c'e' gia' il tutto schermo dell'overlay. Sovrapposti erano due
+   * icone una sopra l'altra, e nessuna delle due si capiva piu'.
+   *
+   * Si torna indietro lo stesso: Esc esce dal tutto schermo e il comando
+   * ricompare, e il menu del tasto destro ha "Togli dal primo piano" senza
+   * passare da li'.
+   */
+  aTuttaSuperficie?: boolean
   /** Solo anteprima locale della webcam; non modifica mai la traccia pubblicata. */
   specchiaCamera?: boolean
   /**
@@ -404,13 +418,13 @@ export default function Riquadro({
       onPointerCancel={lasciato}
       onDoubleClick={() => !quandoPunta && ingrandibile && setZoom(FERMO)}
       className={`${nuovo ? 'scheda' : ''} group relative h-full w-full overflow-hidden bg-fondo-2 ${
-        senzaCornice ? 'rounded-none' : 'rounded-xl'
+        aTuttaSuperficie ? 'rounded-none' : 'rounded-xl'
       } ${
         dati.tipo === 'schermo' ? 'bg-black' : ''
       } ${quandoPunta ? 'cursor-crosshair' : aFuoco ? 'cursor-zoom-out' : 'cursor-zoom-in'}`}
     >
       {/* Il bordo, sopra a tutto e senza rubare i clic. */}
-      {!senzaCornice && (
+      {!aTuttaSuperficie && (
         <div
           className={`pointer-events-none absolute inset-0 z-10 rounded-xl transition-colors ${bordo}`}
         />
@@ -537,28 +551,33 @@ export default function Riquadro({
           ribalta la stanza non va messo a un centimetro da quello che
           silenzia una notifica. In basso a destra e' anche dove sta il
           tutto-schermo dell'overlay: due comandi che parlano di quanto e'
-          grande una cosa, nello stesso angolo. */}
-      <div
-        onClick={(evento) => evento.stopPropagation()}
-        className="absolute right-2 bottom-2 z-20 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100"
-      >
-        <Comando
-          titolo={
-            aFuoco
-              ? 'Rimetti nella griglia'
-              : dati.tipo === 'schermo'
-                ? "Metti in sovraimpressione — da li' il clic indica"
-                : 'Metti a fuoco'
-          }
-          premi={quandoScelto}
+          grande una cosa, nello stesso angolo — che va bene finche' sono a
+          distanza, e non va piu' bene quando il riquadro si prende tutta la
+          sala e finiscono uno sopra all'altro. Li' questo si toglie: vedi
+          `aTuttaSuperficie`. */}
+      {!aTuttaSuperficie && (
+        <div
+          onClick={(evento) => evento.stopPropagation()}
+          className="absolute right-2 bottom-2 z-20 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100"
         >
-          {aFuoco ? (
-            <Rimpicciolisci className="h-4 w-4" />
-          ) : (
-            <Ingrandisci className="h-4 w-4" />
-          )}
-        </Comando>
-      </div>
+          <Comando
+            titolo={
+              aFuoco
+                ? 'Rimetti nella griglia'
+                : dati.tipo === 'schermo'
+                  ? "Metti in sovraimpressione — da li' il clic indica"
+                  : 'Metti a fuoco'
+            }
+            premi={quandoScelto}
+          >
+            {aFuoco ? (
+              <Rimpicciolisci className="h-4 w-4" />
+            ) : (
+              <Ingrandisci className="h-4 w-4" />
+            )}
+          </Comando>
+        </div>
+      )}
 
       {/* I "guarda qui". Sopra al video ma sotto ai comandi, e trasparenti ai
           clic: indicare non deve rubare la possibilita' di cliccare. */}

@@ -70,3 +70,90 @@ export function usaComparsa<T extends HTMLElement>(
 
   return riferimento
 }
+
+/**
+ * Far vedere il tragitto, quando qualcosa cambia posto.
+ *
+ * Mettere un riquadro in sovraimpressione non e' un cambio di stile: e' un
+ * cambio di ramo dell'albero — la griglia, la striscia e il posto grande sono
+ * tre posti diversi — e React lo fa smontando di qua e rimontando di la'. Un
+ * elemento appena nato non ha niente da cui muoversi, quindi il riquadro
+ * spariva da una parte e ricompariva dall'altra nello stesso fotogramma. E non
+ * ne salta uno solo: mettendone a fuoco uno, tutti gli altri passano insieme
+ * dalla griglia alla striscia, e la stanza sembra ricostruita da zero invece
+ * che riordinata.
+ *
+ * La tecnica si chiama FLIP e sta tutta in una riga: si segnano le posizioni
+ * di prima, si lascia che il browser impagini quelle di dopo, e poi si mette
+ * addosso all'elemento — che ormai sta al posto giusto — la trasformazione che
+ * lo riporterebbe dov'era, togliendola subito. Quello che si vede e' il
+ * tragitto, ma nessuno l'ha mai calcolato.
+ *
+ * Si anima anche la scala e non solo lo spostamento, perche' un riquadro che
+ * va grande cambia misura. Non deforma niente: le tessere sono tutte 16:9,
+ * quindi le due scale sono lo stesso numero e ne basta uno.
+ *
+ * Gli elementi si trovano da soli, per `data-riquadro`. Una ref per ciascuno
+ * vorrebbe dire tenere un elenco che cambia a ogni persona che entra o esce,
+ * per sapere una cosa che l'attributo dice gia'.
+ */
+export function usaSpostamento(
+  radice: React.RefObject<HTMLElement | null>,
+  segno: string
+): void {
+  const posizioni = useRef<Map<string, DOMRect>>(new Map())
+  const segnoPrima = useRef(segno)
+
+  // Senza elenco di dipendenze, di proposito: le posizioni vanno risegnate a
+  // ogni disegno, perche' non si sa in anticipo quale sara' l'ultimo prima
+  // dello spostamento. E' una lettura di rettangoli per riquadro, dopo che il
+  // browser ha gia' impaginato: costa poco e non fa ridisegnare niente.
+  useLayoutEffect(() => {
+    const elemento = radice.current
+    if (!elemento) return
+
+    const cambiato = segnoPrima.current !== segno
+    segnoPrima.current = segno
+
+    const anima =
+      cambiato &&
+      typeof Element.prototype.animate === 'function' &&
+      !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+
+    const adesso = new Map<string, DOMRect>()
+    for (const nodo of Array.from(
+      elemento.querySelectorAll<HTMLElement>('[data-riquadro]')
+    )) {
+      const id = nodo.dataset.riquadro
+      if (!id) continue
+      const dopo = nodo.getBoundingClientRect()
+      adesso.set(id, dopo)
+      if (!anima || dopo.width === 0) continue
+
+      const prima = posizioni.current.get(id)
+      if (!prima || prima.width === 0) continue
+
+      const dx = prima.left - dopo.left
+      const dy = prima.top - dopo.top
+      const scala = prima.width / dopo.width
+      // Sotto ai due pixel non si vede, e un'animazione che non si vede e' solo
+      // lavoro in piu' per la scheda video.
+      if (Math.abs(dx) < 2 && Math.abs(dy) < 2 && Math.abs(scala - 1) < 0.02) continue
+
+      nodo.animate(
+        [
+          {
+            transformOrigin: 'top left',
+            transform: `translate(${dx}px, ${dy}px) scale(${scala})`
+          },
+          { transformOrigin: 'top left', transform: 'none' }
+        ],
+        // La stessa durata e la stessa curva delle colonne che si ritirano:
+        // sono movimenti della stessa stanza, e due tempi diversi si vedono.
+        { duration: 300, easing: 'cubic-bezier(0.28, 0.75, 0, 1)', fill: 'none' }
+      )
+    }
+
+    posizioni.current = adesso
+  })
+}

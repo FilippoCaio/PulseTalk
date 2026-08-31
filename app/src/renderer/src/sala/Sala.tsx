@@ -14,6 +14,7 @@ import { ErroreApi, type Api, type SessioneAutoWriter } from '../lib/api'
 import { MAX_CONDIVISIONI_GUARDATE } from '../lib/usaSessione'
 import type { Riquadro as DatiRiquadro, Sessione } from '../lib/usaSessione'
 import { usaMisura } from '../lib/misura'
+import { usaSpostamento } from '../lib/animazioni'
 import { ponte } from '../ponte'
 import { Chiudi, Matita, Pausa, Play, Riavvolgi, SchermoCondividi, SchermoStop } from '../icone'
 import { Avviso } from '../ui'
@@ -66,6 +67,7 @@ export default function Sala({
   apriImpostazioni,
   salvaImpostazioni,
   schermoIntero,
+  colonne,
   tornaAiServer,
   chatVocale,
   canaleVocale,
@@ -97,6 +99,16 @@ export default function Sala({
    * la cosa chiesta e non puo' fallire.
    */
   schermoIntero: { attivo: boolean; alterna: () => void }
+  /**
+   * Le colonne di sinistra: come stanno, e come si aprono e si chiudono.
+   *
+   * Passano di qui solo per arrivare all'overlay, che e' dove sta la linguetta
+   * per aprirle e chiuderle: la sala non le tocca e non le guarda. Sono
+   * dell'applicazione, e si chiudono anche stando in una chat — ma in chiamata
+   * quel pulsante deve sparire col cursore come tutti gli altri, e l'unico
+   * posto che sparisce col cursore e' li' dentro.
+   */
+  colonne: { ritirate: boolean; alterna: () => void }
   /** Sul telefono torna a server e canali senza abbandonare la voce. */
   tornaAiServer?: () => void
   /**
@@ -199,8 +211,6 @@ export default function Sala({
 
   const radice = useRef<HTMLDivElement>(null)
   const [contenitore, spazio] = usaMisura<HTMLDivElement>()
-  /** Lo spazio che resta alla sovraimpressione, tolta la striscia. */
-  const [palco, spazioPalco] = usaMisura<HTMLDivElement>()
 
   const { persone } = sessione
 
@@ -693,28 +703,15 @@ export default function Sala({
   const aTuttaSuperficie = schermoIntero.attivo && inPrimoPiano && soloGrande
 
   /**
-   * La misura della sovraimpressione, in 16:9 come tutti gli altri riquadri.
+   * Il tragitto, quando qualcuno va in sovraimpressione o torna nella griglia.
    *
-   * Il posto che le tocca e' quello che avanza dopo la striscia, ed e' di
-   * forma qualunque: su una finestra larga diventa un rettangolo lungo e
-   * basso, e il riquadro dentro ci si stirava. Una faccia veniva tagliata ai
-   * lati — `object-cover` — e uno schermo condiviso restava della misura di
-   * prima con due fasce nere sempre piu' larghe intorno: spazio buttato via
-   * che sembrava un difetto.
-   *
-   * Il conto e' quello di `tessere()` con una tessera sola, e sta qui e non
-   * nel CSS per lo stesso motivo: `aspect-ratio` sa vincolare un asse, non sa
-   * scegliere quale dei due comanda.
-   *
-   * A tutta superficie no: li' si e' chiesto esplicitamente di riempire la
-   * finestra, e i bordi neri sono il prezzo che si e' accettato di pagare.
+   * Il segno mette insieme le quattro cose che spostano i riquadri: chi e' al
+   * posto grande, se le persone sono nascoste, se il grande e' il video, e da
+   * che lato sta la striscia. Cambiando una qualunque, i riquadri cambiano
+   * ramo dell'albero e React li rifa da capo altrove — vedi `usaSpostamento`,
+   * che e' cio' che rende quel salto un movimento.
    */
-  const misuraGrande = useMemo(() => {
-    const { larghezza, altezza } = spazioPalco
-    if (larghezza <= 0 || altezza <= 0) return null
-    const l = Math.floor(Math.min(larghezza, altezza * RAPPORTO))
-    return { larghezza: l, altezza: Math.floor(l / RAPPORTO) }
-  }, [spazioPalco])
+  usaSpostamento(radice, `${grande?.id ?? ''}|${soloGrande}|${youtubeAFuoco}|${aggancio}`)
 
   // `relative` sulla radice qui sotto e l ancora della barra dei comandi.
   // Senza, quella si aggrappava alla radice dell applicazione — che comprende
@@ -745,10 +742,18 @@ export default function Sala({
             si prendono quando compaiono. Sotto era gia' giusto; sopra
             l'intestazione era una fascia che spingeva i riquadri, mentre
             adesso ci galleggia sopra — e con `pt-10` finiva addosso al primo
-            riquadro. Uguale a `pb-20` perche' le due barre sono alte uguali. */}
+            riquadro. Uguale a `pb-20` perche' le due barre sono alte uguali.
+
+            Ai lati e' la stessa idea, ed e' arrivata dopo: la linguetta delle
+            colonne e' larga venti pixel e sta appoggiata al bordo sinistro, e
+            con `px-3` i riquadri le finivano sotto. Lo stesso spazio anche a
+            destra, dove non c'e' niente da schivare, perche' una griglia
+            staccata da un bordo solo si vede — e a quel punto sembra storta. */}
         <main
           className={`group/sala relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden ${
-            aTuttaSuperficie ? 'gap-0 p-0' : 'gap-2 px-1 pt-14 pb-18 sm:px-3 sm:pt-20 sm:pb-20'
+            aTuttaSuperficie
+              ? 'gap-0 p-0'
+              : 'gap-2 px-1 pt-14 pb-18 sm:px-3 sm:pt-20 sm:pb-20 md:px-7'
           }`}
         >
           {sessione.audioBloccato && (
@@ -809,17 +814,12 @@ export default function Sala({
                     aTuttaSuperficie ? 'gap-0' : 'gap-2'
                   } ${VERSO[aggancio]}`}
                 >
-                  <div
-                    ref={palco}
-                    className="flex min-h-0 min-w-0 flex-1 items-center justify-center overflow-hidden"
-                  >
+                  <div className="palco-sala flex min-h-0 min-w-0 flex-1 items-center justify-center overflow-hidden">
                     <div
-                      className="overflow-hidden"
-                      style={
-                        aTuttaSuperficie || !misuraGrande
-                          ? { width: '100%', height: '100%' }
-                          : { width: misuraGrande.larghezza, height: misuraGrande.altezza }
-                      }
+                      data-riquadro={youtubeGrande && youtube ? youtube.id : grande?.id}
+                      className={`overflow-hidden ${
+                        aTuttaSuperficie ? 'h-full w-full' : 'grande-sala'
+                      }`}
                     >
                       {youtubeGrande && youtube && media ? (
                         <RiquadroYouTube
@@ -839,7 +839,7 @@ export default function Sala({
                           }}
                           alternaMuto={() => setYoutubeMuto((muto) => !muto)}
                           quandoMenu={(x, y) => setMenu({ x, y, id: MENU_YOUTUBE })}
-                          senzaCornice={aTuttaSuperficie}
+                          aTuttaSuperficie={aTuttaSuperficie}
                         />
                       ) : grande ? (
                         <Riquadro
@@ -871,7 +871,7 @@ export default function Sala({
                             daSbloccare(grande) ? () => sessione.nonGuardare(grande.id) : undefined
                           }
                           puoiGuardare={postiLiberi}
-                          senzaCornice={aTuttaSuperficie}
+                          aTuttaSuperficie={aTuttaSuperficie}
                         />
                       ) : null}
                     </div>
@@ -884,6 +884,7 @@ export default function Sala({
                         return (
                           <div
                             key={riquadro.id}
+                            data-riquadro={riquadro.id}
                             {...trascina}
                             className={`aspect-video shrink-0 ${
                               aggancio === 'sotto' || aggancio === 'sopra' ? 'h-full' : 'w-full'
@@ -932,8 +933,32 @@ export default function Sala({
                   video sta in primo piano le persone finiscono nella striscia
                   vera, quella di fianco, come con ogni altra condivisione. Qui
                   resta solo la griglia. */}
+              {/* Lo spazio della barra di scorrimento, qui sotto, e' sempre
+                  riservato: non e' un dettaglio estetico, e' la cura del
+                  tremolio.
+
+                  `tessere()` fa riquadri che riempiono `clientWidth` fino
+                  all'ultimo pixel. Basta un fotogramma in cui serva una barra
+                  verticale — e ne bastano tanti, perche' mentre le colonne di
+                  sinistra si ritirano quella misura cambia a ogni fotogramma e
+                  il ridisegno che ne segue atterra in quello dopo — e i dieci
+                  pixel della barra spariscono dalla larghezza utile: la riga
+                  non ci sta piu', la griglia si ri-avvolge su una colonna in
+                  meno, il contenuto diventa alto una volta e mezza, e a quel
+                  punto la barra serve davvero. Al giro dopo si rimisura, i
+                  riquadri tornano piccoli, la barra se ne va, e si ricomincia.
+                  Misurato su una riproduzione: l'altezza del contenuto saltava
+                  fra 440 e 649 pixel per tutta la durata dell'animazione.
+
+                  Riservando il posto una volta per tutte, la larghezza su cui
+                  si fa il conto e quella su cui si disegna sono la stessa, e il
+                  giro non parte. Costa dieci pixel sempre, invece di toglierli
+                  e rimetterli venti volte al secondo. */}
               {(griglia.length > 0 || (youtube && !youtubeAFuoco)) && (
-                <div ref={contenitore} className="flex min-h-0 flex-1 justify-center overflow-y-auto">
+                <div
+                  ref={contenitore}
+                  className="contenitore-griglia flex min-h-0 flex-1 justify-center overflow-y-auto"
+                >
                   {/* `m-auto` sul figlio invece di `items-center` sul padre.
 
                       Sono la stessa cosa finche' il contenuto ci sta, e due
@@ -950,14 +975,16 @@ export default function Sala({
                       ha decise `tessere()`: senza, il flex ne infilerebbe una
                       in piu' dove ci sta, e l'ultima riga resterebbe storta. */}
                   <div
-                    className="m-auto flex flex-wrap content-center justify-center gap-2"
-                    style={{ maxWidth: tessera.colonne * (tessera.larghezza + SPAZIO) - SPAZIO }}
+                    className="griglia-sala m-auto flex flex-wrap content-center justify-center gap-2"
+                    style={
+                      {
+                        '--colonne': tessera.colonne,
+                        '--righe': tessera.righe
+                      } as React.CSSProperties
+                    }
                   >
                     {youtube && media && !youtubeAFuoco && (
-                      <div
-                        className="overflow-hidden"
-                        style={{ width: tessera.larghezza, height: tessera.altezza }}
-                      >
+                      <div data-riquadro={youtube.id} className="overflow-hidden">
                         <RiquadroYouTube
                           key={youtube.id}
                           sessione={youtube}
@@ -987,9 +1014,9 @@ export default function Sala({
                       return (
                         <div
                           key={riquadro.id}
+                          data-riquadro={riquadro.id}
                           {...trascina}
                           className={`${className} overflow-hidden`}
-                          style={{ width: tessera.larghezza, height: tessera.altezza }}
                         >
                           <Riquadro
                             dati={riquadro}
@@ -1020,10 +1047,7 @@ export default function Sala({
                     {/* Ultima della fila: l'invito viene dopo le persone che
                         ci sono gia', non prima. */}
                     {invitoInGriglia && (
-                      <div
-                        className="overflow-hidden"
-                        style={{ width: tessera.larghezza, height: tessera.altezza }}
-                      >
+                      <div className="overflow-hidden">
                         <RiquadroInvito invita={() => setMostraInvito(true)} />
                       </div>
                     )}
@@ -1158,6 +1182,7 @@ export default function Sala({
         // forme si escludono, e a deciderlo e' chi sa com'e' fatta la griglia.
         invita={puoInvitare && !invitoInGriglia ? () => setMostraInvito(true) : undefined}
         impostazioni={impostazioni}
+        colonne={colonne}
         schermoIntero={schermoIntero}
         tornaAiServer={tornaAiServer}
         alternaMicrofono={() => void sessione.alternaMicrofono()}
@@ -1667,12 +1692,12 @@ function tessere(
   quanti: number,
   larghezza: number,
   altezza: number
-): { larghezza: number; altezza: number; colonne: number } {
+): { larghezza: number; altezza: number; colonne: number; righe: number } {
   if (quanti <= 0 || larghezza <= 0 || altezza <= 0) {
-    return { larghezza: 0, altezza: 0, colonne: 1 }
+    return { larghezza: 0, altezza: 0, colonne: 1, righe: 1 }
   }
 
-  let migliore = { larghezza: 0, altezza: 0, colonne: 1 }
+  let migliore = { larghezza: 0, altezza: 0, colonne: 1, righe: 1 }
 
   for (let colonne = 1; colonne <= quanti; colonne++) {
     const righe = Math.ceil(quanti / colonne)
@@ -1684,7 +1709,7 @@ function tessere(
     // orizzontale che c'e', e quello che l'altezza consente restando in 16:9.
     const l = Math.floor(Math.min(perTessera, altezzaDisponibile * RAPPORTO))
     if (l > migliore.larghezza) {
-      migliore = { larghezza: l, altezza: Math.floor(l / RAPPORTO), colonne }
+      migliore = { larghezza: l, altezza: Math.floor(l / RAPPORTO), colonne, righe }
     }
   }
 

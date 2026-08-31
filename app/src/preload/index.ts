@@ -68,20 +68,6 @@ const api = {
     }
   },
 
-  /**
-   * La finestra e' entrata o uscita dal tutto schermo del sistema.
-   *
-   * Un solo percorso arriva fin qui — F11, dal menu di serie di Electron — ed
-   * e' l'unico che l'interfaccia non puo' vedere da sola.
-   */
-  onSchermoFinestra: (callback: (pieno: boolean) => void) => {
-    const gestore = (_evento: unknown, pieno: boolean): void => callback(!!pieno)
-    ipcRenderer.on(IPC.schermoFinestra, gestore)
-    return (): void => {
-      ipcRenderer.removeListener(IPC.schermoFinestra, gestore)
-    }
-  },
-
   /** Lo stato del controllo aggiornamenti, e i tre comandi che lo muovono. */
   aggiornamento: {
     stato: (): Promise<StatoAggiornamento> => ipcRenderer.invoke(IPC.aggiornamentoStato),

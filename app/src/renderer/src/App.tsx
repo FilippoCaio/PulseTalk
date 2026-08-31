@@ -43,9 +43,11 @@ import Sala from './sala/Sala'
 import PannelloImpostazioni from './Impostazioni'
 import PopupProfilo from './PopupProfilo'
 import { StrisciaProblemi } from './Problemi'
+import { LinguettaColonne } from './LinguettaColonne'
 import { usaProblema } from './lib/diagnostica'
 import { usaComparsa } from './lib/animazioni'
 import { usaInattivita } from './lib/usaInattivita'
+import { usaDesktop } from './lib/usaDesktop'
 import {
   fraseMancanti,
   usaDispositiviMancanti,
@@ -487,9 +489,22 @@ export default function App(): React.JSX.Element {
 
   // -- La voce ---------------------------------------------------------------
 
+  /** Vero mentre un ingresso e' in volo: vedi `entraDavvero`. */
+  const entrando = useRef(false)
+
   const entraDavvero = useCallback(
     async (canale: Canale) => {
       if (!api || !impostazioni) return
+      // Un ingresso alla volta.
+      //
+      // Il guardiano qui sotto guarda `ingresso`, che resta nullo finche' il
+      // server non ha risposto: due clic sul canale entro quel mezzo secondo
+      // arrivavano qui tutti e due. Ne uscivano due stanze con la stessa
+      // identita', che si cacciano a vicenda — e' il resto della storia in
+      // `usaSessione.entra`, che ormai sa difendersi da sola. Questa riga
+      // evita comunque il giro: una chiamata al server e una stanza in meno.
+      if (entrando.current) return
+      entrando.current = true
       setAvviso(null)
 
       // Entrare in un vocale mentre si e' gia' in un altro: si esce dal primo.
@@ -512,6 +527,8 @@ export default function App(): React.JSX.Element {
         await sessione.esci().catch(() => {})
         await fermaServizioChiamata()
         setAvviso(spiega(e as Error))
+      } finally {
+        entrando.current = false
       }
     },
     [api, impostazioni, ingresso, sessione]
@@ -1004,15 +1021,92 @@ export default function App(): React.JSX.Element {
   }, [inVoce])
 
   /**
-   * F11 conta come il pulsante nella sala.
+   * La sezione di sinistra: chiusa o aperta, e chi lo decide.
    *
-   * Era l'unico percorso al tutto schermo che non passava di qui: la finestra
-   * si prendeva lo schermo e le due colonne restavano dov'erano, che e' il
-   * contrario di quello che si sta chiedendo premendo. Il processo principale
-   * ci dice quando succede, e lo stato diventa uno solo per tutti i percorsi —
-   * il pulsante, la voce nel menu del tasto destro, Escape e F11.
+   * Due soli motivi per cui quelle colonne possono non esserci, e vale la pena
+   * tenerli separati. `chiamataPiena` e' la stanza che si prende la finestra:
+   * dura quanto la chiamata e si spegne da sola uscendo. La preferenza salvata
+   * e' invece una scelta di chi guarda, e deve sopravvivere alla chiusura
+   * dell'applicazione.
+   *
+   * Il terzo motivo che c'era e' stato tolto: il tutto schermo della finestra —
+   * F11, o il pulsante del sistema. Il processo principale avvisava, la sala si
+   * prendeva tutto e la sezione di sinistra spariva senza che nessuno l'avesse
+   * chiesto. Allargare la finestra vuol dire volere piu' spazio per cio' che si
+   * sta guardando, non un'interfaccia diversa — e soprattutto non restava
+   * niente da premere per riaverla indietro, perche' l'unica via era Esc e non
+   * si vedeva da nessuna parte.
+   *
+   * Solo sul desktop: sotto ai 768 pixel quelle stesse colonne sono il cassetto
+   * della navigazione, e chiuderle vorrebbe dire lasciare il telefono senza un
+   * modo di cambiare canale.
    */
-  useEffect(() => ponte.onSchermoFinestra(setChiamataPiena), [])
+  const desktop = usaDesktop()
+  const colonneChiuse = desktop && (impostazioni?.colonneChiuse ?? false)
+  const colonneRitirate = chiamataPiena || colonneChiuse
+
+  /**
+   * Quante colonne ci sono davvero: due, o solo la barra dei server.
+   *
+   * Serve alla linguetta, che deve stare sul loro bordo destro e non sa
+   * misurarlo. Nei diretti la colonna delle conversazioni c'e' sempre; fra i
+   * server c'e' quella dei canali solo se uno spazio e' aperto — senza, resta
+   * la sola barra delle icone e il bordo cade quindici rem piu' a sinistra.
+   */
+  const dueColonne = vista === 'diretti' || spazioAperto !== null
+
+  /**
+   * La linguetta: un pulsante solo per due direzioni.
+   *
+   * Riaprire vuol dire riavere le colonne comunque fossero sparite. Se a
+   * ritirarle e' stata la chiamata a tutta finestra, questa le rimette dentro
+   * anche uscendo da li': lasciare `chiamataPiena` acceso con le colonne
+   * aperte vorrebbe dire una sala che si crede a tutto schermo mentre non lo
+   * e', e da quello stato in poi il pulsante nell'angolo della sala direbbe
+   * il contrario di quello che fa.
+   */
+  const alternaColonne = useCallback((): void => {
+    const riapri = chiamataPiena || colonneChiuse
+    if (riapri) setChiamataPiena(false)
+    void salva({ colonneChiuse: !riapri })
+  }, [chiamataPiena, colonneChiuse, salva])
+
+  /**
+   * Il tutto schermo della sala, dal suo pulsante e dal menu del tasto destro.
+   *
+   * Uscendo riapre anche le colonne chiuse a mano. Quel pulsante si chiama
+   * "Torna alle colonne", e con la sezione di sinistra gia' chiusa non ne
+   * sarebbe tornata nessuna: un pulsante che promette una cosa e non la fa e'
+   * peggio di un pulsante che non c'e'.
+   */
+  const alternaChiamataPiena = useCallback((): void => {
+    if (chiamataPiena && colonneChiuse) void salva({ colonneChiuse: false })
+    setChiamataPiena(!chiamataPiena)
+  }, [chiamataPiena, colonneChiuse, salva])
+
+  /**
+   * Se sullo schermo, adesso, c'e' la sala.
+   *
+   * Sono le stesse due condizioni dei rami piu' sotto, scritte una volta sola
+   * perche' servono anche qui: in chiamata la linguetta la disegna l'overlay
+   * della sala — dentro, cosi' va e viene col cursore — e quella
+   * dell'applicazione deve togliersi di mezzo, o sarebbero due nello stesso
+   * punto.
+   *
+   * Non si riusa `guardaLaChiamata`: quello guarda quale canale e quale
+   * conversazione si sono *scelti*, questi due guardano cio' che si e' davvero
+   * trovato. In mezzo c'e' un ripiego — la prima conversazione, il primo
+   * canale di testo — e finche' la scelta e' vuota le due risposte non
+   * coincidono. Qui una risposta sbagliata vuol dire la linguetta due volte,
+   * oppure nessuna.
+   */
+  const salaDiretta = !!(
+    ingresso?.diretta &&
+    conversazioneAperta &&
+    ingresso.diretta.conversazione === conversazioneAperta.id
+  )
+  const salaCanale = !!(inVoce && canaleAperto?.id === inVoce)
+  const salaInVista = vista === 'diretti' ? salaDiretta : !!spazioAperto && salaCanale
 
   useEffect(
     () =>
@@ -1243,7 +1337,7 @@ export default function App(): React.JSX.Element {
         installa={aggiornamenti.installa}
       />
 
-      {/* La barra degli spazi non si smonta piu' a tutto schermo: si ritira.
+      {/* La barra degli spazi non si smonta quando sparisce: si ritira.
 
           Smontata non aveva nessuno stato intermedio da disegnare — spariva in
           un fotogramma mentre la sala si allargava nel successivo, ed e' quello
@@ -1259,9 +1353,9 @@ export default function App(): React.JSX.Element {
       <div
         className={`colonna-collassabile w-16 shrink-0 ${
           navigazioneMobileAperta ? 'flex' : 'hidden md:flex'
-        } ${chiamataPiena ? 'colonna-collassata' : ''}`}
-        style={{ width: chiamataPiena ? 0 : undefined }}
-        inert={chiamataPiena}
+        } ${colonneRitirate ? 'colonna-collassata' : ''}`}
+        style={{ width: colonneRitirate ? 0 : undefined }}
+        inert={colonneRitirate}
       >
       <BarraSpazi
         spazi={spazi}
@@ -1324,9 +1418,9 @@ export default function App(): React.JSX.Element {
           className={`pannello-scorrevole absolute bottom-0 left-0 z-20 ${
             navigazioneMobileAperta ? 'block' : 'hidden md:block'
           } ${spazioAperto ? 'w-full md:w-[19rem]' : 'w-16'} ${
-            chiamataPiena ? 'pannello-ritirato' : ''
+            colonneRitirate ? 'pannello-ritirato' : ''
           }`}
-          inert={chiamataPiena}
+          inert={colonneRitirate}
         >
           <PannelloVoce
             utente={utente}
@@ -1386,6 +1480,31 @@ export default function App(): React.JSX.Element {
         </button>
       )}
 
+      {/* Sul desktop, la linguetta che chiude e riapre la sezione di sinistra.
+          Stessa idea di quella qui sopra — un pulsante attaccato al bordo, che
+          non ruba niente al contenuto — dall'altro lato dello schermo.
+
+          Non in chiamata: li' la stessa linguetta la disegna l'overlay della
+          sala, dove va e viene col cursore invece di restare accesa sul bordo
+          di un video. Qui fuori resta, e deve restare: la sezione chiusa e'
+          una preferenza che sopravvive alla chiamata, e senza un pulsante
+          anche nella chat non ci sarebbe piu' modo di riaprirla.
+
+          Il `left` e' calcolato e non e' una classe: sta sul bordo destro delle
+          colonne, e quel bordo cade a 19rem quando ce ne sono due, a 4rem
+          quando c'e' la sola barra dei server, a zero quando sono ritirate. Le
+          stesse misure del pannello della voce qui sopra, e come quelle vanno
+          rifatte a mano il giorno in cui una colonna cambia larghezza: un
+          elemento in posizione assoluta non puo' misurare i fratelli. */}
+      {!salaInVista && (
+        <LinguettaColonne
+          ritirate={colonneRitirate}
+          alterna={alternaColonne}
+          className="linguetta-colonne absolute top-1/2 z-30 -translate-y-1/2"
+          style={{ left: colonneRitirate ? 0 : dueColonne ? '19rem' : '4rem' }}
+        />
+      )}
+
       {mostraProfilo && utente && (
         <PopupProfilo
           utente={utente}
@@ -1414,9 +1533,9 @@ export default function App(): React.JSX.Element {
           <div
             className={`colonna-collassabile w-[calc(100%-4rem)] shrink-0 border-r border-bordo bg-fondo-2 md:w-60 ${
               navigazioneMobileAperta ? 'flex' : 'hidden md:flex'
-            } ${chiamataPiena ? 'colonna-collassata' : ''}`}
-            style={{ width: chiamataPiena ? 0 : undefined }}
-            inert={chiamataPiena}
+            } ${colonneRitirate ? 'colonna-collassata' : ''}`}
+            style={{ width: colonneRitirate ? 0 : undefined }}
+            inert={colonneRitirate}
           >
           {/* La larghezza di dentro e' fissa e in unita' di finestra, non in
               percentuale del contenitore: se seguisse il contenitore che si
@@ -1477,9 +1596,9 @@ export default function App(): React.JSX.Element {
               </div>
             )}
 
-            {ingresso?.diretta &&
-            conversazioneAperta &&
-            ingresso.diretta.conversazione === conversazioneAperta.id ? (
+            {/* `ingresso` di nuovo per esteso accanto al booleano: un `true`
+                non racconta a TypeScript che li' dentro non e' nullo. */}
+            {salaDiretta && ingresso ? (
               // In chiamata con questa persona: al posto della chat c'e' la
               // sala, con la conversazione nel pannello laterale. E' lo stesso
               // componente dei canali vocali — una chiamata a due non e' un
@@ -1496,10 +1615,8 @@ export default function App(): React.JSX.Element {
                 canaleVocale={canaleDiretto}
                 utente={utente}
                 media={media}
-                schermoIntero={{
-                  attivo: chiamataPiena,
-                  alterna: () => setChiamataPiena((v) => !v)
-                }}
+                schermoIntero={{ attivo: chiamataPiena, alterna: alternaChiamataPiena }}
+                colonne={{ ritirate: colonneRitirate, alterna: alternaColonne }}
                 tornaAiServer={lasciaVistaChiamata}
                 condivisioneRichiesta={richiestaCondivisione}
                 condivisioneServita={condivisioneServita}
@@ -1538,9 +1655,9 @@ export default function App(): React.JSX.Element {
           <div
             className={`colonna-collassabile w-[calc(100%-4rem)] shrink-0 border-r border-bordo bg-fondo-2 md:w-60 ${
               navigazioneMobileAperta ? 'flex' : 'hidden md:flex'
-            } ${chiamataPiena ? 'colonna-collassata' : ''}`}
-            style={{ width: chiamataPiena ? 0 : undefined }}
-            inert={chiamataPiena}
+            } ${colonneRitirate ? 'colonna-collassata' : ''}`}
+            style={{ width: colonneRitirate ? 0 : undefined }}
+            inert={colonneRitirate}
           >
           <div ref={colonna} className="flex w-[calc(100vw-4rem)] shrink-0 flex-col md:w-60">
             <ColonnaCanali
@@ -1636,7 +1753,7 @@ export default function App(): React.JSX.Element {
               </div>
             )}
 
-            {ingresso && inVoce && canaleAperto?.id === inVoce ? (
+            {salaCanale && ingresso ? (
               <Sala
                 api={api}
                 ingresso={ingresso}
@@ -1649,10 +1766,8 @@ export default function App(): React.JSX.Element {
                 canaleVocale={canaleVocale}
                 utente={utente}
                 media={media}
-                schermoIntero={{
-                  attivo: chiamataPiena,
-                  alterna: () => setChiamataPiena((v) => !v)
-                }}
+                schermoIntero={{ attivo: chiamataPiena, alterna: alternaChiamataPiena }}
+                colonne={{ ritirate: colonneRitirate, alterna: alternaColonne }}
                 tornaAiServer={lasciaVistaChiamata}
                 condivisioneRichiesta={richiestaCondivisione}
                 condivisioneServita={condivisioneServita}

@@ -31,16 +31,7 @@ export const IPC = {
   aggiornamentoControlla: 'aggiornamento-controlla',
   aggiornamentoPrepara: 'aggiornamento-prepara',
   aggiornamentoScarica: 'aggiornamento-scarica',
-  aggiornamentoInstalla: 'aggiornamento-installa',
-  /**
-   * La finestra e' entrata o uscita dal tutto schermo del sistema (F11).
-   *
-   * Serve perche' quello e' l'unico percorso al tutto schermo che non passa
-   * dall'interfaccia: senza questo avviso la finestra si apriva su tutto lo
-   * schermo e le due colonne restavano al loro posto, cioe' esattamente il
-   * contrario di quello che si e' chiesto premendo.
-   */
-  schermoFinestra: 'schermo-finestra'
+  aggiornamentoInstalla: 'aggiornamento-installa'
 } as const
 
 /**
@@ -322,6 +313,19 @@ export interface Impostazioni {
   avvioAutomatico: boolean
 
   /**
+   * La sezione di sinistra chiusa a mano: barra dei server e colonna dei canali.
+   *
+   * E' una scelta di chi guarda, non uno stato dell'applicazione, e per questo
+   * sta qui e non in un `useState`: chi lavora con la finestra larga e la
+   * chiude per far posto a una chat non intende richiuderla ogni mattina. Si
+   * apre e si chiude con la linguetta sul bordo.
+   *
+   * Sul telefono non conta: li' le due colonne sono un cassetto a tutta pagina,
+   * e a comandarle e' la navigazione.
+   */
+  colonneChiuse: boolean
+
+  /**
    * Le persone da annunciare quando entrano in un canale vocale.
    *
    * Un suono e una notifica di Windows, e basta: serve a chi vuole tornare a
@@ -395,6 +399,7 @@ export const IMPOSTAZIONI_INIZIALI: Impostazioni = {
   mostraAnteprimeLink: true,
   avvisiPersone: [],
   avvioAutomatico: false,
+  colonneChiuse: false,
   spaziSilenziati: [],
   dispositivoMusica: null
 }

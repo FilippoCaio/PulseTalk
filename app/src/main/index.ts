@@ -122,15 +122,13 @@ async function creaFinestra(): Promise<void> {
     finestra = null
   })
 
-  // F11 e' l'unico modo di andare a tutto schermo che non passa dalla nostra
-  // interfaccia: lo serve il menu di serie di Electron, che c'e' anche con
-  // `autoHideMenuBar`. Senza queste due righe la finestra si prendeva lo
-  // schermo e le due colonne di sinistra restavano dov'erano — cioe' il
-  // contrario di quello che si sta chiedendo premendo. Adesso il renderer lo
-  // sa e mette la sala a tutta finestra come farebbe il pulsante.
-  const dice = (pieno: boolean) => () => finestra?.webContents.send(IPC.schermoFinestra, pieno)
-  finestra.on('enter-full-screen', dice(true))
-  finestra.on('leave-full-screen', dice(false))
+  // F11 allarga la finestra e basta: quello che c'e' dentro resta com'era.
+  //
+  // Prima da qui partiva un avviso al renderer, che ritirava le due colonne di
+  // sinistra — un tutto schermo del sistema che si portava dietro un cambio di
+  // interfaccia mai chiesto, e senza niente da premere per rimetterle a posto.
+  // Adesso le colonne si chiudono e si riaprono solo dalla linguetta sul loro
+  // bordo, che e' dove uno la cerca.
 
   // Un link nella chat apre il browser, non sostituisce l'applicazione con una
   // pagina qualunque da cui non si torna indietro.

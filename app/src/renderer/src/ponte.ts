@@ -100,16 +100,6 @@ export interface Ponte {
   /** Scorciatoie globali: nel browser funzionano solo con la finestra a fuoco. */
   onScorciatoia(callback: (quale: Scorciatoia) => void): () => void
 
-  /**
-   * La finestra e' entrata o uscita dal tutto schermo del sistema.
-   *
-   * Nel browser non arriva mai: il tutto schermo di Chrome premendo F11 non
-   * produce nessun evento per la pagina, ed e' voluto — una pagina non deve
-   * sapere quanto e' grande la finestra che la contiene. Li' resta il pulsante
-   * dentro alla sala, che fa la stessa cosa in un posto che si vede.
-   */
-  onSchermoFinestra(callback: (pieno: boolean) => void): () => void
-
   apriEsterno(url: string): void
 
   /**
@@ -153,7 +143,6 @@ function ponteElettrone(api: NonNullable<Window['pulsetalk']>): Ponte {
     passaAServer: async (indirizzo) => (await api.passaAServer(indirizzo)).impostazioni,
     scollegaServer: async (indirizzo) => (await api.scollegaServer(indirizzo)).impostazioni,
     onScorciatoia: (callback) => api.onScorciatoia(callback),
-    onSchermoFinestra: (callback) => api.onSchermoFinestra(callback),
     apriEsterno: (url) => api.apriEsterno(url),
     puntatoreSulloSchermo: (punta) => api.puntatore(punta),
     diagnosticaAudio: (testo) => api.diagnosticaAudio(testo),
@@ -414,8 +403,6 @@ function ponteBrowser(): Ponte {
       ascoltatori.add(callback)
       return () => ascoltatori.delete(callback)
     },
-
-    onSchermoFinestra: () => () => {},
 
     onScorciatoia: (callback) => {
       const gestore = (evento: KeyboardEvent): void => {

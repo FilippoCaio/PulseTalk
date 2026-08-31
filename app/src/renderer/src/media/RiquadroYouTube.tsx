@@ -39,7 +39,7 @@ export default function RiquadroYouTube({
   cambiaVolume,
   alternaMuto,
   quandoMenu,
-  senzaCornice = false
+  aTuttaSuperficie = false
 }: {
   sessione: SessioneMedia
   media: SessioniMedia
@@ -53,7 +53,7 @@ export default function RiquadroYouTube({
   /** Tasto destro: apre il menu del riquadro alle coordinate del puntatore. */
   quandoMenu?: (x: number, y: number) => void
   /** Riempie la sala a filo, come una condivisione a tutta superficie. */
-  senzaCornice?: boolean
+  aTuttaSuperficie?: boolean
 }): React.JSX.Element {
   const contenitore = useRef<HTMLDivElement | null>(null)
   const player = useRef<Player | null>(null)
@@ -342,7 +342,7 @@ export default function RiquadroYouTube({
         quandoMenu(evento.clientX, evento.clientY)
       }}
       className={`group/youtube relative h-full w-full overflow-hidden bg-black ${
-        senzaCornice
+        aTuttaSuperficie
           ? 'rounded-none'
           : 'rounded-xl border border-bordo shadow-lg shadow-black/20'
       }`}
@@ -460,18 +460,26 @@ export default function RiquadroYouTube({
                 ? 'in pari'
                 : `${scarto > 0 ? '−' : '+'}${(Math.abs(scarto) / 1000).toFixed(1)}s`}
             </span>
-            <span className="pointer-events-auto" onClick={(evento) => evento.stopPropagation()}>
-              <Comando
-                titolo={aFuoco ? 'Rimetti nella griglia' : 'Metti a fuoco'}
-                premi={quandoScelto}
+            {/* Via a tutta superficie: sotto ci sarebbe il tutto schermo
+                dell'overlay, nello stesso angolo. Vale qui come sui riquadri
+                delle persone. */}
+            {!aTuttaSuperficie && (
+              <span
+                className="pointer-events-auto"
+                onClick={(evento) => evento.stopPropagation()}
               >
-                {aFuoco ? (
-                  <Rimpicciolisci className="h-4 w-4" />
-                ) : (
-                  <Ingrandisci className="h-4 w-4" />
-                )}
-              </Comando>
-            </span>
+                <Comando
+                  titolo={aFuoco ? 'Rimetti nella griglia' : 'Metti a fuoco'}
+                  premi={quandoScelto}
+                >
+                  {aFuoco ? (
+                    <Rimpicciolisci className="h-4 w-4" />
+                  ) : (
+                    <Ingrandisci className="h-4 w-4" />
+                  )}
+                </Comando>
+              </span>
+            )}
           </span>
         </div>
       </div>

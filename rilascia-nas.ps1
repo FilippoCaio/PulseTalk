@@ -153,13 +153,21 @@ try {
 Passo "Carico sul NAS"
 $rilascio = Join-Path $app 'release'
 # I trattini vengono da `artifactName` in electron-builder.yml, dove c'e'
-# scritto perche' non sono il nome di serie. Questi tre nomi e quelli li' sono
+# scritto perche' non sono il nome di serie. Questi nomi e quelli li' sono
 # la stessa cosa scritta due volte: cambiarne uno solo produce un feed che
 # punta a un file che non esiste.
+#
+# Il portabile e' l'ultimo della lista, ed e' l'unico che non entra in
+# latest.yml: quel file elenca cio' che l'applicazione installata sa
+# sostituire da sola, e un .exe che si porta in giro su una chiavetta non si
+# sostituisce da nessuna parte. Sale lo stesso perche' la cartella e' servita
+# su /aggiornamenti: chi usa il portabile scarica il suo da li' invece di
+# aspettare che qualcuno glielo mandi.
 $file = @(
     (Join-Path $rilascio "PulseTalk-Setup-$nuova.exe"),
     (Join-Path $rilascio "PulseTalk-Setup-$nuova.exe.blockmap"),
-    (Join-Path $rilascio 'latest.yml')
+    (Join-Path $rilascio 'latest.yml'),
+    (Join-Path $rilascio "PulseTalk-portable-$nuova.exe")
 )
 foreach ($f in $file) { if (-not (Test-Path $f)) { throw "Manca $f" } }
 
@@ -171,9 +179,6 @@ foreach ($f in $file) {
     & scp -q $f "${Nas}:$Cartella/"
     if ($LASTEXITCODE -ne 0) { throw "Copia fallita: $f" }
 }
-
-# Il portabile non si aggiorna da solo e non va nel feed: se finisse li',
-# l'unica cosa che otterrebbe e' occupare 95 MB sul NAS.
 
 Passo "Controllo che il server lo veda"
 try {

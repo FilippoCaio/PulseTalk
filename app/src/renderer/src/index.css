@@ -471,7 +471,7 @@ textarea {
 }
 
 /*
- * Le colonne che si ritirano quando la chiamata si prende la finestra.
+ * Le colonne che si ritirano: per la chiamata a tutta finestra, o a mano.
  *
  * Il collasso e' una larghezza che va a zero, non uno smontaggio: un elemento
  * tolto dall'albero non ha nessuno stato intermedio da disegnare, e la sala si
@@ -506,6 +506,126 @@ textarea {
   .colonna-collassabile {
     transition: none;
   }
+}
+
+/*
+ * La linguetta che chiude e riapre la sezione di sinistra.
+ *
+ * Si sposta insieme alle colonne e con la stessa durata: la linguetta e il
+ * bordo a cui e' attaccata sono la stessa cosa, e vederla partire prima o
+ * arrivare dopo la staccherebbe da li'.
+ *
+ * Il colore ha la durata corta di tutto il resto dell'interfaccia, e non
+ * quella del movimento: accendersi sotto al mouse deve essere immediato, anche
+ * mentre il pulsante sta ancora scorrendo.
+ */
+.linguetta-colonne {
+  transition:
+    left var(--tempo-corto) var(--dolce),
+    opacity var(--tempo-lampo) var(--dolce),
+    color var(--tempo-lampo) var(--dolce),
+    background-color var(--tempo-lampo) var(--dolce);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .linguetta-colonne {
+    transition: none;
+  }
+}
+
+/*
+ * La griglia della sala: quante colonne lo dice JavaScript, quanto sono larghi
+ * i riquadri lo dice il CSS.
+ *
+ * Diviso cosi' per un motivo preciso, ed e' la cura di un difetto che si vedeva
+ * benissimo. Uscendo dal tutto schermo le due colonne di sinistra tornano in
+ * trecento millisecondi, e il contenitore della griglia si stringe a ogni
+ * fotogramma. La misura la prendeva un ResizeObserver, e il ridisegno che ne
+ * seguiva atterrava nel fotogramma dopo: per tutta l'animazione i riquadri
+ * portavano addosso la larghezza calcolata su un contenitore piu' largo di
+ * quello in cui stavano. Non ci stavano piu' in riga, il flex li mandava a
+ * capo, la griglia passava da due righe a tre, il contenuto diventava piu'
+ * alto del contenitore e compariva la barra di scorrimento. Misurato su una
+ * riproduzione: quindici fotogrammi su diciannove con la riga sbagliata.
+ *
+ * Le unita' di contenitore quel ritardo non ce l'hanno — le risolve il browser
+ * mentre impagina, nello stesso fotogramma in cui il contenitore cambia — e
+ * cosi' la larghezza dei riquadri segue l'animazione invece di inseguirla.
+ *
+ * A JavaScript resta l'unica cosa che il CSS non sa fare: scegliere fra tre
+ * colonne larghe e due colonne alte, che vuol dire provarle tutte e confrontare
+ * le aree. Quel numero cambia di rado, e quando cambia e' un cambio vero di
+ * disposizione, non un tremolio.
+ *
+ * `--s` e' il `gap-2` della griglia detto in numeri, e `SPAZIO` in Sala.tsx e'
+ * lo stesso otto scritto una terza volta: cambiarne uno solo fa una riga che
+ * non torna.
+ */
+.contenitore-griglia {
+  /* Le unita' `cq` dei figli si misurano da qui. */
+  container-type: size;
+  /*
+   * Il posto della barra di scorrimento resta prenotato anche quando la barra
+   * non c'e'. Senza, la larghezza su cui si fa il conto e quella su cui si
+   * disegna differiscono di dieci pixel proprio nel fotogramma in cui la barra
+   * compare — e da li' il conto ricomincia da capo, all'infinito.
+   */
+  scrollbar-gutter: stable;
+}
+
+.griglia-sala {
+  --s: 8px;
+  /*
+   * Il lato piu' lungo che ci sta, restando in 16:9: il minore fra quello che
+   * concede la larghezza e quello che concede l'altezza. E' lo stesso
+   * `Math.min` di `tessere()`, scritto pero' dove non ha bisogno di sapere
+   * quando ricalcolarsi.
+   */
+  --lato: min(
+    calc((100cqw - var(--s) * (var(--colonne) - 1)) / var(--colonne)),
+    calc(((100cqh - var(--s) * (var(--righe) - 1)) / var(--righe)) * 16 / 9)
+  );
+  max-width: calc(var(--colonne) * var(--lato) + (var(--colonne) - 1) * var(--s));
+}
+
+/*
+ * Le tessere. Prendono la misura da qui e non dal loro `style` perche' sono di
+ * tre tipi diversi — le persone, il video condiviso, l'invito — e sono tutte
+ * la stessa tessera.
+ */
+.griglia-sala > * {
+  width: var(--lato);
+  height: calc(var(--lato) * 9 / 16);
+}
+
+/*
+ * Il posto della sovraimpressione, e il riquadro grande che ci sta dentro.
+ *
+ * Il posto e' quello che avanza dopo la striscia, ed e' di forma qualunque: su
+ * una finestra larga e' un rettangolo lungo e basso. Il riquadro dentro ci si
+ * stirava — una faccia tagliata ai lati, uno schermo condiviso con due fasce
+ * nere sempre piu' larghe intorno — quindi si tiene in 16:9 e si prende il
+ * lato piu' lungo che ci sta.
+ *
+ * Il conto stava in JavaScript perche' `aspect-ratio` sa vincolare un asse ma
+ * non sa scegliere quale dei due comanda. `min()` sa fare anche quello, e in
+ * piu' lo fa senza ritardo: la misura arrivava da un ResizeObserver e il
+ * riquadro grande cambiava misura un fotogramma dopo il suo contenitore. Si
+ * vedeva mettendo qualcuno in sovraimpressione — la striscia compare, il posto
+ * si stringe, e il riquadro restava largo com'era per un fotogramma — e si
+ * vedeva molto peggio uscendo dal tutto schermo.
+ *
+ * A tutta superficie il riquadro non passa di qui: li' si e' chiesto
+ * esplicitamente di riempire la finestra, e le fasce nere sono il prezzo
+ * accettato.
+ */
+.palco-sala {
+  container-type: size;
+}
+
+.grande-sala {
+  width: min(100cqw, calc(100cqh * 16 / 9));
+  height: min(calc(100cqw * 9 / 16), 100cqh);
 }
 
 /*

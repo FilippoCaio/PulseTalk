@@ -1235,6 +1235,31 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
 
   const entra = useCallback(
     async (ingresso: Ingresso, config: Impostazioni) => {
+      // La stanza di prima, se ne e' rimasta una, si chiude qui.
+      //
+      // Due `Room` con la stessa identita' non convivono: la seconda che si
+      // collega caccia la prima, e la SFU lo dice con DUPLICATE_IDENTITY. Il
+      // guaio non e' la cacciata, e' chi la racconta: ad arrivare non e' un
+      // messaggio ma il gestore `Disconnected` della stanza vecchia, che
+      // spegne il microfono, svuota gli elenchi e scrive "sei entrato da
+      // un'altra finestra" addosso alla chiamata nuova — quella che nel
+      // frattempo si stava collegando per davvero. Da fuori si vede: entro, mi
+      // dice che sono altrove, mi butta fuori con la diagnosi sbagliata (la
+      // SFU non risponde), e al secondo tentativo funziona.
+      //
+      // Ci si arriva senza fare niente di strano: due clic sul canale prima
+      // che il primo abbia finito. Il guardiano in `entraInVoce` guarda
+      // `ingresso`, che fino alla risposta del server e' ancora nullo.
+      //
+      // `removeAllListeners` prima di `disconnect`, e non dopo: e' proprio la
+      // sua uscita che non deve raccontare niente a nessuno.
+      const precedente = stanzaRef.current
+      if (precedente) {
+        stanzaRef.current = null
+        precedente.removeAllListeners()
+        await precedente.disconnect().catch(() => {})
+      }
+
       setErrore(null)
       setMotivoUscita(null)
       setMessaggi([])
@@ -1274,7 +1299,27 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
       stanzaRef.current = stanza
       entratoRef.current = Date.now()
 
-      await stanza.connect(ingresso.sfuUrl, ingresso.gettone)
+      // Collegarsi e' l'unica cosa lunga qui dentro, ed e' la finestra in cui
+      // qualcun altro puo' entrare altrove: una chiamata in arrivo a cui si
+      // risponde, un canale premuto in un'altra colonna. Chi entra dopo prende
+      // il posto in `stanzaRef` e chiude questa; quando poi il `connect` di qui
+      // torna — o fallisce proprio perche' l'abbiamo chiusa — non c'e' piu'
+      // niente da preparare, e continuare vorrebbe dire montare mezza sessione
+      // sopra a quella buona.
+      //
+      // L'errore, in quel caso, non e' un errore: e' l'effetto di una chiusura
+      // voluta. Rilanciarlo farebbe smontare al chiamante la chiamata nuova
+      // credendo di ripulire questa.
+      try {
+        await stanza.connect(ingresso.sfuUrl, ingresso.gettone)
+      } catch (errore) {
+        if (stanzaRef.current !== stanza) return
+        throw errore
+      }
+      if (stanzaRef.current !== stanza) {
+        await stanza.disconnect().catch(() => {})
+        return
+      }
 
       // Chi condivideva gia' prima che arrivassimo: `autoSubscribe` se le
       // prenderebbe tutte all'ingresso, ed entrare in una stanza con sei
