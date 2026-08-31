@@ -1,4 +1,5 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
+import { mostraSchermataAggiornamento } from './schermataAggiornamento'
 import electronUpdater from 'electron-updater'
 import { IPC } from '@shared/tipi'
 import type { PreparazioneAggiornamento, StatoAggiornamento } from '@shared/tipi'
@@ -206,7 +207,18 @@ export function preparaAggiornamenti(): { allAvvio: () => void } {
     // Perche' questo funzioni servono le righe `nsis:` di electron-builder.yml:
     // per utente, cosi' non c'e' niente da elevare, e senza pagine da mostrare
     // durante un aggiornamento.
-    setImmediate(() => autoUpdater.quitAndInstall(true, true))
+    // Prima la finestrella, poi l'uscita.
+    //
+    // `quitAndInstall` chiude tutto: chiamandolo per primo, chi guarda vedrebbe
+    // sparire la finestra e basta - da fuori indistinguibile da un crash, ed e'
+    // il momento in cui qualcuno riapre a mano l'app che si stava gia'
+    // riaprendo da sola. La schermata si aspetta che abbia davvero dipinto,
+    // altrimenti sarebbe un lampo grigio; se non ci riesce entro un secondo si
+    // va avanti comunque, perche' l'aggiornamento non si ferma per
+    // un'animazione.
+    void mostraSchermataAggiornamento().finally(() => {
+      setImmediate(() => autoUpdater.quitAndInstall(true, true))
+    })
   })
 
   /**
