@@ -15,16 +15,37 @@ const CLASSI_SELECT =
 export default function ControlliAudio({
   impostazioni,
   salva,
-  apriImpostazioni
+  apriImpostazioni,
+  lato = 'tutto'
 }: {
   impostazioni: Impostazioni
   salva: (modifiche: Partial<Impostazioni>) => void
   apriImpostazioni: () => void
+  /**
+   * Quale meta' mostrare: cio' che entra, cio' che esce, o tutto.
+   *
+   * Nasce dal pannello in basso a sinistra, dove il microfono e le cuffie sono
+   * due pulsanti distinti e ognuno apre la sua tendina. Prima la freccetta del
+   * microfono apriva anche altoparlante e volume di uscita: due comandi
+   * separati che portavano allo stesso posto, e per cambiare l'altoparlante si
+   * finiva sotto al microfono, che e' l'ultimo posto in cui uno lo cerca.
+   *
+   * `tutto` resta il valore di serie perche' la barra della chiamata ha un
+   * pulsante solo, e li' dividere vorrebbe dire nasconderne meta'.
+   */
+  lato?: 'entrata' | 'uscita' | 'tutto'
 }): React.JSX.Element {
   const { tutti } = usaDispositivi()
   const [livello, setLivello] = useState(0)
 
+  const conEntrata = lato !== 'uscita'
+  const conUscita = lato !== 'entrata'
+
   useEffect(() => {
+    // Il misuratore gira a ogni fotogramma: senza il microfono in vista non
+    // c'e' niente da misurare, e tenerlo acceso sarebbe un ciclo di animazione
+    // per disegnare una barretta che non c'e'.
+    if (!conEntrata) return
     let vivo = true
     let fotogramma = 0
     const giro = (): void => {
@@ -37,7 +58,7 @@ export default function ControlliAudio({
       vivo = false
       cancelAnimationFrame(fotogramma)
     }
-  }, [])
+  }, [conEntrata])
 
   // La radice quadrata rende leggibile la normale voce parlata, che su una
   // scala lineare resterebbe quasi sempre schiacciata contro il bordo.
@@ -45,6 +66,7 @@ export default function ControlliAudio({
 
   return (
     <>
+      {conEntrata && (
       <div>
         <Etichetta>Microfono</Etichetta>
         <select
@@ -67,7 +89,9 @@ export default function ControlliAudio({
           />
         </div>
       </div>
+      )}
 
+      {conUscita && (
       <div>
         <Etichetta>Altoparlante</Etichetta>
         <select
@@ -83,19 +107,25 @@ export default function ControlliAudio({
           ))}
         </select>
       </div>
+      )}
 
+      {conEntrata && (
       <Cursore
         nome="Entrata"
         valore={impostazioni.volumeMicrofono ?? 1}
         massimo={2}
         cambia={(volumeMicrofono) => salva({ volumeMicrofono })}
       />
+      )}
+
+      {conUscita && (
       <Cursore
         nome="Uscita"
         valore={impostazioni.volumeUscita ?? 1}
         massimo={1}
         cambia={(volumeUscita) => salva({ volumeUscita })}
       />
+      )}
 
       <button
         onClick={apriImpostazioni}

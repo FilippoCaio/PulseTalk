@@ -65,6 +65,7 @@ export default function Riquadro({
   quandoScelto,
   guarda,
   nonGuardare,
+  smettiDiCondividere,
   puoiGuardare = true,
   aTuttaSuperficie = false,
   specchiaCamera = false,
@@ -97,6 +98,16 @@ export default function Riquadro({
   guarda?: () => void
   /** Smette di riceverla, e libera il posto per un'altra. */
   nonGuardare?: () => void
+  /**
+   * Chiude la propria condivisione. Solo sulle proprie, ovviamente.
+   *
+   * Sta sul riquadro e non solo nella barra in basso perche' e' li' che si
+   * guarda: chi vuole smettere di mostrare qualcosa sta fissando la cosa che
+   * mostra, e mandarlo a cercare il comando in fondo allo schermo — fra sei
+   * icone che riguardano altro — e' un giro che si fa proprio nel momento in
+   * cui si ha fretta di chiudere.
+   */
+  smettiDiCondividere?: () => void
   /** Falso quando i posti sono gia' occupati: il pulsante lo dice invece di non fare niente. */
   puoiGuardare?: boolean
   /**
@@ -421,7 +432,7 @@ export default function Riquadro({
         aTuttaSuperficie ? 'rounded-none' : 'rounded-xl'
       } ${
         dati.tipo === 'schermo' ? 'bg-black' : ''
-      } ${quandoPunta ? 'cursor-crosshair' : aFuoco ? 'cursor-zoom-out' : 'cursor-zoom-in'}`}
+      } ${quandoPunta ? 'cursor-crosshair' : ''}`}
     >
       {/* Il bordo, sopra a tutto e senza rubare i clic. */}
       {!aTuttaSuperficie && (
@@ -656,6 +667,33 @@ export default function Riquadro({
           tasto destro e nel pannello delle condivisioni, e su uno schermo
           altrui e' esattamente il posto dove passa la barra delle
           applicazioni. */}
+      {/* Chiudi la propria condivisione, in basso a sinistra.
+
+          Quell'angolo sulle condivisioni e' libero — la targhetta col nome
+          c'e' solo sulle persone — ed e' il piu' lontano dai comandi che
+          riguardano il guardare, che stanno tutti a destra. Su cio' che si sta
+          mostrando a qualcun altro, un pulsante che chiude non deve poter
+          essere premuto per sbaglio al posto di uno che regola il volume. */}
+      {dati.locale && dati.tipo === 'schermo' && smettiDiCondividere && (
+        <div className="absolute bottom-2 left-2 z-20 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+          <button
+            onClick={(e) => {
+              // Il riquadro sotto reagisce al clic mettendo a fuoco: senza
+              // questo, chiudere la condivisione la ingrandirebbe un istante
+              // prima di farla sparire.
+              e.stopPropagation()
+              smettiDiCondividere()
+            }}
+            title="Smetti di condividere"
+            aria-label="Smetti di condividere"
+            className="flex h-8 items-center gap-1.5 rounded-lg bg-male/90 px-2.5 text-xs font-medium text-white shadow-lg shadow-black/40 backdrop-blur-sm transition-colors hover:bg-male"
+          >
+            <SchermoStop className="h-4 w-4" />
+            Smetti
+          </button>
+        </div>
+      )}
+
       {dati.tipo === 'persona' && (
         // Il tetto si stringe solo mentre i comandi ci sono: adesso in basso a
         // destra c'e' la sovraimpressione, e su un riquadro da duecento pixel

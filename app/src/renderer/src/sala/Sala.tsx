@@ -883,6 +883,11 @@ export default function Sala({
                           nonGuardare={
                             daSbloccare(grande) ? () => sessione.nonGuardare(grande.id) : undefined
                           }
+                          smettiDiCondividere={
+                            grande.locale && grande.tipo === 'schermo'
+                              ? () => void sessione.smettiDiCondividere(grande.id)
+                              : undefined
+                          }
                           puoiGuardare={postiLiberi}
                           aTuttaSuperficie={aTuttaSuperficie}
                         />
@@ -930,6 +935,11 @@ export default function Sala({
                               nonGuardare={
                                 daSbloccare(riquadro)
                                   ? () => sessione.nonGuardare(riquadro.id)
+                                  : undefined
+                              }
+                              smettiDiCondividere={
+                                riquadro.locale && riquadro.tipo === 'schermo'
+                                  ? () => void sessione.smettiDiCondividere(riquadro.id)
                                   : undefined
                               }
                               puoiGuardare={postiLiberi}
@@ -1049,6 +1059,11 @@ export default function Sala({
                             nonGuardare={
                               daSbloccare(riquadro)
                                 ? () => sessione.nonGuardare(riquadro.id)
+                                : undefined
+                            }
+                            smettiDiCondividere={
+                              riquadro.locale && riquadro.tipo === 'schermo'
+                                ? () => void sessione.smettiDiCondividere(riquadro.id)
                                 : undefined
                             }
                             puoiGuardare={postiLiberi}

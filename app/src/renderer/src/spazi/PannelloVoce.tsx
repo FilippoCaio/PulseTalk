@@ -89,17 +89,25 @@ export default function PannelloVoce({
   apriImpostazioni: () => void
 }): React.JSX.Element {
   const [menuMicrofono, setMenuMicrofono] = useState(false)
+  // Due tendine e non una condivisa: aprendone una si chiude l'altra (vedi i
+  // due `premi`), ma tenerle in due stati separati e' cio' che permette alla
+  // freccetta di ciascuna di sapere se e' la sua a essere aperta.
+  const [menuUscita, setMenuUscita] = useState(false)
   const collegando = stato === ConnectionState.Reconnecting
 
   return (
-    <div className="space-y-1.5 border-t border-bordo bg-fondo-2/95 p-1.5 backdrop-blur">
+    // `@container` e non un breakpoint della finestra: questo pannello e' largo
+    // 19rem quando c'e' uno spazio aperto e 64 pixel quando non c'e', e la
+    // finestra non cambia di un pixel fra i due casi. Cio' che sta dentro deve
+    // guardare il proprio contenitore, non lo schermo.
+    <div className="@container space-y-1.5 border-t border-bordo bg-fondo-2/95 p-1.5 backdrop-blur">
       {/* Dove si sta parlando, e come si torna a guardarlo.
 
           Due righe e non una: il canale in grande, lo spazio sotto in piccolo.
           Tutto il blocco e' il pulsante che riporta dentro — non "dentro alla
           chiamata", che non si e' mai usciti, ma alla pagina di quella
           chiamata, nel server giusto. */}
-      <div className="flex items-center gap-1 rounded-2xl border border-ok/25 bg-ok/[0.06] p-1">
+      <div className="flex flex-wrap items-center gap-1 rounded-2xl border border-ok/25 bg-ok/[0.06] p-1">
         {/* Il nome e i millisecondi stanno insieme, a sinistra, e il vuoto
             resta fra loro e l'uscita.
 
@@ -114,7 +122,7 @@ export default function PannelloVoce({
             fino a riempire la riga e spingeva il numero fuori dalla vista del
             nome. Adesso e' largo quanto il testo che porta, si stringe se il
             nome e' lungo, e lo spazio che avanza sta dopo. */}
-        <div className="flex min-w-0 flex-1 items-center gap-1">
+        <div className="flex min-w-0 flex-1 basis-24 items-center gap-1">
           <button
             onClick={torna}
             disabled={guardando}
@@ -128,12 +136,33 @@ export default function PannelloVoce({
             </span>
           </button>
 
-          <Latenza
-            valore={latenza}
-            collegando={collegando}
-            statistiche={impostazioni.mostraStatistiche}
-            alterna={() => salva({ mostraStatistiche: !impostazioni.mostraStatistiche })}
-          />
+          <Latenza valore={latenza} collegando={collegando} apri={apriImpostazioni} />
+
+          {/* Il riascolto sta qui e non giu' con gli altri comandi.
+
+              Quelli sotto sono cose che si fanno: accendi la camera, mostra
+              uno schermo. Questo e' l'unico che riguarda cio' che *e' appena
+              successo* in questa stanza - «cosa hai detto?» - e appartiene al
+              riquadro che dice in quale stanza si e'. E' anche il comando che
+              si preme di fretta, nei due secondi in cui la frase e' ancora
+              utile: accanto al nome del canale la mano lo trova senza cercare
+              fra sei icone tutte uguali. */}
+          <button
+            onClick={riascoltoAttivo ? riascolta : apriImpostazioni}
+            title={
+              riascoltoAttivo
+                ? `Riascolta gli ultimi ${secondiRiascolto} secondi`
+                : 'Riascolto spento: si riaccende nelle impostazioni, sezione Audio'
+            }
+            aria-label={riascoltoAttivo ? 'Riascolta' : 'Riascolto spento'}
+            className={`hidden h-7 w-7 shrink-0 items-center justify-center rounded-lg border transition-colors @min-[11rem]:flex ${
+              riascoltoAttivo
+                ? 'border-bordo bg-fondo/60 text-testo-2 hover:border-fondo-3 hover:bg-fondo hover:text-testo'
+                : 'border-bordo/60 bg-fondo/40 text-testo-3/60 hover:border-bordo hover:text-testo-3'
+            }`}
+          >
+            <Riavvolgi className="h-4 w-4" />
+          </button>
         </div>
 
         {/* Quadrato, come tutti gli altri comandi.
@@ -149,7 +178,7 @@ export default function PannelloVoce({
           onClick={esci}
           title="Esci dalla chiamata"
           aria-label="Esci dalla chiamata"
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-male/40 bg-male/10 text-male transition-colors hover:bg-male/20 [&>svg]:h-[18px] [&>svg]:w-[18px]"
+          className="mx-auto flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-male/40 bg-male/10 text-male transition-colors hover:bg-male/20 [&>svg]:h-[18px] [&>svg]:w-[18px]"
         >
           <Esci />
         </button>
@@ -163,82 +192,132 @@ export default function PannelloVoce({
           icone appoggiate sullo stesso fondo si leggono come una striscia
           unica: si mira quella accanto a quella che si voleva. */}
       <div className="rounded-2xl border border-bordo bg-fondo-3/40 p-1.5">
-        <button
-          onClick={apriProfilo}
-          title={`${utente.nome} — apri il profilo`}
-          className="flex w-full min-w-0 items-center gap-2 rounded-xl px-1 py-1 text-left transition-colors hover:bg-fondo-3"
-        >
-          <span className="relative shrink-0">
-            {utente.avatar ? (
-              <img src={utente.avatar} alt="" className="h-8 w-8 rounded-full object-cover" />
-            ) : (
-              <span
-                className="flex h-8 w-8 items-center justify-center rounded-full text-[11px] font-semibold text-black/75"
-                style={{ background: coloreDi(`u${utente.id}`) }}
+        {/* Io, e accanto a me le tre cose che riguardano me.
+
+            Microfono, cuffie e impostazioni stanno sulla stessa riga del nome
+            e non nella fila sotto, ed e' la divisione che fa la differenza:
+            questi tre valgono ovunque — restano veri anche fuori da questa
+            chiamata, anche cambiando canale — mentre camera, condivisione e
+            riascolto sono cose che si fanno *dentro* alla stanza in cui si
+            sta. Prima erano sei quadrati in fila e la distinzione non si
+            vedeva: si cercava il muto fra sei icone tutte uguali invece che
+            accanto alla propria faccia, che e' dove lo si cerca. */}
+        <div className="flex flex-wrap items-center gap-1.5">
+          <button
+            onClick={apriProfilo}
+            title={`${utente.nome} — apri il profilo`}
+            className="flex min-w-0 flex-1 basis-32 items-center gap-2 rounded-xl px-1 py-1 text-left transition-colors hover:bg-fondo-3"
+          >
+            <span className="relative shrink-0">
+              {utente.avatar ? (
+                <img src={utente.avatar} alt="" className="h-8 w-8 rounded-full object-cover" />
+              ) : (
+                <span
+                  className="flex h-8 w-8 items-center justify-center rounded-full text-[11px] font-semibold text-black/75"
+                  style={{ background: coloreDi(`u${utente.id}`) }}
+                >
+                  {inizialiDi(utente.nome)}
+                </span>
+              )}
+              <PallinoStato
+                stato={(utente.stato ?? 'online') as StatoUtente}
+                className="h-2.5 w-2.5"
+              />
+            </span>
+            <span className="min-w-0 flex-1 truncate text-xs font-medium text-testo">
+              {utente.nome}
+            </span>
+          </button>
+
+          {/* Questi tre non crescono: sono quadrati, e restano quadrati anche
+              quando avanza spazio. A crescere e' il nome li' accanto, che e'
+              l'unica cosa in questa riga che abbia qualcosa da guadagnarci. */}
+          <div className="flex flex-wrap items-center justify-center gap-1.5">
+            <div className="relative flex">
+              <Scatola
+                cresce={false}
+                tono={microfonoAcceso ? 'normale' : 'male'}
+                titolo={microfonoAcceso ? 'Zittisci il microfono' : 'Riaccendi il microfono'}
+                premi={alternaMicrofono}
+                secondario={{
+                  titolo: 'Microfono: dispositivo e volume in entrata',
+                  premi: () => {
+                    setMenuUscita(false)
+                    setMenuMicrofono((v) => !v)
+                  }
+                }}
               >
-                {inizialiDi(utente.nome)}
-              </span>
-            )}
-            <PallinoStato
-              stato={(utente.stato ?? 'online') as StatoUtente}
-              className="h-2.5 w-2.5"
-            />
-          </span>
-          <span className="min-w-0 flex-1 truncate text-xs font-medium text-testo">
-            {utente.nome}
-          </span>
-        </button>
+                {microfonoAcceso ? <Microfono /> : <MicrofonoSpento />}
+              </Scatola>
+              {menuMicrofono && (
+                <MenuRapido
+                  lato="entrata"
+                  impostazioni={impostazioni}
+                  salva={salva}
+                  chiudi={() => setMenuMicrofono(false)}
+                  apriImpostazioni={() => {
+                    setMenuMicrofono(false)
+                    apriImpostazioni()
+                  }}
+                />
+              )}
+            </div>
 
-        {/* Le scatole si dividono la riga per intero.
+            {/* L'unico posto in cui si spegne l'ascolto, e adesso anche quello
+                in cui si sceglie da dove esce. La freccetta e' la stessa del
+                microfono perche' la domanda e' la stessa, dall'altro lato:
+                prima l'altoparlante stava dentro alla tendina del microfono,
+                cioe' l'ultimo posto in cui uno va a cercarlo. */}
+            <div className="relative flex">
+              <Scatola
+                cresce={false}
+                tono={sordina ? 'male' : 'normale'}
+                titolo={sordina ? 'Riattiva tutto' : 'Silenzia tutto: non senti e non ti sentono'}
+                premi={alternaSordina}
+                secondario={{
+                  titolo: 'Ascolto: dispositivo e volume in uscita',
+                  premi: () => {
+                    setMenuMicrofono(false)
+                    setMenuUscita((v) => !v)
+                  }
+                }}
+              >
+                {sordina ? <CuffieSpente /> : <Cuffie />}
+              </Scatola>
+              {menuUscita && (
+                <MenuRapido
+                  lato="uscita"
+                  impostazioni={impostazioni}
+                  salva={salva}
+                  chiudi={() => setMenuUscita(false)}
+                  apriImpostazioni={() => {
+                    setMenuUscita(false)
+                    apriImpostazioni()
+                  }}
+                />
+              )}
+            </div>
 
-            Sei quadrati da trentasei pixel dentro a un pannello da diciannove
-            rem lasciavano un dito di vuoto a destra, e una fila che finisce
-            prima del suo contenitore si legge come una fila incompleta —
-            sembra che manchi un pulsante, non che ce ne siano sei. Crescendo
-            arrivano a tutti e due i bordi e la fila si chiude.
+            <Scatola cresce={false} titolo="Impostazioni" premi={apriImpostazioni}>
+              <Ingranaggio />
+            </Scatola>
+          </div>
+        </div>
+
+        {/* Cio' che si fa dentro a questa stanza, a tutta larghezza.
+
+            Crescono per arrivare a tutti e due i bordi: una fila che finisce
+            prima del suo contenitore si legge come una fila incompleta, cioe'
+            sembra che manchi un pulsante.
 
             `basis-9` e non `basis-0`, ed e' la riga che tiene in piedi anche
-            l'altro caso: la base e' la misura che avevano prima, ed e' quella
+            l'altro caso: la base e' la misura che avevano da sole, ed e' quella
             che `flex-wrap` guarda per decidere quando andare a capo. Con base
             zero nessuno supera mai la larghezza disponibile, quindi non si va
             a capo mai — e nella colonna stretta, quella senza spazi aperti,
-            invece di impilarsi si sarebbero schiacciate in sei fessure da
-            cinque pixel. */}
+            invece di impilarsi si sarebbero schiacciate in fessure da pochi
+            pixel. */}
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-          <div className="relative flex shrink-0 grow basis-9">
-            <Scatola
-              tono={microfonoAcceso ? 'normale' : 'male'}
-              titolo={microfonoAcceso ? 'Zittisci il microfono' : 'Riaccendi il microfono'}
-              premi={alternaMicrofono}
-              secondario={{
-                titolo: 'Impostazioni del microfono',
-                premi: () => setMenuMicrofono((v) => !v)
-              }}
-            >
-              {microfonoAcceso ? <Microfono /> : <MicrofonoSpento />}
-            </Scatola>
-            {menuMicrofono && (
-              <MenuRapido
-                impostazioni={impostazioni}
-                salva={salva}
-                chiudi={() => setMenuMicrofono(false)}
-                apriImpostazioni={() => {
-                  setMenuMicrofono(false)
-                  apriImpostazioni()
-                }}
-              />
-            )}
-          </div>
-
-          {/* L'unico posto in cui si spegne l'ascolto. */}
-          <Scatola
-            tono={sordina ? 'male' : 'normale'}
-            titolo={sordina ? 'Riattiva tutto' : 'Silenzia tutto: non senti e non ti sentono'}
-            premi={alternaSordina}
-          >
-            {sordina ? <CuffieSpente /> : <Cuffie />}
-          </Scatola>
-
           <Scatola
             acceso={cameraAccesa}
             titolo={cameraAccesa ? 'Spegni la camera' : 'Accendi la camera'}
@@ -259,21 +338,6 @@ export default function PannelloVoce({
             <SchermoCondividi />
           </Scatola>
 
-          <Scatola
-            titolo={
-              riascoltoAttivo
-                ? `Riascolta gli ultimi ${secondiRiascolto} secondi`
-                : 'Riascolto spento: si riaccende nelle impostazioni, sezione Audio'
-            }
-            premi={riascoltoAttivo ? riascolta : apriImpostazioni}
-            spento={!riascoltoAttivo}
-          >
-            <Riavvolgi />
-          </Scatola>
-
-          <Scatola titolo="Impostazioni" premi={apriImpostazioni}>
-            <Ingranaggio />
-          </Scatola>
         </div>
       </div>
     </div>
@@ -281,41 +345,39 @@ export default function PannelloVoce({
 }
 
 /**
- * I millisecondi verso il server, e il comando che apre i numeri veri.
+ * I millisecondi verso il server.
  *
- * Prima era una spia: tre tacche colorate, e il numero solo passandoci sopra.
- * La regola dietro era buona — una cifra che cambia da sola ogni tre secondi
- * in un angolo dell'occhio e' una distrazione continua — ma pagata cara: il
- * numero c'era e nessuno sapeva che ci fosse, perche' niente invitava a
- * passarci sopra.
+ * Il numero si vede sempre, e a tenerlo tranquillo ci pensa la larghezza fissa
+ * delle cifre invece della sua assenza: `numeri` e' tabulare, quindi 9 ms e
+ * 148 ms occupano lo stesso posto e niente si sposta quando la misura cambia.
  *
- * Adesso il numero si vede sempre, e a tenerlo tranquillo ci pensa la
- * larghezza fissa delle cifre invece della sua assenza: `numeri` e' tabulare,
- * quindi 9 ms e 148 ms occupano lo stesso posto e niente si sposta quando la
- * misura cambia.
+ * Ha un fondo suo, con un bordo, ed e' cio' che dice che qui si preme: un testo
+ * appoggiato sulla riga verde accanto a due pulsanti si legge come
+ * un'etichetta, e un'etichetta non la clicca nessuno.
  *
- * E ha un fondo suo, con un bordo. Non e' decorazione: e' cio' che dice che
- * qui *si preme*. Un testo appoggiato sulla riga verde accanto a due pulsanti
- * si legge come un'etichetta, e un'etichetta non la clicca nessuno — il che
- * era vero anche prima, ma allora non c'era niente da cliccare.
+ * ## Cosa fa premendolo, e cosa faceva prima
  *
- * Cosa fa premendolo: accende e spegne i numeri veri sopra a ogni riquadro
- * della sala — risoluzione, fotogrammi, bitrate. E' la stessa domanda posta
- * piu' in grande: questa spia dice *quanto ci mette*, quelle statistiche
- * dicono *cosa ne esce*, e chi guarda la prima perche' qualcosa non va e'
- * esattamente chi vuole le seconde.
+ * Apre le impostazioni. Prima accendeva e spegneva i numeri sopra ai riquadri,
+ * ed era un errore di quelli che si vedono solo dall'altra parte: si premeva
+ * una spia della linea e spariva una cosa in fondo allo schermo, su riquadri
+ * che magari in quel momento non c'erano nemmeno. Chi lo faceva per sbaglio
+ * non aveva modo di collegare le due cose — la causa e l'effetto stavano a
+ * mezzo metro di distanza — e si ritrovava le statistiche sparite senza
+ * sapere perche'.
+ *
+ * Un comando che *apre un pannello* non ha quel problema: l'effetto e' li',
+ * immediato e visibile, e da quel pannello si arriva sia all'interruttore
+ * delle statistiche sia alla qualita' — che sono le due cose che si cercano
+ * dopo aver guardato un numero di millisecondi che non piace.
  */
 function Latenza({
   valore,
   collegando,
-  statistiche,
-  alterna
+  apri
 }: {
   valore: number | null
   collegando: boolean
-  /** Se i numeri sopra ai riquadri sono accesi adesso. */
-  statistiche: boolean
-  alterna: () => void
+  apri: () => void
 }): React.JSX.Element {
   const colore = collegando
     ? 'text-attenzione'
@@ -333,21 +395,14 @@ function Latenza({
       ? 'Latenza non ancora misurata'
       : `${valore} ms verso il server`
 
-  const titolo = `${misura} — premi per ${
-    statistiche ? 'nascondere' : 'mostrare'
-  } i numeri sopra ai riquadri`
+  const titolo = `${misura} — premi per aprire le impostazioni`
 
   return (
     <button
-      onClick={alterna}
+      onClick={apri}
       title={titolo}
       aria-label={titolo}
-      aria-pressed={statistiche}
-      className={`flex shrink-0 items-center gap-1.5 rounded-lg border px-1.5 py-1 transition-colors ${
-        statistiche
-          ? 'border-ok/40 bg-ok/10 hover:bg-ok/20'
-          : 'border-bordo bg-fondo/60 hover:border-fondo-3 hover:bg-fondo'
-      } ${colore}`}
+      className={`hidden shrink-0 items-center gap-1.5 rounded-lg border border-bordo bg-fondo/60 px-1.5 py-1 transition-colors hover:border-fondo-3 hover:bg-fondo @min-[11rem]:flex ${colore}`}
     >
       <span className="numeri text-[10px] leading-none tabular-nums">
         {collegando ? '•••' : valore === null ? '—' : `${valore}ms`}
@@ -359,8 +414,6 @@ function Latenza({
             className="w-[3px] rounded-sm bg-current"
             style={{
               height: altezza,
-              // Le tacche oltre la qualita' misurata restano smorte: e' la
-              // lettura immediata, quella che si fa senza fermarsi a leggere.
               opacity: valore === null ? 0.25 : i < tacche(valore) ? 1 : 0.25
             }}
           />
@@ -395,6 +448,7 @@ function Scatola({
   acceso = false,
   spento = false,
   tono = 'normale',
+  cresce = true,
   secondario
 }: {
   children: React.ReactNode
@@ -404,6 +458,16 @@ function Scatola({
   /** Presente ma disattivato: si vede che esiste, e il titolo dice perche'. */
   spento?: boolean
   tono?: 'normale' | 'male'
+  /**
+   * Se allargarsi per riempire la riga.
+   *
+   * Vero nella fila dei comandi della stanza, dove tre scatole si dividono
+   * tutta la larghezza. Falso accanto al nome, dove a crescere deve essere il
+   * nome: li' queste restano quadrate, e un quadrato che si stira per
+   * riempire un vuoto smette di sembrare un pulsante e comincia a sembrare
+   * una barra.
+   */
+  cresce?: boolean
   /** La freccetta accanto, per chi ne ha una. */
   secondario?: { titolo: string; premi: () => void }
 }): React.JSX.Element {
@@ -416,7 +480,9 @@ function Scatola({
         : 'border-bordo bg-fondo text-testo-2 hover:border-fondo-3 hover:bg-fondo-3 hover:text-testo'
 
   return (
-    <span className="relative inline-flex w-full shrink-0 grow basis-9">
+    <span
+      className={`relative inline-flex shrink-0 ${cresce ? 'w-full grow basis-9' : 'w-9'}`}
+    >
       <button
         onClick={premi}
         title={titolo}
@@ -449,11 +515,14 @@ function Scatola({
  * stesso componente, quindi dispositivi e volumi non possono divergere.
  */
 function MenuRapido({
+  lato,
   impostazioni,
   salva,
   chiudi,
   apriImpostazioni
 }: {
+  /** Quale meta' dei controlli: quella del microfono o quella dell'ascolto. */
+  lato: 'entrata' | 'uscita'
   impostazioni: Impostazioni
   salva: (modifiche: Partial<Impostazioni>) => void
   chiudi: () => void
@@ -470,6 +539,7 @@ function MenuRapido({
           la larghezza della chiamata davanti. */}
       <div className="absolute bottom-full left-0 z-50 mb-1 w-72 space-y-3 rounded-xl border border-bordo bg-fondo-2 p-3 shadow-xl shadow-black/40">
         <ControlliAudio
+          lato={lato}
           impostazioni={impostazioni}
           salva={salva}
           apriImpostazioni={apriImpostazioni}

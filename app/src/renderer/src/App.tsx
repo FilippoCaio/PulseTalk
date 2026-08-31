@@ -43,6 +43,7 @@ import ChiamataInArrivo, { ChiamataFinita } from './dm/ChiamataInArrivo'
 import Chat from './chat/Chat'
 import Ricerca from './chat/Ricerca'
 import Sala from './sala/Sala'
+import AtrioVocale from './spazi/AtrioVocale'
 import PannelloImpostazioni from './Impostazioni'
 import PopupProfilo from './PopupProfilo'
 import { StrisciaProblemi } from './Problemi'
@@ -624,7 +625,13 @@ export default function App(): React.JSX.Element {
     } else if (chiamata) {
       setVista('spazi')
       setSpazioApertoId(chiamata.canale.spazio)
-      setCanaleApertoId(null)
+      // Il canale resta selezionato, e non e' un dettaglio: uscendo si torna
+      // a guardare il posto da cui si e' usciti, con dentro chi c'e' rimasto
+      // e il pulsante per rientrare (vedi `AtrioVocale`). Prima si azzerava,
+      // e la parte grande dello schermo rispondeva «Scegli un canale a
+      // sinistra» a chi un canale ce l'aveva selezionato eccome - e per
+      // rientrare bisognava rifare nella colonna il clic appena fatto.
+      setCanaleApertoId(chiamata.canale.id)
     }
     await fermaServizioChiamata()
     // Uscire da una chiamata diretta vuol dire riagganciare: senza questa
@@ -1843,6 +1850,13 @@ export default function App(): React.JSX.Element {
                 io={utente}
                 profili={profili}
                 mostraAnteprimeLink={impostazioni.mostraAnteprimeLink ?? true}
+                accantoAllaLinguetta
+              />
+            ) : canaleAperto?.tipo === 'voce' ? (
+              <AtrioVocale
+                canale={canaleAperto}
+                profili={profili}
+                entra={() => entraInVoce(canaleAperto)}
               />
             ) : (
               <div className="flex flex-1 flex-col items-center justify-center gap-1 text-center">
