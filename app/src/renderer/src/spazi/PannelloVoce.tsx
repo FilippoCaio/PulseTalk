@@ -14,7 +14,6 @@ import {
   Ingranaggio,
   Microfono,
   MicrofonoSpento,
-  Riavvolgi,
   SchermoCondividi
 } from '../icone'
 
@@ -40,14 +39,11 @@ export default function PannelloVoce({
   cameraAccesa,
   sordina,
   condivide,
-  riascoltoAttivo,
-  secondiRiascolto,
   guardando,
   alternaMicrofono,
   alternaCamera,
   alternaSordina,
   apriCondivisione,
-  riascolta,
   torna,
   esci,
   apriProfilo,
@@ -72,15 +68,12 @@ export default function PannelloVoce({
   cameraAccesa: boolean
   sordina: boolean
   condivide: boolean
-  riascoltoAttivo: boolean
-  secondiRiascolto: number
   /** Vero se si sta gia' guardando la stanza: allora "torna" non serve. */
   guardando: boolean
   alternaMicrofono: () => void
   alternaCamera: () => void
   alternaSordina: () => void
   apriCondivisione: () => void
-  riascolta: () => void
   torna: () => void
   esci: () => void
   apriProfilo: () => void
@@ -138,31 +131,6 @@ export default function PannelloVoce({
 
           <Latenza valore={latenza} collegando={collegando} apri={apriImpostazioni} />
 
-          {/* Il riascolto sta qui e non giu' con gli altri comandi.
-
-              Quelli sotto sono cose che si fanno: accendi la camera, mostra
-              uno schermo. Questo e' l'unico che riguarda cio' che *e' appena
-              successo* in questa stanza - «cosa hai detto?» - e appartiene al
-              riquadro che dice in quale stanza si e'. E' anche il comando che
-              si preme di fretta, nei due secondi in cui la frase e' ancora
-              utile: accanto al nome del canale la mano lo trova senza cercare
-              fra sei icone tutte uguali. */}
-          <button
-            onClick={riascoltoAttivo ? riascolta : apriImpostazioni}
-            title={
-              riascoltoAttivo
-                ? `Riascolta gli ultimi ${secondiRiascolto} secondi`
-                : 'Riascolto spento: si riaccende nelle impostazioni, sezione Audio'
-            }
-            aria-label={riascoltoAttivo ? 'Riascolta' : 'Riascolto spento'}
-            className={`hidden h-7 w-7 shrink-0 items-center justify-center rounded-lg border transition-colors @min-[11rem]:flex ${
-              riascoltoAttivo
-                ? 'border-bordo bg-fondo/60 text-testo-2 hover:border-fondo-3 hover:bg-fondo hover:text-testo'
-                : 'border-bordo/60 bg-fondo/40 text-testo-3/60 hover:border-bordo hover:text-testo-3'
-            }`}
-          >
-            <Riavvolgi className="h-4 w-4" />
-          </button>
         </div>
 
         {/* Quadrato, come tutti gli altri comandi.

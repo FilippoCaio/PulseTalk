@@ -1499,8 +1499,6 @@ export default function App(): React.JSX.Element {
             cameraAccesa={sessione.cameraAccesa}
             sordina={sessione.sordina}
             condivide={sessione.schermiAttivi.length > 0}
-            riascoltoAttivo={sessione.riascoltoAttivo}
-            secondiRiascolto={impostazioni.secondiRiascolto || 30}
             guardando={guardaLaChiamata}
             alternaMicrofono={() => void sessione.alternaMicrofono()}
             alternaCamera={() => void sessione.alternaCamera()}
@@ -1515,7 +1513,6 @@ export default function App(): React.JSX.Element {
               tornaAllaChiamata()
               setRichiestaCondivisione(true)
             }}
-            riascolta={sessione.riascolta}
             torna={tornaAllaChiamata}
             esci={() => void esciDallaVoce()}
             apriProfilo={() => setMostraProfilo(true)}

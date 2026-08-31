@@ -363,13 +363,46 @@ export default function OverlayChiamata({
                   title={`Gli ultimi ${secondiRiascolto} secondi di voce restano in memoria, qui, per poterli riascoltare. Non toccano il disco e spariscono uscendo.`}
                   className="flex items-center gap-1"
                 >
-                  ·
-                  <Riavvolgi className="h-3 w-3" />
-                  {secondiRiascolto}s
+                  {/* Niente icona qui: il pulsante accanto ha gia' la stessa,
+                      e due riavvolgimenti a cinque pixel di distanza si
+                      leggono come due comandi invece che come un comando e la
+                      sua misura. */}
+                  · {secondiRiascolto}s in memoria
                 </span>
               )}
             </p>
           </div>
+
+          {/* Il riascolto sta qui, accanto al nome della stanza.
+
+              Era in fondo alla barra dei comandi, in mezzo a camera,
+              condivisione e microfono: cose che si accendono e si spengono, e
+              che restano come le lasci. Questo no - e' un colpo solo, e si
+              batte nei due secondi in cui la frase persa e' ancora utile.
+              Cercarlo fra sei quadrati uguali in fondo allo schermo, mentre si
+              sta guardando qualcuno parlare in alto, era il gesto sbagliato
+              per una cosa che si fa di fretta.
+
+              Accanto al nome invece sta dove si guarda gia', e a un dito
+              dalla riga che dice quanti secondi ci sono in memoria: il
+              pulsante e la sua misura, uno di fianco all'altra. */}
+          <button
+            type="button"
+            onClick={riascoltoAttivo ? riascolta : apriImpostazioni}
+            title={
+              riascoltoAttivo
+                ? `Riascolta gli ultimi ${secondiRiascolto} secondi`
+                : 'Riascolto spento: si riaccende nelle impostazioni, sezione Audio'
+            }
+            aria-label={riascoltoAttivo ? 'Riascolta' : 'Riascolto spento'}
+            className={`ml-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] transition-colors ${
+              riascoltoAttivo
+                ? 'bg-fondo-3 text-testo-2 hover:bg-fondo-3/70 hover:text-testo'
+                : 'bg-fondo-3/50 text-testo-3 hover:text-testo-2'
+            } [&>svg]:h-[18px] [&>svg]:w-[18px]`}
+          >
+            <Riavvolgi />
+          </button>
         </div>
 
         <div className="pointer-events-auto flex shrink-0 items-center gap-2">
@@ -618,17 +651,6 @@ export default function OverlayChiamata({
               volte c'e' e a volte no e' un pulsante che non si impara mai: chi
               l'ha disattivato senza accorgersene non ha modo di capire dove sia
               finito. Spento dice dov'e' e come riaccenderlo. */}
-          <Tasto
-            titolo={
-              riascoltoAttivo
-                ? `Riascolta gli ultimi ${secondiRiascolto} secondi`
-                : 'Riascolto spento: si riaccende nelle impostazioni, sezione Audio'
-            }
-            premi={riascoltoAttivo ? riascolta : apriImpostazioni}
-            spento={!riascoltoAttivo}
-          >
-            <Riavvolgi />
-          </Tasto>
         </div>
 
         {/* Uscire, fuori dalla scatola e a destra di tutto.
