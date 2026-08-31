@@ -7,6 +7,40 @@ import { Bottone, Campo, classiInput } from '../ui'
 import { Fumetto, Piu, Utenti } from '../icone'
 
 /**
+ * Quanto sono smussati i quadrati dei server, a riposo e da scelti.
+ *
+ * Due valori e non uno: l'icona cambia forma quando la si apre o ci si passa
+ * sopra, ed e' quel piccolo scatto — non un colore, non un bordo — la cosa
+ * che dice "questo qui". Scritti una volta perche' li montano in quattro
+ * posti — i messaggi diretti, ogni spazio, l'anello verde di chi sta
+ * parlando, il piu' per crearne uno — e quattro copie a mano divergono al
+ * primo ritocco: l'anello che non segue il raggio dell'icona sotto si vede
+ * subito, perche' si stacca proprio negli angoli.
+ *
+ * Erano 24 e 16 pixel su un quadrato da 48, cioe' un cerchio che diventava
+ * quasi un cerchio: la differenza fra riposo e scelto c'era ma andava cercata,
+ * e con dodici server in colonna l'insieme era una fila di pastiglie tutte
+ * uguali. A 12 e 6 restano quadrati con gli angoli tolti — la forma si
+ * riconosce, l'iniziale dentro sta su una base larga invece che dentro a un
+ * tondo, e il passaggio a scelto dimezza il raggio, che e' il salto che si
+ * vede senza doverlo cercare.
+ */
+const RAGGIO_SCELTO = 'rounded-md'
+/**
+ * Il riposo porta con se' il suo `group-hover`, e non e' pignoleria di stile.
+ *
+ * Tailwind non gira: legge i sorgenti e genera solo le classi che ci trova
+ * scritte per intero. `group-hover:${RAGGIO_SCELTO}` diventa
+ * `group-hover:rounded-md` soltanto a schermo acceso — nel file c'e' un
+ * pezzo di template, quindi quella regola nel foglio di stile non nascerebbe
+ * mai e il cambio di forma sotto al cursore sparirebbe senza un errore da
+ * nessuna parte. Scritte intere, invece, si vedono.
+ */
+const RAGGIO_RIPOSO = 'rounded-xl group-hover:rounded-md'
+/** Lo stesso, per chi si accende da solo invece che dentro a un `group`. */
+const RAGGIO_RIPOSO_SOLO = 'rounded-xl hover:rounded-md'
+
+/**
  * La colonna delle icone, a sinistra di tutto.
  *
  * Stretta apposta: e' un indice, non un elenco. Il nome per esteso compare
@@ -125,8 +159,8 @@ export default function BarraSpazi({
         <span
           className={`flex h-12 w-12 items-center justify-center transition-all ${
             direttiAperti
-              ? 'rounded-2xl bg-vivo text-fondo'
-              : 'rounded-3xl bg-fondo-2 text-testo-2 group-hover:rounded-2xl group-hover:bg-fondo-3 group-hover:text-testo'
+              ? `${RAGGIO_SCELTO} bg-vivo text-fondo`
+              : `${RAGGIO_RIPOSO} bg-fondo-2 text-testo-2 group-hover:bg-fondo-3 group-hover:text-testo`
           }`}
         >
           <Fumetto className="h-5 w-5" />
@@ -170,11 +204,13 @@ export default function BarraSpazi({
             />
             <span
               className={`flex h-12 w-12 items-center justify-center text-lg font-semibold transition-all ${
-                attivo ? 'rounded-2xl' : 'rounded-3xl group-hover:rounded-2xl'
+                attivo ? RAGGIO_SCELTO : RAGGIO_RIPOSO
               }`}
               style={{
                 background: attivo ? 'var(--color-vivo)' : coloreDi(`s${spazio.id}`),
-                color: '#0b0e14'
+                // Il fondo del tema, non un nero scritto a mano: con un tema
+                // chiaro le iniziali devono scurirsi insieme a tutto il resto.
+                color: 'var(--color-fondo)'
               }}
             >
               {spazio.icona || inizialiDi(spazio.nome)}
@@ -184,9 +220,10 @@ export default function BarraSpazi({
                 parlando: si vede da lontano, e da lontano e' l'unica cosa che
                 serve sapere.
 
-                Il raggio e' lo stesso dell'icona, riga per riga, e non un
-                `rounded-2xl` fisso. L'icona cambia forma da sola — tonda a
-                riposo, squadrata da aperta o sotto al cursore — e un anello
+                Il raggio e' lo stesso dell'icona — le stesse due costanti,
+                non un valore fisso ricopiato qui. L'icona cambia forma da sola
+                — smussata a riposo, quasi quadra da aperta o sotto al
+                cursore — e un anello
                 che non la seguiva restava squadrato intorno a un quadrato con
                 gli angoli tondi: si vedeva l'anello staccarsi negli angoli
                 proprio quando si guardava un altro server, cioe' quando
@@ -195,7 +232,7 @@ export default function BarraSpazi({
             {vocale && (
               <span
                 className={`pointer-events-none absolute inset-0 border-2 border-ok transition-all ${
-                  attivo ? 'rounded-2xl' : 'rounded-3xl group-hover:rounded-2xl'
+                  attivo ? RAGGIO_SCELTO : RAGGIO_RIPOSO
                 }`}
               />
             )}
@@ -224,7 +261,7 @@ export default function BarraSpazi({
         onClick={() => setCreando(true)}
         title="Nuovo spazio"
         aria-label="Nuovo spazio"
-        className="flex h-12 w-12 shrink-0 items-center justify-center rounded-3xl border border-dashed border-bordo text-testo-3 transition-all hover:rounded-2xl hover:border-vivo hover:text-vivo"
+        className={`flex h-12 w-12 shrink-0 items-center justify-center ${RAGGIO_RIPOSO_SOLO} border border-dashed border-bordo text-testo-3 transition-all hover:border-vivo hover:text-vivo`}
       >
         <Piu />
       </button>
@@ -238,7 +275,7 @@ export default function BarraSpazi({
         onClick={apriAmici}
         title={richieste > 0 ? `Amici — ${richieste} in attesa` : 'Amici'}
         aria-label="Amici"
-        className="relative flex h-10 w-10 items-center justify-center rounded-2xl bg-fondo-2 text-testo-2 transition-colors hover:bg-fondo-3 hover:text-testo"
+        className="relative flex h-10 w-10 items-center justify-center rounded-lg bg-fondo-2 text-testo-2 transition-colors hover:bg-fondo-3 hover:text-testo"
       >
         <Utenti />
         {richieste > 0 && (

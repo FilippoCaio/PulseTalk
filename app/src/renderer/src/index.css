@@ -1,27 +1,63 @@
 @import 'tailwindcss';
 
 /*
- * Scuro e basta, senza chiaro.
+ * I dodici colori, e il motivo per cui passano da due variabili invece che da
+ * una.
  *
- * Non e' pigrizia: accanto a un riquadro che mostra uno schermo condiviso, ogni
- * pixel di interfaccia chiara e' luce che l'occhio deve scavalcare per tornare
- * a leggere il codice dell'altro. Le sale di regia sono nere per lo stesso
- * motivo.
+ * Scura di nascita, e non per pigrizia: accanto a un riquadro che mostra uno
+ * schermo condiviso, ogni pixel di interfaccia chiara e' luce che l'occhio deve
+ * scavalcare per tornare a leggere il codice dell'altro. Le sale di regia sono
+ * nere per lo stesso motivo. Adesso si puo' cambiare — tre preset, i dodici
+ * colori a mano, una tavolozza di coolors — e il cambio avviene riscrivendo
+ * `--pt-*` su `documentElement` da `lib/tema.ts`.
+ *
+ * LE DUE VARIABILI SONO LA PARTE CHE NON SI PUO' TOGLIERE, e va spiegata
+ * perche' sembra un giro inutile.
+ *
+ * Tailwind, quando dentro a `@theme` trova un colore vero, se lo tiene: davanti
+ * a `border-ok/25` non scrive una mescolanza da risolvere a schermo acceso,
+ * scrive il risultato gia' fatto — `border-color: #3ecf8e40`. E' piu' veloce,
+ * e finche' i colori non cambiano e' anche giusto. Misurato su questo foglio:
+ * settantacinque regole con dentro un colore congelato, cioe' tutte le tinte
+ * trasparenti dell'app — il verde della riga della chiamata, il rosso dei
+ * pulsanti che escono, il fondo dei pannelli a `/95`, gli avvisi. Con un tema
+ * chiaro sarebbero rimaste quelle di adesso: un velo verde notte sopra a un
+ * pannello bianco.
+ *
+ * Davanti a un `var()` invece non puo' precalcolare niente, e scrive la
+ * mescolanza per esteso. Quindi `@theme` punta a `--pt-*`, e i valori veri
+ * stanno li' sotto: `--color-*` resta il nome che Tailwind conosce, `--pt-*`
+ * la manopola che si gira.
  */
 
+:root {
+  --pt-fondo: #0b0e14;
+  --pt-fondo-2: #121722;
+  --pt-fondo-3: #1a2030;
+  --pt-bordo: #232b3d;
+  --pt-testo: #e6e9f0;
+  --pt-testo-2: #98a2b8;
+  --pt-testo-3: #6b7590;
+  --pt-vivo: #4f9cf9;
+  --pt-vivo-2: #7cb8ff;
+  --pt-ok: #3ecf8e;
+  --pt-attenzione: #f5a524;
+  --pt-male: #f4525a;
+}
+
 @theme {
-  --color-fondo: #0b0e14;
-  --color-fondo-2: #121722;
-  --color-fondo-3: #1a2030;
-  --color-bordo: #232b3d;
-  --color-testo: #e6e9f0;
-  --color-testo-2: #98a2b8;
-  --color-testo-3: #6b7590;
-  --color-vivo: #4f9cf9;
-  --color-vivo-2: #7cb8ff;
-  --color-ok: #3ecf8e;
-  --color-attenzione: #f5a524;
-  --color-male: #f4525a;
+  --color-fondo: var(--pt-fondo);
+  --color-fondo-2: var(--pt-fondo-2);
+  --color-fondo-3: var(--pt-fondo-3);
+  --color-bordo: var(--pt-bordo);
+  --color-testo: var(--pt-testo);
+  --color-testo-2: var(--pt-testo-2);
+  --color-testo-3: var(--pt-testo-3);
+  --color-vivo: var(--pt-vivo);
+  --color-vivo-2: var(--pt-vivo-2);
+  --color-ok: var(--pt-ok);
+  --color-attenzione: var(--pt-attenzione);
+  --color-male: var(--pt-male);
 
   /* Anche i passaggi di colore e i passaggi al passaggio del mouse, che in
      Tailwind sono 150ms di serie. Un pannello che si posa lento sopra a un

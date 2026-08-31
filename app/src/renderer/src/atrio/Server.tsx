@@ -5,6 +5,7 @@ import { ponte } from '../ponte'
 import { Avviso, Bottone, Campo, BottoneIcona, Conferma, classiInput } from '../ui'
 import { Chiudi, Macchina, Matita, Piu, Spunta } from '../icone'
 import { ModuloAccesso } from './Accesso'
+import { provaServer } from '../lib/api'
 
 /**
  * I server veri, e il passaggio dall'uno all'altro.
@@ -212,28 +213,14 @@ export default function PannelloServer({
                 </BottoneIcona>
               </div>
 
-              <ModuloAccesso
-                serverIniziale=""
-                // Il nome usato altrove, come proposta. Se di la' e' libero non
-                // succede niente e si resta la stessa persona ovunque; se e'
-                // preso, il modulo lo dice prima della password e ne propone
-                // uno vicino.
-                utenteIniziale={impostazioni.utenteRicordato}
-                etichettaAzione={{ accedi: 'Collega', registra: 'Crea l\'account e collega' }}
-                quandoEntra={async ({ indirizzo, token, utente }) => {
-                  const { errore: avviso } = await ponte.collegaServer({
-                    indirizzo,
-                    token,
-                    utente: utente.utente,
-                    nomeVisibile: utente.nome
-                  })
-                  if (avviso) setErrore(avviso)
+              <AggiungiServer
+                impostazioni={impostazioni}
+                collega={async (indirizzo) => {
                   setAggiungendo(false)
-                  // Collegarsi vuol dire anche andarci: e' quello che uno
-                  // intende avendo appena scritto la password.
                   await cambiaServer(indirizzo)
                   chiudi()
                 }}
+                avvisa={setErrore}
               />
             </div>
           ) : (
@@ -302,6 +289,130 @@ export default function PannelloServer({
           chiudi={() => setDaScollegare(null)}
         />
       )}
+    </div>
+  )
+}
+
+/**
+ * Collegare un secondo server: prima dove, poi chi.
+ *
+ * Gli stessi due passi del primo avvio, e non per simmetria estetica. Prima
+ * qui c'era il modulo delle credenziali con dentro anche un campo per
+ * l'indirizzo, e quel campo era l'unico posto dell'applicazione in cui un
+ * indirizzo veniva preso per buono senza andare a bussare: si scriveva il
+ * server, si scriveva la password, si premeva, e un errore di battitura
+ * nell'indirizzo tornava indietro travestito da credenziali sbagliate.
+ *
+ * Adesso l'indirizzo si verifica per conto suo con `provaServer` — lo stesso
+ * controllo della schermata iniziale — e solo dopo compaiono i campi delle
+ * credenziali. L'errore di battitura si scopre dove e' stato fatto, e il
+ * modulo delle credenziali torna a occuparsi di una cosa sola.
+ */
+function AggiungiServer({
+  impostazioni,
+  collega,
+  avvisa
+}: {
+  impostazioni: Impostazioni
+  /** Chiamata a collegamento avvenuto, con l'indirizzo normalizzato. */
+  collega: (indirizzo: string) => Promise<void> | void
+  avvisa: (errore: string | null) => void
+}): React.JSX.Element {
+  const [indirizzo, setIndirizzo] = useState('')
+  const [verificato, setVerificato] = useState<string | null>(null)
+  const [inCorso, setInCorso] = useState(false)
+  const [errore, setErrore] = useState<string | null>(null)
+
+  const verifica = async (): Promise<void> => {
+    setErrore(null)
+    setInCorso(true)
+    try {
+      const esito = await provaServer(indirizzo)
+      if (esito.ok) setVerificato(esito.indirizzo)
+      else setErrore(esito.motivo)
+    } finally {
+      setInCorso(false)
+    }
+  }
+
+  if (!verificato) {
+    return (
+      <div className="space-y-3">
+        <Campo
+          etichetta="Indirizzo del server"
+          aiuto="Per esempio talk.casa.it, oppure http://192.168.1.10:8080 in rete locale."
+        >
+          <input
+            className={classiInput}
+            value={indirizzo}
+            onChange={(e) => setIndirizzo(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !inCorso && indirizzo.trim()) void verifica()
+            }}
+            placeholder="talk.casa.it"
+            spellCheck={false}
+            autoFocus
+            autoCapitalize="off"
+            autoCorrect="off"
+          />
+        </Campo>
+
+        {errore && <Avviso>{errore}</Avviso>}
+
+        <Bottone
+          tono="vivo"
+          className="w-full"
+          disabled={inCorso || !indirizzo.trim()}
+          onClick={() => void verifica()}
+        >
+          {inCorso ? 'Guardo se c’e’…' : 'Continua'}
+        </Bottone>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-3">
+      {/* L'indirizzo verificato resta in vista, ma come etichetta: e' cio' su
+          cui si sta per mettere una password, e non saperlo piu' sarebbe
+          peggio che non averlo mai visto. Si torna indietro con "cambia",
+          che rimette il campo invece di aprirne un secondo. */}
+      <div className="flex items-center gap-2 rounded-lg border border-ok/30 bg-ok/[0.06] px-3 py-2">
+        <Spunta className="h-3.5 w-3.5 shrink-0 text-ok" />
+        <span className="min-w-0 flex-1 truncate text-xs text-testo-2" title={verificato}>
+          {nomeDaIndirizzo(verificato)}
+        </span>
+        <button
+          onClick={() => {
+            setVerificato(null)
+            setErrore(null)
+          }}
+          className="shrink-0 text-xs text-testo-3 underline underline-offset-2 hover:text-testo-2"
+        >
+          cambia
+        </button>
+      </div>
+
+      <ModuloAccesso
+        serverIniziale={verificato}
+        // Il nome usato altrove, come proposta. Se di la' e' libero non
+        // succede niente e si resta la stessa persona ovunque; se e' preso,
+        // il modulo lo dice prima della password e ne propone uno vicino.
+        utenteIniziale={impostazioni.utenteRicordato}
+        etichettaAzione={{ accedi: 'Collega', registra: 'Crea l\'account e collega' }}
+        quandoEntra={async ({ indirizzo: dove, token, utente }) => {
+          const { errore: avviso } = await ponte.collegaServer({
+            indirizzo: dove,
+            token,
+            utente: utente.utente,
+            nomeVisibile: utente.nome
+          })
+          if (avviso) avvisa(avviso)
+          // Collegarsi vuol dire anche andarci: e' quello che uno intende
+          // avendo appena scritto la password.
+          await collega(dove)
+        }}
+      />
     </div>
   )
 }

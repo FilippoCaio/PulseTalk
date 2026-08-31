@@ -4,6 +4,7 @@ import { nomiVicini, nomeDaIndirizzo, normalizzaIndirizzo } from '@shared/colleg
 import { Api, ErroreApi } from '../lib/api'
 import { ponte } from '../ponte'
 import { Avviso, Bottone, Campo, classiInput } from '../ui'
+import { Globo } from '../icone'
 
 /**
  * Entrare.
@@ -42,7 +43,6 @@ export function ModuloAccesso({
   codiceIniziale = null,
   modoIniziale,
   motivo = null,
-  bloccaServer = false,
   etichettaAzione,
   quandoCambiaModo,
   quandoEntra
@@ -53,16 +53,21 @@ export function ModuloAccesso({
   codiceIniziale?: string | null
   modoIniziale?: Modo
   motivo?: string | null
-  /** Vero dove l'indirizzo non si tocca: il modulo dentro a un server gia' scelto. */
-  bloccaServer?: boolean
   etichettaAzione?: { accedi: string; registra: string }
   /** Per chi disegna la frase in cima, che cambia con la strada scelta. */
   quandoCambiaModo?: (modo: Modo) => void
   quandoEntra: (entrata: Entrata) => Promise<void> | void
 }): React.JSX.Element {
   const [modo, setModo] = useState<Modo>(modoIniziale ?? (codiceIniziale ? 'registra' : 'accedi'))
+  /**
+   * Il server su cui si sta entrando, e da qui non si cambia.
+   *
+   * Resta uno stato e non una costante perche' il modulo lo rilegge quando
+   * cambia da fuori — lo scambiatore, o la schermata della scelta — ma non
+   * c'e' piu' niente in questa pagina che lo scriva.
+   */
   const [server, setServer] = useState(serverIniziale)
-  const [mostraServer, setMostraServer] = useState(!bloccaServer && !serverIniziale)
+  useEffect(() => setServer(serverIniziale), [serverIniziale])
 
   const [utente, setUtente] = useState(utenteIniziale ?? '')
   const [password, setPassword] = useState('')
@@ -123,11 +128,12 @@ export function ModuloAccesso({
   const prova = async (): Promise<void> => {
     setErrore(null)
 
+    // Non dovrebbe succedere: a questo modulo ci si arriva solo dopo che un
+    // indirizzo e' stato scritto *e* verificato nella schermata prima, e altre
+    // strade non ce ne sono. Il controllo resta perche' costa una riga, e
+    // l'alternativa e' un pulsante che premuto non fa niente.
     const base = normalizzaIndirizzo(server)
-    if (!base) {
-      setMostraServer(true)
-      return setErrore('Serve l\'indirizzo del server.')
-    }
+    if (!base) return setErrore('Serve l\'indirizzo del server: torna indietro e scegline uno.')
 
     if (modo === 'accedi') {
       if (!utente.trim() || !password) return setErrore('Servono nome utente e password.')
@@ -303,27 +309,6 @@ export function ModuloAccesso({
           </Campo>
         )}
 
-        {!bloccaServer &&
-          (mostraServer ? (
-            <Campo etichetta="Server" aiuto="L'indirizzo del NAS che ospita le stanze.">
-              <input
-                className={classiInput}
-                value={server}
-                onChange={(e) => setServer(e.target.value)}
-                onKeyDown={alInvio}
-                placeholder="talk.casa.it"
-                spellCheck={false}
-              />
-            </Campo>
-          ) : (
-            <button
-              onClick={() => setMostraServer(true)}
-              className="text-xs text-testo-3 underline underline-offset-2 hover:text-testo-2"
-            >
-              Server: {server || 'da scegliere'} — cambia
-            </button>
-          ))}
-
         {errore && <Avviso>{errore}</Avviso>}
 
         <Bottone
@@ -389,6 +374,7 @@ export default function Accesso({
   serverScelto,
   salva,
   quandoEntra,
+  tornaAllaScelta,
   motivo = null
 }: {
   impostazioni: Impostazioni
@@ -405,6 +391,15 @@ export default function Accesso({
   serverScelto?: string
   salva: (modifiche: Partial<Impostazioni>) => Promise<Impostazioni>
   quandoEntra: (utente: Utente) => void
+  /**
+   * Torna alla schermata che chiede l'indirizzo.
+   *
+   * Arriva solo quando serve, cioe' al primo avvio: con almeno un server gia'
+   * collegato lo stesso mestiere lo fa il quadratino in alto a sinistra, che
+   * apre l'elenco vero. Due porte per la stessa stanza sono due porte da
+   * tenere d'accordo.
+   */
+  tornaAllaScelta?: () => void
   /**
    * Perche' si e' finiti qui invece che dentro.
    *
@@ -424,14 +419,36 @@ export default function Accesso({
   const [avvertenza, setAvvertenza] = useState<string | null>(null)
   const [modo, setModo] = useState<Modo>(invitoDalLink ? 'registra' : 'accedi')
 
+  const indirizzo = serverScelto || impostazioni.server
+  // Nel browser il server e' l'origine da cui la pagina e' arrivata: dirglielo
+  // sarebbe raccontare a qualcuno l'indirizzo che ha appena aperto.
+  const dove = ponte.elettrone || ponte.android ? nomeDaIndirizzo(indirizzo) : ''
+
   return (
     <div className="flex h-full items-center justify-center overflow-y-auto p-4 sm:p-8">
       <div className="pannello w-full max-w-md py-4 sm:py-8">
+        {/* Dove si sta entrando, detto qui e non nel modulo.
+
+            Non e' pignoleria: un account esiste dentro a un server e non
+            prima, quindi "Bentornato" da solo non basta a sapere *dove* si sta
+            tornando — e chi ha due server sa benissimo che le due password
+            sono due. Prima l'indirizzo stava fra i campi, come una cosa da
+            riempire; ma qui non c'e' piu' niente da scegliere, la scelta e'
+            gia' stata fatta e verificata nella schermata prima. Quindi si dice
+            e basta: e' un'etichetta, non un comando. */}
         <div className="mb-8">
           <h1 className="text-2xl font-semibold tracking-tight">PulseTalk</h1>
           <p className="mt-1.5 text-sm leading-relaxed text-testo-2">
             {modo === 'accedi' ? 'Bentornato.' : 'Un codice di invito, e poi le credenziali sono tue.'}
           </p>
+          {dove && (
+            <p className="mt-2 flex items-center gap-1.5 text-xs text-testo-3">
+              <Globo className="h-3.5 w-3.5 shrink-0" />
+              <span className="min-w-0 truncate" title={indirizzo}>
+                su <span className="text-testo-2">{dove}</span>
+              </span>
+            </p>
+          )}
         </div>
 
         <ModuloAccesso
@@ -462,6 +479,24 @@ export default function Accesso({
           <div className="mt-4">
             <Avviso tono="attenzione">{avvertenza}</Avviso>
           </div>
+        )}
+
+        {/* Fuori dalla scatola dei campi, e in fondo.
+
+            Dentro sarebbe di nuovo il difetto di prima: una cosa che si tocca
+            in mezzo a quelle da compilare, come se l'indirizzo fosse il terzo
+            campo del modulo. Qui e' quello che e' — tornare indietro di un
+            passo — e sta dopo il pulsante che porta avanti, non prima. */}
+        {tornaAllaScelta && (
+          <p className="mt-6 text-center text-xs text-testo-3">
+            Non e&apos; questo il server?{' '}
+            <button
+              onClick={tornaAllaScelta}
+              className="text-vivo underline underline-offset-2 hover:text-vivo-2"
+            >
+              Cambialo
+            </button>
+          </p>
         )}
 
         {!ponte.elettrone && !ponte.android && (

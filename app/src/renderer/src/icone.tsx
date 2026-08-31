@@ -740,6 +740,26 @@ export function Cartella(props: Props): React.JSX.Element {
   )
 }
 
+/**
+ * La tavolozza del pittore: i colori dell'app.
+ *
+ * Il buco per il pollice e' quello che la rende riconoscibile a venti pixel —
+ * senza, resta un cerchio schiacciato con dentro dei punti, cioe' un'icona
+ * qualunque. I quattro punti sono i quattro accenti, nell'ordine in cui la
+ * pagina li mostra.
+ */
+export function Tavolozza(props: Props): React.JSX.Element {
+  return (
+    <Base {...props}>
+      <path d="M12 2.6c5.2 0 9.4 3.8 9.4 8.5 0 2.6-2.1 4.1-4.3 4.1h-1.6c-1.2 0-2.1.9-2.1 2 0 .5.2.9.5 1.3.3.4.5.8.5 1.3 0 1-.9 1.6-2.4 1.6-5.2 0-9.4-4.2-9.4-9.4S6.8 2.6 12 2.6Z" />
+      <circle cx="7.6" cy="11.4" r="1.05" />
+      <circle cx="10.4" cy="7.2" r="1.05" />
+      <circle cx="15.2" cy="7.4" r="1.05" />
+      <circle cx="17.6" cy="11.2" r="1.05" />
+    </Base>
+  )
+}
+
 /** Il quadretto con la spunta: segna come letto. */
 export function Letto(props: Props): React.JSX.Element {
   return (

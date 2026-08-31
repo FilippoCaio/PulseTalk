@@ -26,6 +26,7 @@ import { suona } from './lib/suoni'
 import Accesso, { Completa } from './atrio/Accesso'
 import Avvio from './atrio/Avvio'
 import PannelloServer, { BottoneServer } from './atrio/Server'
+import { applicaTema } from './lib/tema'
 import BarraSpazi from './spazi/BarraSpazi'
 import ColonnaCanali from './spazi/ColonnaCanali'
 import PannelloVoce from './spazi/PannelloVoce'
@@ -167,6 +168,34 @@ export default function App(): React.JSX.Element {
     void ponte.leggiImpostazioni().then(setImpostazioni)
     return ponte.onImpostazioniCambiate(setImpostazioni)
   }, [])
+
+  /**
+   * I colori, messi sullo schermo da un posto solo.
+   *
+   * Qui e non nella pagina che li sceglie, ed e' la differenza fra "il tema si
+   * applica quando lo cambio" e "il tema *e'* cio' che dicono le impostazioni".
+   * Il secondo copre anche i due casi che il primo perde: l'apertura dell'app,
+   * quando nessuno ha scelto niente e il tema arriva dal disco, e il cambio
+   * fatto da un'altra finestra, che entra da `onImpostazioniCambiate` e deve
+   * dipingere anche questa.
+   *
+   * `applicaTema` lascia anche una copia in `localStorage`, che e' cio' che
+   * `main.tsx` rilegge prima del primo disegno: senza, ogni apertura sarebbe un
+   * lampo dei colori di serie prima che le impostazioni finiscano di arrivare.
+   *
+   * La dipendenza e' il tema **scritto**, non l'oggetto. Le impostazioni
+   * arrivano da IPC, e passando di la' vengono clonate: `impostazioni.tema` e'
+   * un oggetto nuovo dopo *qualunque* salvataggio, anche quello di un cursore
+   * del volume. Legarsi alla sua identita' vorrebbe dire ridipingere l'app e
+   * riscrivere la copia su disco ogni volta che si tocca una qualsiasi
+   * impostazione; legarsi al suo contenuto lo fa solo quando i colori cambiano
+   * davvero.
+   */
+  const temaScritto = JSON.stringify(impostazioni?.tema ?? null)
+  useEffect(() => {
+    const tema = JSON.parse(temaScritto) as Impostazioni['tema'] | null
+    if (tema) applicaTema(tema)
+  }, [temaScritto])
 
   const api = useMemo(
     () => (impostazioni?.server && impostazioni.token ? new Api(impostazioni.server, impostazioni.token) : null),
@@ -1238,6 +1267,17 @@ export default function App(): React.JSX.Element {
         serverScelto={serverDaUsare}
         motivo={motivoAccesso}
         salva={salva}
+        // Solo al primo avvio, quando di server collegati non ce n'e' nessuno:
+        // li' `serverScelto` e' l'unica cosa che tiene in piedi questa
+        // schermata, e azzerarlo riporta alla domanda «dove». Con un server
+        // gia' collegato la strada e' un'altra ed e' migliore — il quadratino
+        // in alto a sinistra, che apre l'elenco invece di riportare a un campo
+        // vuoto — e infatti `conScambiatore` lo disegna proprio da li' in su.
+        tornaAllaScelta={
+          impostazioniLette.serverCollegati.length === 0
+            ? () => setServerScelto(null)
+            : undefined
+        }
         quandoEntra={(u) => {
           setUtente(u)
           setDeveCompletare(false)

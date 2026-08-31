@@ -14,6 +14,7 @@ import {
 import { chiudiPuntatori, mostraPuntatore } from './puntatore'
 import { preparaAggiornamenti } from './aggiorna'
 import { avviaSito, type Sito } from './sito'
+import { coloriDi } from '@shared/tema'
 import {
   IPC,
   type Impostazioni,
@@ -97,7 +98,14 @@ async function creaFinestra(): Promise<void> {
     // Un programma che all'avvio mette solo un'icona nella barra e' un
     // programma che l'utente dimentica di avere.
     show: true,
-    backgroundColor: '#0b0e14',
+    // Il fondo del tema salvato, non un nero scritto qui.
+    //
+    // E' il colore che Chromium dipinge prima che la pagina esista, cioe' per
+    // i due o tre decimi che passano fra l'apertura della finestra e il primo
+    // fotogramma. Con un tema chiaro, un nero fisso qui sarebbe un lampo scuro
+    // a tutto schermo a ogni avvio — lo stesso difetto che nel renderer cura
+    // la copia in `localStorage`, curato dall'altro lato.
+    backgroundColor: coloriDi(leggiImpostazioni().tema).fondo,
     autoHideMenuBar: true,
     title: 'PulseTalk',
     icon: join(import.meta.dirname, '../../build/icona.png'),

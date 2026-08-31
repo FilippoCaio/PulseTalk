@@ -100,24 +100,59 @@ export default function PannelloVoce({
           chiamata", che non si e' mai usciti, ma alla pagina di quella
           chiamata, nel server giusto. */}
       <div className="flex items-center gap-1 rounded-2xl border border-ok/25 bg-ok/[0.06] p-1">
+        {/* Il nome e i millisecondi stanno insieme, a sinistra, e il vuoto
+            resta fra loro e l'uscita.
+
+            La latenza prima galleggiava all'altro capo della riga, appiccicata
+            al pulsante rosso: la si leggeva come un pezzo dell'uscita, e per
+            capire se il numero riguardava questa chiamata bisognava ricordarsi
+            che di chiamate ce n'e' una sola. Attaccata al nome del canale non
+            c'e' niente da ricordare — dice il ritardo *di quel canale li'*,
+            e si legge nello stesso colpo d'occhio.
+
+            Per questo il pulsante del ritorno non e' piu' `flex-1`: cresceva
+            fino a riempire la riga e spingeva il numero fuori dalla vista del
+            nome. Adesso e' largo quanto il testo che porta, si stringe se il
+            nome e' lungo, e lo spazio che avanza sta dopo. */}
+        <div className="flex min-w-0 flex-1 items-center gap-1">
+          <button
+            onClick={torna}
+            disabled={guardando}
+            title={guardando ? `${canale} — ${spazio}` : `Torna in ${canale} — ${spazio}`}
+            className="flex min-w-0 items-center gap-2 rounded-xl px-2 py-1.5 text-left transition-colors disabled:cursor-default enabled:hover:bg-ok/10"
+          >
+            <Altoparlante className="h-4 w-4 shrink-0 text-ok" />
+            <span className="min-w-0 leading-tight">
+              <span className="block truncate text-xs font-semibold text-ok">{canale}</span>
+              <span className="block truncate text-[10px] text-testo-3">{spazio}</span>
+            </span>
+          </button>
+
+          <Latenza
+            valore={latenza}
+            collegando={collegando}
+            statistiche={impostazioni.mostraStatistiche}
+            alterna={() => salva({ mostraStatistiche: !impostazioni.mostraStatistiche })}
+          />
+        </div>
+
+        {/* Quadrato, come tutti gli altri comandi.
+
+            Portava addosso le classi della `Scatola`, che nella fila qui sotto
+            deve crescere per dividersi la riga con le altre cinque — e qui,
+            dove di scatole ce n'e' una sola, quella crescita se la prendeva
+            tutta: un rettangolo lungo un terzo del pannello per un'icona da
+            diciotto pixel. Un pulsante largo cosi' si legge come il comando
+            principale della riga, mentre e' quello che si preme una volta per
+            chiamata, alla fine. */}
         <button
-          onClick={torna}
-          disabled={guardando}
-          title={guardando ? `${canale} — ${spazio}` : `Torna in ${canale} — ${spazio}`}
-          className="flex min-w-0 flex-1 items-center gap-2 rounded-xl px-2 py-1.5 text-left transition-colors disabled:cursor-default enabled:hover:bg-ok/10"
+          onClick={esci}
+          title="Esci dalla chiamata"
+          aria-label="Esci dalla chiamata"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-male/40 bg-male/10 text-male transition-colors hover:bg-male/20 [&>svg]:h-[18px] [&>svg]:w-[18px]"
         >
-          <Altoparlante className="h-4 w-4 shrink-0 text-ok" />
-          <span className="min-w-0 flex-1 leading-tight">
-            <span className="block truncate text-xs font-semibold text-ok">{canale}</span>
-            <span className="block truncate text-[10px] text-testo-3">{spazio}</span>
-          </span>
-        </button>
-
-        <Latenza valore={latenza} collegando={collegando} />
-
-        <Scatola tono="male" titolo="Esci dalla chiamata" premi={esci}>
           <Esci />
-        </Scatola>
+        </button>
       </div>
 
       {/* Chi sono, e tutto cio' che si comanda da qui.
@@ -154,8 +189,23 @@ export default function PannelloVoce({
           </span>
         </button>
 
+        {/* Le scatole si dividono la riga per intero.
+
+            Sei quadrati da trentasei pixel dentro a un pannello da diciannove
+            rem lasciavano un dito di vuoto a destra, e una fila che finisce
+            prima del suo contenitore si legge come una fila incompleta —
+            sembra che manchi un pulsante, non che ce ne siano sei. Crescendo
+            arrivano a tutti e due i bordi e la fila si chiude.
+
+            `basis-9` e non `basis-0`, ed e' la riga che tiene in piedi anche
+            l'altro caso: la base e' la misura che avevano prima, ed e' quella
+            che `flex-wrap` guarda per decidere quando andare a capo. Con base
+            zero nessuno supera mai la larghezza disponibile, quindi non si va
+            a capo mai — e nella colonna stretta, quella senza spazi aperti,
+            invece di impilarsi si sarebbero schiacciate in sei fessure da
+            cinque pixel. */}
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-          <div className="relative">
+          <div className="relative flex shrink-0 grow basis-9">
             <Scatola
               tono={microfonoAcceso ? 'normale' : 'male'}
               titolo={microfonoAcceso ? 'Zittisci il microfono' : 'Riaccendi il microfono'}
@@ -231,19 +281,41 @@ export default function PannelloVoce({
 }
 
 /**
- * I millisecondi verso il server.
+ * I millisecondi verso il server, e il comando che apre i numeri veri.
  *
- * Il numero compare passandoci sopra e non sempre: una cifra che cambia da
- * sola ogni tre secondi in un angolo dell'occhio e' una distrazione continua,
- * mentre il colore delle tacche dice gia' tutto quello che serve sapere a
- * colpo d'occhio.
+ * Prima era una spia: tre tacche colorate, e il numero solo passandoci sopra.
+ * La regola dietro era buona — una cifra che cambia da sola ogni tre secondi
+ * in un angolo dell'occhio e' una distrazione continua — ma pagata cara: il
+ * numero c'era e nessuno sapeva che ci fosse, perche' niente invitava a
+ * passarci sopra.
+ *
+ * Adesso il numero si vede sempre, e a tenerlo tranquillo ci pensa la
+ * larghezza fissa delle cifre invece della sua assenza: `numeri` e' tabulare,
+ * quindi 9 ms e 148 ms occupano lo stesso posto e niente si sposta quando la
+ * misura cambia.
+ *
+ * E ha un fondo suo, con un bordo. Non e' decorazione: e' cio' che dice che
+ * qui *si preme*. Un testo appoggiato sulla riga verde accanto a due pulsanti
+ * si legge come un'etichetta, e un'etichetta non la clicca nessuno — il che
+ * era vero anche prima, ma allora non c'era niente da cliccare.
+ *
+ * Cosa fa premendolo: accende e spegne i numeri veri sopra a ogni riquadro
+ * della sala — risoluzione, fotogrammi, bitrate. E' la stessa domanda posta
+ * piu' in grande: questa spia dice *quanto ci mette*, quelle statistiche
+ * dicono *cosa ne esce*, e chi guarda la prima perche' qualcosa non va e'
+ * esattamente chi vuole le seconde.
  */
 function Latenza({
   valore,
-  collegando
+  collegando,
+  statistiche,
+  alterna
 }: {
   valore: number | null
   collegando: boolean
+  /** Se i numeri sopra ai riquadri sono accesi adesso. */
+  statistiche: boolean
+  alterna: () => void
 }): React.JSX.Element {
   const colore = collegando
     ? 'text-attenzione'
@@ -255,34 +327,46 @@ function Latenza({
           ? 'text-attenzione'
           : 'text-male'
 
-  const titolo = collegando
+  const misura = collegando
     ? 'Sto riprendendo la linea'
     : valore === null
-      ? 'Non ancora misurata'
+      ? 'Latenza non ancora misurata'
       : `${valore} ms verso il server`
 
+  const titolo = `${misura} — premi per ${
+    statistiche ? 'nascondere' : 'mostrare'
+  } i numeri sopra ai riquadri`
+
   return (
-    <span
+    <button
+      onClick={alterna}
       title={titolo}
-      className={`group/lat flex shrink-0 items-end gap-px ${colore}`}
       aria-label={titolo}
+      aria-pressed={statistiche}
+      className={`flex shrink-0 items-center gap-1.5 rounded-lg border px-1.5 py-1 transition-colors ${
+        statistiche
+          ? 'border-ok/40 bg-ok/10 hover:bg-ok/20'
+          : 'border-bordo bg-fondo/60 hover:border-fondo-3 hover:bg-fondo'
+      } ${colore}`}
     >
-      <span className="numeri mr-1 hidden text-[10px] group-hover/lat:inline">
-        {valore === null ? '—' : `${valore}ms`}
+      <span className="numeri text-[10px] leading-none tabular-nums">
+        {collegando ? '•••' : valore === null ? '—' : `${valore}ms`}
       </span>
-      {[3, 5, 7].map((altezza, i) => (
-        <span
-          key={altezza}
-          className="w-[3px] rounded-sm bg-current"
-          style={{
-            height: altezza,
-            // Le tacche oltre la qualita' misurata restano smorte: e' la
-            // lettura immediata, quella che si fa senza fermarsi a leggere.
-            opacity: valore === null ? 0.25 : i < tacche(valore) ? 1 : 0.25
-          }}
-        />
-      ))}
-    </span>
+      <span className="flex items-end gap-px" aria-hidden="true">
+        {[3, 5, 7].map((altezza, i) => (
+          <span
+            key={altezza}
+            className="w-[3px] rounded-sm bg-current"
+            style={{
+              height: altezza,
+              // Le tacche oltre la qualita' misurata restano smorte: e' la
+              // lettura immediata, quella che si fa senza fermarsi a leggere.
+              opacity: valore === null ? 0.25 : i < tacche(valore) ? 1 : 0.25
+            }}
+          />
+        ))}
+      </span>
+    </button>
   )
 }
 
@@ -332,12 +416,12 @@ function Scatola({
         : 'border-bordo bg-fondo text-testo-2 hover:border-fondo-3 hover:bg-fondo-3 hover:text-testo'
 
   return (
-    <span className="relative inline-flex shrink-0">
+    <span className="relative inline-flex w-full shrink-0 grow basis-9">
       <button
         onClick={premi}
         title={titolo}
         aria-label={titolo}
-        className={`flex h-9 w-9 items-center justify-center rounded-xl border transition-colors ${colore} [&>svg]:h-[18px] [&>svg]:w-[18px]`}
+        className={`flex h-9 w-full items-center justify-center rounded-xl border transition-colors ${colore} [&>svg]:h-[18px] [&>svg]:w-[18px]`}
       >
         {children}
       </button>

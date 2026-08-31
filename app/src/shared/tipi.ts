@@ -351,6 +351,61 @@ export interface Impostazioni {
    * quando ce ne sono due e la musica esce dalla stanza sbagliata.
    */
   dispositivoMusica: string | null
+
+  /**
+   * Di che colore e' dipinta l'app.
+   *
+   * Sta fra le impostazioni locali e non sul server per la stessa ragione dei
+   * silenzi: e' una preferenza di *questo* schermo. Chi lavora al buio la sera
+   * e sotto una finestra la mattina cambia tema due volte al giorno, e non
+   * intende cambiarlo anche a chi sta dall'altra parte della chiamata.
+   */
+  tema: Tema
+}
+
+/**
+ * I dodici colori con cui e' dipinta l'app, e nient'altro.
+ *
+ * Sono esattamente le variabili dichiarate in `@theme` dentro a `index.css`:
+ * ogni classe di Tailwind usata nell'interfaccia — `bg-fondo-2`, `text-ok`,
+ * `border-bordo` — pesca da una di queste dodici e da nessun'altra. E' per
+ * questo che un tema puo' essere un oggetto di dodici stringhe invece di un
+ * foglio di stile: non c'e' nessun colore che sfugga all'elenco.
+ *
+ * I nomi sono quelli del CSS meno il prefisso `--color-`, cosi' il giro
+ * dall'impostazione alla variabile e' una concatenazione e non una tabella di
+ * traduzione da tenere allineata.
+ */
+export type ChiaveColore =
+  | 'fondo'
+  | 'fondo-2'
+  | 'fondo-3'
+  | 'bordo'
+  | 'testo'
+  | 'testo-2'
+  | 'testo-3'
+  | 'vivo'
+  | 'vivo-2'
+  | 'ok'
+  | 'attenzione'
+  | 'male'
+
+/** Da quale dei tre punti di partenza si parte. */
+export type PresetTema = 'pulse' | 'scuro' | 'chiaro'
+
+/**
+ * Il tema: un preset, e cio' che si e' cambiato a mano rispetto a lui.
+ *
+ * Si salvano gli **scostamenti** e non i dodici colori risolti, ed e' la
+ * differenza che conta il giorno in cui si ritocca un preset: chi aveva
+ * cambiato solo il blu si ritrova il preset nuovo con sopra il suo blu, invece
+ * di una fotografia dei colori di due versioni fa che nessuno ha piu' modo di
+ * riconoscere come vecchia.
+ */
+export interface Tema {
+  preset: PresetTema
+  /** Solo i colori toccati. Vuoto quando il preset e' intatto. */
+  colori: Partial<Record<ChiaveColore, string>>
 }
 
 export const IMPOSTAZIONI_INIZIALI: Impostazioni = {
@@ -401,7 +456,8 @@ export const IMPOSTAZIONI_INIZIALI: Impostazioni = {
   avvioAutomatico: false,
   colonneChiuse: false,
   spaziSilenziati: [],
-  dispositivoMusica: null
+  dispositivoMusica: null,
+  tema: { preset: 'pulse', colori: {} }
 }
 
 /** I quattro lati a cui si puo' agganciare la striscia dei riquadri. */

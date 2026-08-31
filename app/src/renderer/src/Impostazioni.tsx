@@ -24,8 +24,19 @@ import { avviaProva, type Prova } from './lib/provaMicrofono'
 import { usaMisuratore } from './lib/misuratoreMicrofono'
 import { scegli, usaDispositivi, vociTendina } from './lib/usaDispositivi'
 import { Avviso, Bottone, BottoneIcona, Campo, classiInput, Interruttore, Sezione } from './ui'
-import { Altoparlante, Camera, Chiudi, Esci, Ingranaggio, Persona, Scintille, Scudo } from './icone'
+import {
+  Altoparlante,
+  Camera,
+  Chiudi,
+  Esci,
+  Ingranaggio,
+  Persona,
+  Scintille,
+  Scudo,
+  Tavolozza
+} from './icone'
 import { ImpostazioniServer, MiaAi } from './ChiaviAi'
+import Aspetto from './Aspetto'
 import { configuraSuoni, suona } from './lib/suoni'
 
 /**
@@ -477,6 +488,8 @@ export default function PannelloImpostazioni({
               </>
             )}
 
+            {pagina === 'aspetto' && <Aspetto impostazioni={impostazioni} salva={salva} />}
+
             {pagina === 'ai' && <MiaAi api={api} />}
 
             {pagina === 'server' && utente.ruolo === 'admin' && (
@@ -567,7 +580,7 @@ function memoria(secondi: number): string {
   return mb < 10 ? `${mb.toFixed(1).replace('.', ',')} MB` : `${Math.round(mb)} MB`
 }
 
-type Pagina = 'audio' | 'video' | 'profilo' | 'app' | 'account' | 'ai' | 'server'
+type Pagina = 'audio' | 'video' | 'aspetto' | 'profilo' | 'app' | 'account' | 'ai' | 'server'
 
 const PAGINE: {
   id: Pagina
@@ -578,6 +591,9 @@ const PAGINE: {
 }[] = [
   { id: 'audio', nome: 'Audio', Icona: Altoparlante },
   { id: 'video', nome: 'Video', Icona: Camera },
+  // Fra le due che parlano di come si vede e si sente, e prima di quelle che
+  // parlano di chi si e': i colori riguardano lo schermo, non l'account.
+  { id: 'aspetto', nome: 'Aspetto', Icona: Tavolozza },
   { id: 'profilo', nome: 'Profilo', Icona: Persona },
   { id: 'app', nome: 'Applicazione', Icona: Ingranaggio },
   { id: 'ai', nome: 'La mia AI', Icona: Scintille },
