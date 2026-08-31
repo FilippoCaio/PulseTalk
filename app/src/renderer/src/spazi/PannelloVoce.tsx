@@ -129,7 +129,12 @@ export default function PannelloVoce({
             </span>
           </button>
 
-          <Latenza valore={latenza} collegando={collegando} apri={apriImpostazioni} />
+          <Latenza
+            valore={latenza}
+            collegando={collegando}
+            statistiche={impostazioni.mostraStatistiche}
+            alterna={() => salva({ mostraStatistiche: !impostazioni.mostraStatistiche })}
+          />
 
         </div>
 
@@ -313,39 +318,38 @@ export default function PannelloVoce({
 }
 
 /**
- * I millisecondi verso il server.
+ * I millisecondi verso il server, e l'interruttore dei numeri sui riquadri.
  *
  * Il numero si vede sempre, e a tenerlo tranquillo ci pensa la larghezza fissa
  * delle cifre invece della sua assenza: `numeri` e' tabulare, quindi 9 ms e
  * 148 ms occupano lo stesso posto e niente si sposta quando la misura cambia.
  *
- * Ha un fondo suo, con un bordo, ed e' cio' che dice che qui si preme: un testo
- * appoggiato sulla riga verde accanto a due pulsanti si legge come
- * un'etichetta, e un'etichetta non la clicca nessuno.
+ * ## Il comando e' tornato, ma con lo stato addosso
  *
- * ## Cosa fa premendolo, e cosa faceva prima
+ * Premendolo si accendono e si spengono le statistiche sopra ai riquadri. Era
+ * cosi', poi e' diventato «apri le impostazioni» perche' qualcuno le aveva
+ * spente per sbaglio senza capire cosa avesse premuto, e adesso e' di nuovo un
+ * interruttore - ma il difetto di allora non era il comando, era che **non si
+ * vedeva in che stato fosse**.
  *
- * Apre le impostazioni. Prima accendeva e spegneva i numeri sopra ai riquadri,
- * ed era un errore di quelli che si vedono solo dall'altra parte: si premeva
- * una spia della linea e spariva una cosa in fondo allo schermo, su riquadri
- * che magari in quel momento non c'erano nemmeno. Chi lo faceva per sbaglio
- * non aveva modo di collegare le due cose — la causa e l'effetto stavano a
- * mezzo metro di distanza — e si ritrovava le statistiche sparite senza
- * sapere perche'.
- *
- * Un comando che *apre un pannello* non ha quel problema: l'effetto e' li',
- * immediato e visibile, e da quel pannello si arriva sia all'interruttore
- * delle statistiche sia alla qualita' — che sono le due cose che si cercano
- * dopo aver guardato un numero di millisecondi che non piace.
+ * Da spento il riquadro era identico a un'etichetta qualunque, quindi non
+ * c'era niente che dicesse «c'e' una cosa spenta qui, e l'hai spenta tu». Ora
+ * i due stati si distinguono senza leggere: acceso ha il fondo e il bordo del
+ * verde di sistema e le cifre piene; spento e' smorto e ha le cifre a meta'
+ * opacita'. Uno che si ritrova le statistiche sparite guarda li' e vede che
+ * quel riquadro e' cambiato.
  */
 function Latenza({
   valore,
   collegando,
-  apri
+  statistiche,
+  alterna
 }: {
   valore: number | null
   collegando: boolean
-  apri: () => void
+  /** Se i numeri sopra ai riquadri sono accesi adesso. */
+  statistiche: boolean
+  alterna: () => void
 }): React.JSX.Element {
   const colore = collegando
     ? 'text-attenzione'
@@ -363,14 +367,23 @@ function Latenza({
       ? 'Latenza non ancora misurata'
       : `${valore} ms verso il server`
 
-  const titolo = `${misura} — premi per aprire le impostazioni`
+  const titolo = `${misura} — ${
+    statistiche
+      ? 'i numeri sopra ai riquadri sono accesi: premi per spegnerli'
+      : 'i numeri sopra ai riquadri sono spenti: premi per accenderli'
+  }`
 
   return (
     <button
-      onClick={apri}
+      onClick={alterna}
       title={titolo}
       aria-label={titolo}
-      className={`hidden shrink-0 items-center gap-1.5 rounded-lg border border-bordo bg-fondo/60 px-1.5 py-1 transition-colors hover:border-fondo-3 hover:bg-fondo @min-[11rem]:flex ${colore}`}
+      aria-pressed={statistiche}
+      className={`hidden shrink-0 items-center gap-1.5 rounded-lg border px-1.5 py-1 transition-colors @min-[11rem]:flex ${
+        statistiche
+          ? 'border-ok/40 bg-ok/10 hover:bg-ok/20'
+          : 'border-bordo/60 bg-fondo/40 opacity-60 hover:border-bordo hover:opacity-100'
+      } ${colore}`}
     >
       <span className="numeri text-[10px] leading-none tabular-nums">
         {collegando ? '•••' : valore === null ? '—' : `${valore}ms`}
