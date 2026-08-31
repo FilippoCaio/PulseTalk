@@ -190,10 +190,30 @@ export default function MenuRiquadro({
       if (!scatola.current?.contains(e.target as Node)) chiudi()
     }
     window.addEventListener('keydown', tasto)
-    window.addEventListener('mousedown', fuori)
-    window.addEventListener('contextmenu', fuori)
     window.addEventListener('blur', chiudi)
+
+    // I due che ascoltano il mouse partono al giro dopo, e senza questo il
+    // menu non si vedeva mai.
+    //
+    // Il tasto destro sul riquadro fa una cosa sola, ma l'evento passa da due
+    // punti: React lo raccoglie sulla radice dell'applicazione e apre il menu,
+    // e *poi* lo stesso evento continua a salire fino a `window`. In mezzo ai
+    // due momenti React ha gia' montato questo componente e mandato in
+    // esecuzione questo effetto - per gli eventi discreti non aspetta il
+    // fotogramma dopo - quindi l'ascoltatore qui sotto esisteva in tempo per
+    // sentire il clic che lo aveva creato. Il bersaglio era il riquadro, cioe'
+    // fuori dal menu, quindi `fuori` chiudeva: aperto e richiuso nello stesso
+    // istante, e da fuori sembrava che il tasto destro non facesse niente.
+    //
+    // Anche `mousedown`, non solo `contextmenu`: un clic destro li manda tutti
+    // e due, e bastava quello a rifare lo stesso guaio.
+    const dopo = window.setTimeout(() => {
+      window.addEventListener('mousedown', fuori)
+      window.addEventListener('contextmenu', fuori)
+    }, 0)
+
     return () => {
+      window.clearTimeout(dopo)
       window.removeEventListener('keydown', tasto)
       window.removeEventListener('mousedown', fuori)
       window.removeEventListener('contextmenu', fuori)
