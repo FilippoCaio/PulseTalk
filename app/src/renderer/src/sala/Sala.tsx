@@ -19,6 +19,7 @@ import { ponte } from '../ponte'
 import { Chiudi, Matita, Pausa, Play, Riavvolgi, SchermoCondividi, SchermoStop } from '../icone'
 import { Avviso } from '../ui'
 import OverlayChiamata from './OverlayChiamata'
+import Registrazione from './Registrazione'
 import MenuRiquadro from './MenuRiquadro'
 import Chat from '../chat/Chat'
 import type { usaChat } from '../lib/usaChat'
@@ -719,19 +720,31 @@ export default function Sala({
   // sulla schermata della chiamata.
   return (
     <div ref={radice} className="relative flex h-full min-h-0 flex-col bg-fondo">
-      {canaleVocale && (
-        <AutoWriter
-          api={api}
-          canale={canaleVocale.id}
-          sessioneVoce={sessione}
-          io={utente}
-          profili={profili}
-          moderatore={moderatore}
-          aperto={trascrizioneAperta}
-          chiudi={() => setTrascrizioneAperta(false)}
-          quandoCambia={setTrascrizioneAttiva}
+      {/* Cio' che sta succedendo, in una colonna sola.
+          Trascrizione e registrazione sono le due cose che devono vedersi
+          sempre e non possono coprirsi: impilate, con `pointer-events-none`
+          sulla colonna perche' lo spazio vuoto fra una barra e l'altra non
+          deve rubare i clic al video che ci sta sotto. */}
+      <div className="pointer-events-none absolute top-3 left-1/2 z-40 flex w-[min(34rem,calc(100%-2rem))] -translate-x-1/2 flex-col gap-2">
+        {canaleVocale && (
+          <AutoWriter
+            api={api}
+            canale={canaleVocale.id}
+            sessioneVoce={sessione}
+            io={utente}
+            profili={profili}
+            moderatore={moderatore}
+            aperto={trascrizioneAperta}
+            chiudi={() => setTrascrizioneAperta(false)}
+            quandoCambia={setTrascrizioneAttiva}
+          />
+        )}
+        <Registrazione
+          stanza={sessione.stanza}
+          riquadri={sessione.riquadri}
+          nomeCanale={ingresso.canale.nome}
         />
-      )}
+      </div>
       {/* L'intestazione non e' piu' una fascia fissa: nome del canale,
           riascolto e chat sono passati nella barra alta dell'overlay, che
           compare e sparisce col cursore insieme ai comandi in basso. Una
@@ -1483,7 +1496,12 @@ function AutoWriter({
   if (!aperto && !stato) return null
 
   return (
-    <aside className="absolute top-3 left-1/2 z-40 w-[min(34rem,calc(100%-2rem))] -translate-x-1/2 rounded-xl border border-bordo bg-fondo-2/95 p-2.5 shadow-xl backdrop-blur">
+    // Non si posiziona piu' da solo: sta in una colonna insieme alla barra
+    // della registrazione, perche' erano tutte e due a `top-3 left-1/2` con la
+    // stessa larghezza e con una trascrizione e una registrazione insieme si
+    // coprivano a vicenda. Sono le due interfacce che non possono permettersi
+    // di essere illeggibili.
+    <aside className="pointer-events-auto w-full rounded-xl border border-bordo bg-fondo-2/95 p-2.5 shadow-xl backdrop-blur">
       <div className="flex items-center gap-2 text-xs">
         <span className={attiva ? 'text-male' : 'text-testo-2'}>
           ● Auto Writer {attiva ? 'sta trascrivendo' : stato ? 'attende il consenso' : ''}
