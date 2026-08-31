@@ -259,6 +259,24 @@ function videoDellAudio(
   return null
 }
 
+/**
+ * Attacca il proprio microfono all'anello del riascolto.
+ *
+ * Sta a parte perche' serve in tre momenti diversi - quando la traccia viene
+ * pubblicata, e nei due punti in cui l'anello si ricostruisce da zero perche'
+ * e' appena nato o perche' e' cambiata la sua durata - e in tutti e tre e' la
+ * stessa riga dimenticata allo stesso modo: si scorrono i partecipanti
+ * remoti, e il locale non e' fra quelli.
+ */
+function aggiungiLaMiaVoce(stanza: Room, anello: Riascolto | null): void {
+  if (!anello) return
+  const mia = stanza.localParticipant.getTrackPublication(Track.Source.Microphone)?.track
+    ?.mediaStreamTrack
+  if (!mia) return
+  anello.togli(stanza.localParticipant.identity)
+  anello.aggiungi(stanza.localParticipant.identity, mia)
+}
+
 /** Se questo id e' una condivisione di solo audio di qualcun altro. */
 function soloAudioRemoto(stanza: Room, id: string): boolean {
   for (const partecipante of stanza.remoteParticipants.values()) {
@@ -604,9 +622,24 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
 
         // L'audio che accompagna un video segue il suo video: sono due tracce
         // per una cosa sola, e si aprono e si chiudono insieme.
+        //
+        // A decidere e' il NOME, non il fatto di aver trovato il video. Le due
+        // tracce arrivano in due eventi distinti e in ordine non garantito: se
+        // l'audio arriva per primo, il video non c'e' ancora fra le
+        // pubblicazioni, `videoDellAudio` torna null, e prima si ricadeva nel
+        // ramo delle condivisioni di solo audio — che sono sottoscritte di
+        // serie. Da fuori voleva dire sentire lo schermo di qualcuno senza
+        // aver premuto «guarda e ascolta», e a volte senza nemmeno vederlo.
+        //
+        // Il suffisso « (audio)» invece c'e' gia' nel nome della traccia al
+        // primo evento, e dice con certezza che quell'audio appartiene a un
+        // video. Senza il video sotto mano la risposta giusta e' no: non lo si
+        // sta guardando, quindi non lo si ascolta. Quando il video arriva,
+        // `TrackPublished` rifa' questo giro e la coppia si ricompone.
+        const appartieneAUnVideo = nomeDelVideoDi(pubblicazione.trackName || '') !== null
         const video = videoDellAudio(partecipante, pubblicazione)
-        const voluta = video
-          ? guardateRef.current.has(video.trackSid)
+        const voluta = appartieneAUnVideo
+          ? !!video && guardateRef.current.has(video.trackSid)
           : !nonAscoltateRef.current.has(pubblicazione.trackSid)
         if (pubblicazione.isSubscribed !== voluta) pubblicazione.setSubscribed(voluta)
       })
@@ -1011,9 +1044,25 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
             ? 'microfono-locale'
             : 'condivisione-locale'
         avviaDiagnosticaAudio(`locale:${pubblicazione.trackSid}`, traccia, fonte)
+
+        // La propria voce entra nell'anello del riascolto come quella degli
+        // altri, e prima non ci entrava.
+        //
+        // L'anello si riempiva da `TrackSubscribed`, che e' un evento sui
+        // partecipanti remoti: alla propria traccia non ci si iscrive, si
+        // pubblica. Il risultato era un riascolto che riproduceva la
+        // conversazione senza chi la stava riascoltando - cioe' meta' di ogni
+        // scambio, che e' il modo peggiore di ricostruire una frase persa:
+        // sentire la risposta senza la domanda mente piu' del silenzio.
+        if (pubblicazione.source === Track.Source.Microphone) {
+          aggiungiLaMiaVoce(stanza, riascoltoRef.current)
+        }
       })
       stanza.on(RoomEvent.LocalTrackUnpublished, (pubblicazione) => {
         fermaDiagnosticaAudio(`locale:${pubblicazione.trackSid}`)
+        if (pubblicazione.source === Track.Source.Microphone) {
+          riascoltoRef.current?.togli(stanza.localParticipant.identity)
+        }
       })
 
       // L'audio degli altri, attaccato a mano.
@@ -1373,6 +1422,9 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
           const traccia = voce?.track?.mediaStreamTrack
           if (traccia) riascoltoRef.current?.aggiungi(partecipante.identity, traccia)
         })
+        // E la propria, che non passa da `TrackSubscribed` perche' alla
+        // propria traccia non ci si iscrive: si pubblica.
+        aggiungiLaMiaVoce(stanza, riascoltoRef.current)
       }
 
       // Chi era gia' dentro prima di noi: i volumi decisi in una chiamata
@@ -2198,6 +2250,7 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
           ?.mediaStreamTrack
         if (traccia) riascoltoRef.current?.aggiungi(partecipante.identity, traccia)
       })
+      aggiungiLaMiaVoce(stanza, riascoltoRef.current)
     } else if (!vuole && riascoltoRef.current) {
       spegniRiascolto()
     }

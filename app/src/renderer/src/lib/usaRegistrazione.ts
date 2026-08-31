@@ -241,11 +241,24 @@ export function usaRegistrazione(
       setSecondi(0)
       annuncia(true)
 
+      // Chi preme registra acconsente, e va detto invece di darlo per scontato
+      // in silenzio: prima la propria voce restava fuori dal file finche' non
+      // si rispondeva anche alla domanda del consenso - che a chi ha appena
+      // premuto «Registra» non viene nemmeno mostrata, perche' la barra in
+      // quel caso mostra il cronometro. Il risultato era una registrazione con
+      // dentro tutti tranne chi la stava facendo, cioe' meta' di ogni scambio.
+      //
+      // Passa dallo stesso `rispondi` di tutti gli altri, non da una
+      // scorciatoia: cosi' il si' finisce negli attributi e lo vedono anche
+      // gli altri, che e' l'unico modo perche' «chi acconsente» resti una
+      // lista vera invece di una lista con un'eccezione implicita dentro.
+      if (consensoMio !== true) rispondi(true)
+
       // Se chi condivide smette, la registrazione finisce da sola: continuare
       // su una traccia morta scriverebbe minuti di nero.
       schermo.addEventListener('ended', () => ferma(), { once: true })
     },
-    [annuncia, ferma]
+    [annuncia, ferma, consensoMio, rispondi]
   )
 
   // Uscendo dalla stanza con una registrazione aperta il file va salvato lo
