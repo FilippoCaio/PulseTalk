@@ -74,14 +74,33 @@ function pulisci(etichetta: string): string {
  * Chi guarda lo schermo si sente rimandare indietro la propria voce, e sente
  * gli altri due volte, la seconda in ritardo.
  *
- * Non e' un difetto da riparare: e' come funziona il loopback, e non esiste
- * un'API - ne' in Electron ne' in Chromium - per catturare l'audio di una
- * singola applicazione escludendo la propria. `getDisplayMedia` offre
- * `loopback` e `loopbackWithMute`, e sono tutti e due tutto il sistema.
+ * E' come funziona il loopback, e Chromium non ha altro: tutta la superficie
+ * audio di `getDisplayMedia` in Electron 43 e' `loopback | loopbackWithMute |
+ * WebFrameMain` - i primi due sono tutto il sistema, il terzo e' un frame
+ * dentro a PulseTalk. Un'applicazione esterna non c'e'.
  *
- * Quello che si puo' fare e' dirlo prima, perche' la via d'uscita esiste ed e'
- * a due clic: mandare PulseTalk su un'uscita diversa da quella predefinita -
- * le cuffie, tipicamente - e il loopback smette di sentirla.
+ * Windows pero' ce l'ha, e adesso la usiamo: `lib/audioProcesso.ts` prende
+ * l'audio del processo condiviso, o quello di tutto il computer tranne il
+ * nostro. Quando quella strada c'e' - dentro Electron su Windows, con
+ * l'eseguibile al suo posto - questa domanda non si pone piu': le voci non
+ * possono finirci dentro. Resta viva per due casi, ed e' per quelli che questo
+ * file non e' stato cancellato: «Solo a loro», che ha bisogno di mutare il
+ * suono anche qui e quindi passa ancora dal loopback di sistema, e le macchine
+ * dove la cattura per processo non parte.
+ *
+ * E NON C'ENTRANO LE CASSE. E' una cattura digitale del flusso che il sistema
+ * manda al dispositivo di uscita, non una registrazione di quello che si sente
+ * nella stanza: mettere le cuffie non cambia niente, perche' il flusso e'
+ * quello comunque. Vale la pena scriverlo perche' e' il consiglio sbagliato che
+ * viene in mente per primo, ed e' quello che si da' pensando all'eco acustica
+ * del microfono - un problema diverso, che qui non c'entra.
+ *
+ * Cio' che conta e' su **quale uscita** PulseTalk suona. Il loopback prende
+ * quella predefinita di Windows: se PulseTalk ne usa un'altra, la sua voce non
+ * passa di li' e nella condivisione non ci finisce. Un paio di cuffie aiuta
+ * solo se e' un dispositivo diverso da quello predefinito, e non perche' sia
+ * un paio di cuffie. Con la cattura per processo non conta piu' nemmeno
+ * quello: il suono si prende dove nasce, e l'uscita non c'entra.
  *
  * Si risponde solo quando la risposta e' certa. Con un'uscita scelta a mano
  * non si puo' sapere da qui se sia anche quella predefinita di Windows, e un

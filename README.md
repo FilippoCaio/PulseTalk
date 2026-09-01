@@ -178,7 +178,7 @@ configurato, e cancellato.
 | Cosa cade quando la banda stringe | la risoluzione: il testo sparisce per primo | **i fotogrammi**: il puntatore scatta, il codice resta leggibile |
 | Voce | 96 kbit/s mono, 384 col boost massimo | **510 kbit/s stereo**, cioe' il massimo che Opus accetta |
 | Filtri sul microfono | sempre accesi | **spegnibili tutti**: una chitarra non viene scambiata per rumore |
-| Audio di sistema | a fatica, e non sempre | **loopback di Windows**, una voce in un menu |
+| Audio di sistema | a fatica, e non sempre | **l'audio della singola applicazione**, una voce in un menu |
 | Schermi per persona | uno | **quattro**, configurabile |
 | Codec | quello che decide il server | **VP9, AV1, H.264 o VP8**, per preset |
 | Persone per canale | un tetto per canale | **nessun limite fisso** |
@@ -425,6 +425,19 @@ anteprime con la risoluzione vera accanto, l'audio di sistema e' una voce in un
 menu, il token sta cifrato con la DPAPI invece che in `localStorage`, e le
 scorciatoie per il muto funzionano anche con l'app dietro a tutto — che e'
 esattamente il momento in cui servono.
+
+E l'audio della condivisione e' quello dell'**applicazione condivisa**, non
+quello del computer. La differenza si sente: il loopback di Chromium prende
+tutto cio' che esce dall'uscita predefinita di Windows, quindi anche PulseTalk,
+quindi le voci di chi e' in chiamata — chi guarda si sente rimandare indietro la
+propria voce e sente gli altri due volte. Windows sa isolare un processo dal
+2020 (process loopback) e Chromium non lo espone: lo fa un piccolo eseguibile,
+`app/native/audioprocesso/`, che consegna i campioni al resto dell'applicazione.
+Condividendo una finestra manda quella e nient'altro — niente notifiche, niente
+musica dall'altra scheda; condividendo uno schermo manda tutto **tranne
+PulseTalk**. Va compilato una volta con `native/audioprocesso/compila.ps1`
+(serve Visual Studio 2022); senza, l'applicazione funziona lo stesso e ricade
+sul loopback di prima.
 
 ```powershell
 npm --prefix app install

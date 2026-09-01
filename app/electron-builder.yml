@@ -52,6 +52,20 @@ publish:
   provider: generic
   url: https://esempio.invalid/aggiornamenti
 
+# L'eseguibile che cattura l'audio di una sola applicazione.
+#
+# Sta accanto ad app.asar invece che dentro, e non e' un dettaglio: dentro
+# all'archivio Windows non lo saprebbe avviare, e ci vorrebbe una copia in una
+# cartella temporanea a ogni condivisione. Non lo compila la build di npm -
+# vuole Visual Studio, che chi costruisce il pacchetto non deve avere - ma
+# `native/audioprocesso/compila.ps1`, e il risultato e' versionato.
+#
+# Se manca, l'applicazione parte lo stesso e ricade sul loopback di sistema:
+# peggio, ma non rotta. Vedi `main/audioProcesso.ts`.
+extraResources:
+  - from: resources/audioprocesso.exe
+    to: audioprocesso.exe
+
 win:
   icon: build/icon.ico
   target:

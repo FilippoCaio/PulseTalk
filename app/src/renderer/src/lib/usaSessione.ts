@@ -593,117 +593,6 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
    */
   const nonAscoltateRef = useRef<Set<string>>(new Set())
 
-  /**
-   * Taglia la ricezione di tutto cio' che non si sta guardando o ascoltando.
-   *
-   * Passa da qui ogni condivisione altrui: quelle appena pubblicate, quelle
-   * gia' in corso di chi entra dopo di noi, e quelle che c'erano gia' quando
-   * siamo entrati noi. `autoSubscribe` resta acceso — spegnerlo per tutti
-   * vorrebbe dire gestire a mano anche le voci, che invece devono arrivare
-   * sempre — e qui si disdice subito cio' che non serve.
-   *
-   * L'audio entra in questo conto e prima non ci entrava, ed e' il difetto per
-   * cui «smetti di guardare» staccava l'immagine e lasciava il suono: la
-   * traccia `ScreenShareAudio` non passava mai di qui, restava sottoscritta, e
-   * si continuava a scaricarla e a sentirla. Da fuori sembrava che il pulsante
-   * funzionasse a meta'.
-   */
-  const potaCondivisioni = useCallback((stanza: Room) => {
-    stanza.remoteParticipants.forEach((partecipante) => {
-      partecipante.trackPublications.forEach((pubblicazione) => {
-        if (pubblicazione.source === Track.Source.ScreenShare) {
-          if (pubblicazione.kind !== Track.Kind.Video) return
-          const voluta = guardateRef.current.has(pubblicazione.trackSid)
-          if (pubblicazione.isSubscribed !== voluta) pubblicazione.setSubscribed(voluta)
-          return
-        }
-
-        if (pubblicazione.source !== Track.Source.ScreenShareAudio) return
-
-        // L'audio che accompagna un video segue il suo video: sono due tracce
-        // per una cosa sola, e si aprono e si chiudono insieme.
-        //
-        // A decidere e' il NOME, non il fatto di aver trovato il video. Le due
-        // tracce arrivano in due eventi distinti e in ordine non garantito: se
-        // l'audio arriva per primo, il video non c'e' ancora fra le
-        // pubblicazioni, `videoDellAudio` torna null, e prima si ricadeva nel
-        // ramo delle condivisioni di solo audio — che sono sottoscritte di
-        // serie. Da fuori voleva dire sentire lo schermo di qualcuno senza
-        // aver premuto «guarda e ascolta», e a volte senza nemmeno vederlo.
-        //
-        // Il suffisso « (audio)» invece c'e' gia' nel nome della traccia al
-        // primo evento, e dice con certezza che quell'audio appartiene a un
-        // video. Senza il video sotto mano la risposta giusta e' no: non lo si
-        // sta guardando, quindi non lo si ascolta. Quando il video arriva,
-        // `TrackPublished` rifa' questo giro e la coppia si ricompone.
-        const appartieneAUnVideo = nomeDelVideoDi(pubblicazione.trackName || '') !== null
-        const video = videoDellAudio(partecipante, pubblicazione)
-        const voluta = appartieneAUnVideo
-          ? !!video && guardateRef.current.has(video.trackSid)
-          : !nonAscoltateRef.current.has(pubblicazione.trackSid)
-        if (pubblicazione.isSubscribed !== voluta) pubblicazione.setSubscribed(voluta)
-      })
-    })
-  }, [])
-
-  /**
-   * Apre una condivisione altrui — l'immagine e il suo suono insieme.
-   *
-   * L'id e' quello della condivisione, cioe' il trackSid del video, oppure
-   * quello dell'audio quando video non ce n'e'. E' lo stesso id che porta il
-   * riquadro e lo stesso che porta la riga nel pannello dell'audio: uno solo,
-   * cosi' non esiste il caso in cui si riapre meta' di qualcosa.
-   */
-  const guarda = useCallback(
-    (id: string) => {
-      const stanza = stanzaRef.current
-      if (!stanza) return
-
-      if (soloAudioRemoto(stanza, id)) {
-        if (!nonAscoltateRef.current.delete(id)) return
-        potaCondivisioni(stanza)
-        ridisegna()
-        return
-      }
-
-      if (guardateRef.current.has(id)) return
-      if (guardateRef.current.size >= MAX_CONDIVISIONI_GUARDATE) return
-
-      guardateRef.current.add(id)
-      setQuanteGuardate(guardateRef.current.size)
-      potaCondivisioni(stanza)
-      ridisegna()
-    },
-    [potaCondivisioni, ridisegna]
-  )
-
-  /**
-   * Chiude una condivisione: smette di scaricarla, immagine e suono.
-   *
-   * Su una condivisione con il video libera anche uno dei due posti. Su una di
-   * solo audio non c'e' nessun posto da liberare — non ne occupava — e l'unica
-   * cosa che succede e' che quella traccia smette di arrivare.
-   */
-  const nonGuardare = useCallback(
-    (id: string) => {
-      const stanza = stanzaRef.current
-
-      if (stanza && soloAudioRemoto(stanza, id)) {
-        if (nonAscoltateRef.current.has(id)) return
-        nonAscoltateRef.current.add(id)
-        potaCondivisioni(stanza)
-        ridisegna()
-        return
-      }
-
-      if (!guardateRef.current.delete(id)) return
-
-      setQuanteGuardate(guardateRef.current.size)
-      if (stanza) potaCondivisioni(stanza)
-      ridisegna()
-    },
-    [potaCondivisioni, ridisegna]
-  )
 
   const [stato, setStato] = useState<ConnectionState>(ConnectionState.Disconnected)
   const [errore, setErrore] = useState<string | null>(null)
@@ -867,6 +756,213 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
     for (const ferma of diagnosticheAudioRef.current.values()) ferma()
     diagnosticheAudioRef.current.clear()
   }, [rimuoviRiproduzioneAudio])
+
+  /**
+   * Da' a una traccia audio l'elemento che la fa suonare.
+   *
+   * Sottoscrivere una traccia e sentirla sono due cose diverse, e questa e' la
+   * seconda: senza un `<audio>` attaccato, una traccia sottoscritta arriva,
+   * costa banda, e non si sente. Sta qui, in una funzione sola, perche' i
+   * posti da cui serve sono due - la traccia che arriva adesso e quella gia'
+   * arrivata che qualcuno decide di aprire - e finche' erano due pezzi di
+   * codice diversi uno dei due mancava sempre.
+   */
+  const attaccaRiproduzioneAudio = useCallback(
+    (traccia: RemoteTrack, pubblicazione: TrackPublication, identita: string) => {
+      // Lo stesso SID due volte e' idempotente: il vecchio elemento se ne va
+      // prima che ne nasca un altro, altrimenti la stessa voce suona doppia
+      // con qualche millesimo di scarto - all'orecchio, un timbro metallico.
+      rimuoviRiproduzioneAudio(pubblicazione.trackSid)
+      fermaDiagnosticaAudio(`remoto:${pubblicazione.trackSid}`)
+
+      const elemento = document.createElement('audio')
+      elemento.autoplay = true
+      traccia.attach(elemento)
+      audioRef.current?.appendChild(elemento)
+      riproduzioniAudioRef.current.set(pubblicazione.trackSid, {
+        traccia,
+        elemento,
+        identita,
+        sorgente: pubblicazione.source
+      })
+
+      avviaDiagnosticaAudio(
+        `remoto:${pubblicazione.trackSid}`,
+        traccia,
+        pubblicazione.source === Track.Source.Microphone
+          ? 'microfono-remoto'
+          : 'condivisione-remota'
+      )
+
+      // Un elemento appena creato parte a volume pieno: se questa persona era
+      // stata abbassata o zittita, senza questa riga il primo istante di suono
+      // uscirebbe comunque a tutto volume.
+      applicaAudio()
+    },
+    [applicaAudio, avviaDiagnosticaAudio, fermaDiagnosticaAudio, rimuoviRiproduzioneAudio]
+  )
+
+  /**
+   * Taglia la ricezione di tutto cio' che non si sta guardando o ascoltando.
+   *
+   * Passa da qui ogni condivisione altrui: quelle appena pubblicate, quelle
+   * gia' in corso di chi entra dopo di noi, e quelle che c'erano gia' quando
+   * siamo entrati noi. `autoSubscribe` resta acceso — spegnerlo per tutti
+   * vorrebbe dire gestire a mano anche le voci, che invece devono arrivare
+   * sempre — e qui si disdice subito cio' che non serve.
+   *
+   * L'audio entra in questo conto e prima non ci entrava, ed e' il difetto per
+   * cui «smetti di guardare» staccava l'immagine e lasciava il suono: la
+   * traccia `ScreenShareAudio` non passava mai di qui, restava sottoscritta, e
+   * si continuava a scaricarla e a sentirla. Da fuori sembrava che il pulsante
+   * funzionasse a meta'.
+   */
+  /**
+   * Se questo audio di condivisione va fatto sentire adesso.
+   *
+   * Una regola sola, e prima erano due che rispondevano alla stessa domanda in
+   * due punti diversi: chi decide la sottoscrizione e chi attacca l'elemento
+   * `<audio>`. Due copie della stessa regola divergono sempre, e qui non
+   * divergevano nemmeno - erano proprio due momenti diversi nel tempo, ed e'
+   * li' che passava il difetto.
+   *
+   * `autoSubscribe` resta acceso, quindi la SFU manda la traccia appena viene
+   * pubblicata e `TrackSubscribed` scatta subito. `potaCondivisioni` la disdice
+   * un istante dopo, ma la disdetta e' un giro di rete: in mezzo l'elemento era
+   * gia' stato creato e stava gia' suonando. Da fuori voleva dire sentire la
+   * condivisione di qualcuno senza aver premuto «guarda e ascolta» - poco, ma
+   * abbastanza da sentirla.
+   *
+   * Chiedendolo anche a chi attacca, il momento non conta piu': la traccia puo'
+   * arrivare quando vuole, non si sente finche' non la si e' aperta.
+   */
+  const vuoleQuestoAudio = useCallback(
+    (partecipante: Participant, pubblicazione: TrackPublication): boolean => {
+      if (pubblicazione.source !== Track.Source.ScreenShareAudio) return true
+      const appartieneAUnVideo = nomeDelVideoDi(pubblicazione.trackName || '') !== null
+      const video = videoDellAudio(partecipante, pubblicazione)
+      return appartieneAUnVideo
+        ? !!video && guardateRef.current.has(video.trackSid)
+        : !nonAscoltateRef.current.has(pubblicazione.trackSid)
+    },
+    []
+  )
+
+  const potaCondivisioni = useCallback((stanza: Room) => {
+    stanza.remoteParticipants.forEach((partecipante) => {
+      partecipante.trackPublications.forEach((pubblicazione) => {
+        if (pubblicazione.source === Track.Source.ScreenShare) {
+          if (pubblicazione.kind !== Track.Kind.Video) return
+          const voluta = guardateRef.current.has(pubblicazione.trackSid)
+          if (pubblicazione.isSubscribed !== voluta) pubblicazione.setSubscribed(voluta)
+          return
+        }
+
+        if (pubblicazione.source !== Track.Source.ScreenShareAudio) return
+
+        // L'audio che accompagna un video segue il suo video: sono due tracce
+        // per una cosa sola, e si aprono e si chiudono insieme.
+        //
+        // A decidere e' il NOME, non il fatto di aver trovato il video. Le due
+        // tracce arrivano in due eventi distinti e in ordine non garantito: se
+        // l'audio arriva per primo, il video non c'e' ancora fra le
+        // pubblicazioni, `videoDellAudio` torna null, e prima si ricadeva nel
+        // ramo delle condivisioni di solo audio — che sono sottoscritte di
+        // serie. Da fuori voleva dire sentire lo schermo di qualcuno senza
+        // aver premuto «guarda e ascolta», e a volte senza nemmeno vederlo.
+        //
+        // Il suffisso « (audio)» invece c'e' gia' nel nome della traccia al
+        // primo evento, e dice con certezza che quell'audio appartiene a un
+        // video. Senza il video sotto mano la risposta giusta e' no: non lo si
+        // sta guardando, quindi non lo si ascolta. Quando il video arriva,
+        // `TrackPublished` rifa' questo giro e la coppia si ricompone.
+        const voluta = vuoleQuestoAudio(partecipante, pubblicazione)
+        if (pubblicazione.isSubscribed !== voluta) pubblicazione.setSubscribed(voluta)
+
+        // E l'elemento che la fa suonare, che e' l'altra meta' della stessa
+        // decisione e va tenuta insieme a questa.
+        //
+        // Disdire e ridomandare sono giri di rete: in mezzo la traccia resta
+        // dov'e'. Chi preme «guarda e ascolta» mentre la disdetta e' ancora in
+        // volo trova `isSubscribed` gia' a vero, quindi non parte nessuna
+        // richiesta, quindi `TrackSubscribed` non torna - e senza questa riga
+        // quell'audio non si sarebbe sentito mai piu'. Nell'altro verso e'
+        // anche piu' semplice: togliere l'elemento fa smettere il suono
+        // *adesso*, invece che quando la disdetta arriva a destinazione.
+        const suona = riproduzioniAudioRef.current.has(pubblicazione.trackSid)
+        if (voluta && !suona && pubblicazione.track) {
+          attaccaRiproduzioneAudio(pubblicazione.track, pubblicazione, partecipante.identity)
+        } else if (!voluta && suona) {
+          rimuoviRiproduzioneAudio(pubblicazione.trackSid)
+          fermaDiagnosticaAudio(`remoto:${pubblicazione.trackSid}`)
+        }
+      })
+    })
+  }, [
+    attaccaRiproduzioneAudio,
+    fermaDiagnosticaAudio,
+    rimuoviRiproduzioneAudio,
+    vuoleQuestoAudio
+  ])
+
+  /**
+   * Apre una condivisione altrui — l'immagine e il suo suono insieme.
+   *
+   * L'id e' quello della condivisione, cioe' il trackSid del video, oppure
+   * quello dell'audio quando video non ce n'e'. E' lo stesso id che porta il
+   * riquadro e lo stesso che porta la riga nel pannello dell'audio: uno solo,
+   * cosi' non esiste il caso in cui si riapre meta' di qualcosa.
+   */
+  const guarda = useCallback(
+    (id: string) => {
+      const stanza = stanzaRef.current
+      if (!stanza) return
+
+      if (soloAudioRemoto(stanza, id)) {
+        if (!nonAscoltateRef.current.delete(id)) return
+        potaCondivisioni(stanza)
+        ridisegna()
+        return
+      }
+
+      if (guardateRef.current.has(id)) return
+      if (guardateRef.current.size >= MAX_CONDIVISIONI_GUARDATE) return
+
+      guardateRef.current.add(id)
+      setQuanteGuardate(guardateRef.current.size)
+      potaCondivisioni(stanza)
+      ridisegna()
+    },
+    [potaCondivisioni, ridisegna]
+  )
+
+  /**
+   * Chiude una condivisione: smette di scaricarla, immagine e suono.
+   *
+   * Su una condivisione con il video libera anche uno dei due posti. Su una di
+   * solo audio non c'e' nessun posto da liberare — non ne occupava — e l'unica
+   * cosa che succede e' che quella traccia smette di arrivare.
+   */
+  const nonGuardare = useCallback(
+    (id: string) => {
+      const stanza = stanzaRef.current
+
+      if (stanza && soloAudioRemoto(stanza, id)) {
+        if (nonAscoltateRef.current.has(id)) return
+        nonAscoltateRef.current.add(id)
+        potaCondivisioni(stanza)
+        ridisegna()
+        return
+      }
+
+      if (!guardateRef.current.delete(id)) return
+
+      setQuanteGuardate(guardateRef.current.size)
+      if (stanza) potaCondivisioni(stanza)
+      ridisegna()
+    },
+    [potaCondivisioni, ridisegna]
+  )
 
   // Il contenitore nascosto dove vivono gli <audio>. Uno solo per tutta la
   // durata della pagina: crearlo e distruggerlo a ogni chiamata sarebbe un
@@ -1096,26 +1192,13 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
           }
         }
 
-        // Lo stesso evento, con lo stesso SID, e' idempotente.
-        rimuoviRiproduzioneAudio(pubblicazione.trackSid)
-        fermaDiagnosticaAudio(`remoto:${pubblicazione.trackSid}`)
+        // Arrivata perche' `autoSubscribe` la prende sempre, ma non la si sta
+        // guardando: non le si da' un elemento. `potaCondivisioni` la sta gia'
+        // disdicendo, e senza questa riga si sentirebbe per tutto il tempo che
+        // la disdetta ci mette ad andare e tornare.
+        if (!vuoleQuestoAudio(partecipante, pubblicazione)) return
 
-        const elemento = document.createElement('audio')
-        elemento.autoplay = true
-        traccia.attach(elemento)
-        audioRef.current?.appendChild(elemento)
-        riproduzioniAudioRef.current.set(pubblicazione.trackSid, {
-          traccia,
-          elemento,
-          identita: partecipante.identity,
-          sorgente: pubblicazione.source
-        })
-
-        const fonte =
-          pubblicazione.source === Track.Source.Microphone
-            ? 'microfono-remoto'
-            : 'condivisione-remota'
-        avviaDiagnosticaAudio(`remoto:${pubblicazione.trackSid}`, traccia, fonte)
+        attaccaRiproduzioneAudio(traccia, pubblicazione, partecipante.identity)
 
         // Nell'anello vanno solo le voci. L'audio di uno schermo condiviso no:
         // se qualcuno sta mostrando un video, coprirebbe esattamente la frase
@@ -1124,10 +1207,6 @@ export function usaSessione(impostazioni: Impostazioni): Sessione {
           riascoltoRef.current?.aggiungi(partecipante.identity, traccia.mediaStreamTrack)
           rilevatore.current?.aggiungi(partecipante.identity, traccia.mediaStreamTrack)
         }
-        // Un elemento appena creato parte a volume pieno: se questa persona
-        // era stata abbassata o zittita, senza questa riga il primo istante di
-        // suono uscirebbe comunque a tutto volume.
-        applicaAudio()
       })
       stanza.on(RoomEvent.TrackUnsubscribed, (traccia, pubblicazione, partecipante) => {
         if (traccia.kind !== Track.Kind.Audio) return

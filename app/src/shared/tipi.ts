@@ -26,6 +26,15 @@ export const IPC = {
   puntatore: 'puntatore',
   notifica: 'notifica',
   diagnosticaAudio: 'diagnostica-audio',
+  /**
+   * L'audio di una condivisione preso dal processo giusto, non dalle casse.
+   * Vedi `main/audioProcesso.ts`: `dati` porta i campioni, `finito` dice che
+   * quella cattura non c'e' piu' (l'applicazione condivisa e' stata chiusa).
+   */
+  audioProcessoAvvia: 'audio-processo-avvia',
+  audioProcessoFerma: 'audio-processo-ferma',
+  audioProcessoDati: 'audio-processo-dati',
+  audioProcessoFinito: 'audio-processo-finito',
   aggiornamento: 'aggiornamento',
   aggiornamentoStato: 'aggiornamento-stato',
   aggiornamentoControlla: 'aggiornamento-controlla',

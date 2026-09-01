@@ -19,7 +19,14 @@ const CATEGORIE: [Categoria, string][] = [
 const AUDIO: [ModoAudioSistema, string, string][] = [
   ['niente', 'Nessuno', 'Va solo il video: quello che suona dal tuo computer resta a te.'],
   ['condiviso', 'Insieme al video', 'Lo sentono loro e continui a sentirlo anche tu.'],
-  ['soloRemoto', 'Solo a loro', 'Lo sentono loro, da te resta muto. Per non sentirlo due volte.']
+  [
+    'soloRemoto',
+    'Solo a loro',
+    // Il prezzo di questa voce, scritto dove si sceglie e non dopo: e' l'unica
+    // che passa ancora dal loopback di tutto il sistema, perche' e' l'unico che
+    // sa anche mutare il suono qui. Vedi `lib/audioProcesso.ts`.
+    "Lo sentono loro, da te resta muto. Prende pero' tutto l'audio del computer, PulseTalk compreso."
+  ]
 ]
 
 const BITRATE_AUDIO: [number, string, string][] = [
@@ -142,6 +149,15 @@ export default function SceltaSorgente({
 
   const elenco = diCategoria(categoria)
 
+  /**
+   * Cosa e' stato scelto adesso: serve a dire *cosa* verra' mandato.
+   *
+   * Con la cattura per processo la risposta cambia da riquadro a riquadro -
+   * l'audio di quell'applicazione, oppure quello del computer meno il nostro -
+   * e sono due cose abbastanza diverse da doverle scrivere prima e non dopo.
+   */
+  const sceltaCorrente = sorgenti?.find((s) => s.id === scelta) ?? null
+
   return (
     // `fixed` e non `absolute`: la scelta di cosa condividere copre tutta
     // l'applicazione, non solo il riquadro della chiamata. Ancorata al primo
@@ -230,21 +246,45 @@ export default function SceltaSorgente({
             avviso che si impara a chiudere senza leggere. */}
         {vociNellaCondivisione(altoparlanteScelto) &&
           ponte.audioDiSistema &&
-          audio !== 'niente' && (
+          audio !== 'niente' &&
+          // Con la cattura per processo le voci non ci finiscono mai, e
+          // l'avviso sarebbe una bugia. Resta per «Solo a loro», che passa
+          // ancora dal loopback di tutto il sistema perche' e' l'unico che sa
+          // anche mutare il suono qui.
+          !(ponte.audioPerApplicazione && audio === 'condiviso') && (
             <div className="shrink-0 border-t border-bordo px-5 pt-3">
               <Avviso tono="attenzione">
                 PulseTalk sta suonando sull&apos;uscita predefinita di Windows, che e&apos;
                 esattamente quella che questa condivisione cattura: dentro ci finiranno anche{' '}
                 <strong>le voci di chi e&apos; in chiamata</strong>, e chi guarda si sentira&apos;
-                rimandare indietro la propria. Non e&apos; una cosa che si possa togliere dopo -
-                Windows non sa isolare l&apos;audio di una singola applicazione. Per evitarlo:
-                manda PulseTalk sulle cuffie, o su un&apos;altra uscita, da Impostazioni &rsaquo;
-                Audio.
+                rimandare indietro la propria, e tutti sentiranno ognuno due volte. Questa
+                cattura prende il flusso che va all&apos;uscita predefinita &mdash; le cuffie
+                non c&apos;entrano, non e&apos; un&apos;eco che passa dall&apos;aria.
+                {ponte.audioPerApplicazione ? (
+                  <>
+                    {' '}
+                    Con <strong>&laquo;Insieme al video&raquo;</strong> non succede: li&apos;
+                    l&apos;audio si prende dall&apos;applicazione condivisa, e PulseTalk resta
+                    fuori.
+                  </>
+                ) : (
+                  <>
+                    {' '}
+                    Per evitarlo, fa&apos; suonare PulseTalk su un&apos;uscita{' '}
+                    <strong>diversa da quella predefinita di Windows</strong>, da Impostazioni
+                    &rsaquo; Audio. Oppure metti qui l&apos;audio su &laquo;Nessuno&raquo;.
+                  </>
+                )}
               </Avviso>
             </div>
           )}
 
-        {missaggio && ponte.audioDiSistema && audio !== 'niente' && (
+        {missaggio &&
+          ponte.audioDiSistema &&
+          audio !== 'niente' &&
+          // Il missaggio e' un fatto dell'uscita audio, e la cattura per
+          // processo dall'uscita non passa: prende il suono dove nasce.
+          !(ponte.audioPerApplicazione && audio === 'condiviso') && (
           <div className="shrink-0 border-t border-bordo px-5 pt-3">
             <Avviso tono="attenzione">
               L&apos;uscita audio predefinita e&apos; <strong>{missaggio}</strong>, che e&apos; un
@@ -253,6 +293,31 @@ export default function SceltaSorgente({
               l&apos;audio su &laquo;Nessuno&raquo; e lascia parlare solo il microfono. Lo stesso
               succede con &laquo;Ascolta questo dispositivo&raquo; acceso sul microfono o con il
               monitoraggio della scheda audio: quelli da qui non si vedono.
+            </Avviso>
+          </div>
+        )}
+
+        {/* Cosa verra' mandato, detto prima.
+
+            Non e' un avviso di pericolo, e' il contrario: e' la riga che
+            toglie la domanda «ma allora sentiranno anche le mie notifiche?».
+            Compare solo quando la risposta e' certa, cioe' quando una sorgente
+            e' gia' stata scelta. */}
+        {ponte.audioPerApplicazione && audio === 'condiviso' && sceltaCorrente && (
+          <div className="shrink-0 border-t border-bordo px-5 pt-3">
+            <Avviso tono="neutro">
+              {sceltaCorrente.tipo === 'finestra' ? (
+                <>
+                  Andra&apos; <strong>solo l&apos;audio di {sceltaCorrente.nome}</strong>: le
+                  notifiche, gli altri programmi e le voci di questa chiamata restano fuori.
+                </>
+              ) : (
+                <>
+                  Andra&apos; l&apos;audio del computer <strong>tranne quello di PulseTalk</strong>
+                  : le voci di chi e&apos; in chiamata non entrano nella condivisione, e nessuno
+                  si sentira&apos; tornare indietro.
+                </>
+              )}
             </Avviso>
           </div>
         )}

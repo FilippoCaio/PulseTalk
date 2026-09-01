@@ -22,6 +22,7 @@ import {
 } from '@shared/qualita'
 import type { ModoAudioSistema, Sorgente } from '@shared/tipi'
 import { ponte } from '../ponte'
+import { catturaAudioDiProcesso } from './audioProcesso'
 import { apriMicrofonoScelto, idDaAprire } from './usaDispositivi'
 import { catturaSchermoAndroid } from './android'
 
@@ -137,8 +138,31 @@ export async function catturaSchermo(
     })
   }
 
+  /**
+   * L'audio lo prende il processo, non le casse.
+   *
+   * La differenza non e' un dettaglio: il loopback di Chromium prende tutto
+   * cio' che esce dall'uscita predefinita di Windows - quindi anche PulseTalk,
+   * quindi le voci di chi e' in chiamata - e condividendo *una finestra*
+   * prende lo stesso tutto il computer. La cattura per processo prende
+   * l'applicazione scelta e nient'altro, oppure, per uno schermo intero, tutto
+   * tranne noi. Vedi `lib/audioProcesso.ts`.
+   *
+   * Non vale per «Solo a loro»: li' il suono deve restare muto sul computer di
+   * chi condivide, e a farlo e' `loopbackWithMute`, che e' di Chromium.
+   * Catturare il processo lo lascerebbe suonare dalle casse come se niente
+   * fosse, cioe' farebbe una cosa diversa da quella scritta nel menu.
+   */
+  const audioDalProcesso =
+    ponte.elettrone && !!sorgente && audioSistema === 'condiviso' && ponte.audioPerApplicazione
+
   if (ponte.elettrone && sorgente) {
-    await ponte.preparaCattura({ sorgenteId: sorgente.id, audioSistema })
+    // Chiedere anche il loopback vorrebbe dire mandare due volte lo stesso
+    // suono, la seconda con dentro tutta la chiamata.
+    await ponte.preparaCattura({
+      sorgenteId: sorgente.id,
+      audioSistema: audioDalProcesso ? 'niente' : audioSistema
+    })
   }
 
   const vincoliVideo: MediaTrackConstraints = {
@@ -167,7 +191,10 @@ export async function catturaSchermo(
       video: vincoliVideo,
       // Nel browser questo diventa la spunta "condividi l'audio"; dentro
       // Electron e' il loopback di Windows, gia' deciso da preparaCattura.
-      audio: audioSistema === 'niente' ? false : vincoliAudioCondiviso(audioSistema)
+      audio:
+        audioSistema === 'niente' || audioDalProcesso
+          ? false
+          : vincoliAudioCondiviso(audioSistema)
     })
   }
 
@@ -175,6 +202,19 @@ export async function catturaSchermo(
   if (video) {
     // La riga piu' economica di tutto il programma, e una delle piu' efficaci.
     video.contentHint = preset.indizio
+  }
+
+  if (audioDalProcesso && sorgente) {
+    const esito = await catturaAudioDiProcesso(sorgente.id)
+    if ('audio' in esito) {
+      stream.addTrack(esito.audio.traccia)
+    } else {
+      // Si condivide lo stesso, senza suono. Ricadere adesso sul loopback non
+      // si puo' - `getDisplayMedia` e' gia' passata e l'audio non si aggiunge
+      // dopo - e mandare le voci della chiamata dentro alla condivisione
+      // sarebbe comunque il male peggiore.
+      console.warn(`[audio] cattura per processo non riuscita: ${esito.errore}`)
+    }
   }
 
   for (const audio of stream.getAudioTracks()) preparaTracciaAudioCondivisa(audio)

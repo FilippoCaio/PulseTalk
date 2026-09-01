@@ -1,6 +1,6 @@
 {
   "name": "pulse-talk",
-  "version": "0.7.16",
+  "version": "0.8.0",
   "description": "Voce, video e schermo senza i tetti di Discord, sul tuo NAS",
   "type": "module",
   "main": "./out/main/index.js",

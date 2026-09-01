@@ -25,10 +25,48 @@ import {
 const api = {
   sorgenti: (): Promise<Sorgente[]> => ipcRenderer.invoke(IPC.sorgenti),
 
+  /**
+   * Se l'audio della condivisione si puo' prendere dal processo invece che
+   * dalle casse. Lo decide il processo principale all'avvio - dipende da
+   * Windows e da un eseguibile che puo' mancare - e lo consegna qui fra gli
+   * argomenti, che e' il modo di saperlo senza aspettare una risposta.
+   */
+  audioPerApplicazione: process.argv.includes('--audio-per-applicazione'),
+
   // Va chiamata subito prima di getDisplayMedia(): dice al processo principale
   // quale sorgente consegnare e se attaccarci l'audio di sistema.
   preparaCattura: (scelta: SceltaCattura): Promise<void> =>
     ipcRenderer.invoke(IPC.preparaCattura, scelta),
+
+  /**
+   * L'audio della condivisione preso dal processo, non dalle casse.
+   *
+   * Torna un identificativo con cui riconoscere i campioni, oppure il motivo
+   * per cui non si e' potuto. Chi chiama non deve fidarsi che vada bene: senza
+   * questa strada la condivisione parte lo stesso, con il vecchio loopback di
+   * tutto il sistema. Vedi `main/audioProcesso.ts`.
+   */
+  avviaAudioProcesso: (sorgenteId: string): Promise<{ id: string } | { errore: string }> =>
+    ipcRenderer.invoke(IPC.audioProcessoAvvia, sorgenteId),
+
+  fermaAudioProcesso: (id: string): void => ipcRenderer.send(IPC.audioProcessoFerma, id),
+
+  onAudioProcessoDati: (callback: (id: string, campioni: Uint8Array) => void) => {
+    const gestore = (_evento: unknown, id: string, campioni: Uint8Array): void =>
+      callback(id, campioni)
+    ipcRenderer.on(IPC.audioProcessoDati, gestore)
+    return (): void => {
+      ipcRenderer.removeListener(IPC.audioProcessoDati, gestore)
+    }
+  },
+
+  onAudioProcessoFinito: (callback: (id: string) => void) => {
+    const gestore = (_evento: unknown, id: string): void => callback(id)
+    ipcRenderer.on(IPC.audioProcessoFinito, gestore)
+    return (): void => {
+      ipcRenderer.removeListener(IPC.audioProcessoFinito, gestore)
+    }
+  },
 
   leggiImpostazioni: (): Promise<Impostazioni> => ipcRenderer.invoke(IPC.leggiImpostazioni),
   scriviImpostazioni: (

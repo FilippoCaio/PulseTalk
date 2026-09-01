@@ -66,8 +66,28 @@ export interface Ponte {
   sorgenti(): Promise<Sorgente[]>
   /** Vero se si puo' mandare l'audio di sistema insieme al video. */
   audioDiSistema: boolean
+  /**
+   * Vero se quell'audio si puo' prendere dal processo condiviso invece che
+   * dall'uscita di Windows: e' la differenza fra mandare l'audio di
+   * un'applicazione e mandare tutto quello che suona sul computer, PulseTalk
+   * compreso.
+   */
+  audioPerApplicazione: boolean
 
   preparaCattura(scelta: SceltaCattura): Promise<void>
+
+  /**
+   * L'audio di una condivisione preso dal processo giusto, non dalle casse.
+   *
+   * Esiste solo dentro Electron su Windows, ed e' cio' che distingue "l'audio
+   * di questa applicazione" da "tutto quello che esce dal computer, PulseTalk
+   * compreso". Nel browser non c'e' niente di simile: torna un errore, e chi
+   * chiama ricade sull'audio di sistema di sempre.
+   */
+  avviaAudioProcesso(sorgenteId: string): Promise<{ id: string } | { errore: string }>
+  fermaAudioProcesso(id: string): void
+  onAudioProcessoDati(callback: (id: string, campioni: Uint8Array) => void): () => void
+  onAudioProcessoFinito(callback: (id: string) => void): () => void
 
   leggiImpostazioni(): Promise<Impostazioni>
   scriviImpostazioni(
@@ -125,6 +145,7 @@ function ponteElettrone(api: NonNullable<Window['pulsetalk']>): Ponte {
     elettrone: true,
     android: false,
     audioDiSistema: true,
+    audioPerApplicazione: api.audioPerApplicazione,
     aggiornamenti: api.aggiornamento,
     informazioniClient: async () => {
       const info = await api.versione()
@@ -136,6 +157,10 @@ function ponteElettrone(api: NonNullable<Window['pulsetalk']>): Ponte {
     },
     sorgenti: () => api.sorgenti(),
     preparaCattura: (scelta) => api.preparaCattura(scelta),
+    avviaAudioProcesso: (sorgenteId) => api.avviaAudioProcesso(sorgenteId),
+    fermaAudioProcesso: (id) => api.fermaAudioProcesso(id),
+    onAudioProcessoDati: (callback) => api.onAudioProcessoDati(callback),
+    onAudioProcessoFinito: (callback) => api.onAudioProcessoFinito(callback),
     leggiImpostazioni: () => api.leggiImpostazioni(),
     scriviImpostazioni: (modifiche) => api.scriviImpostazioni(modifiche),
     onImpostazioniCambiate: (callback) => api.onImpostazioniCambiate(callback),
@@ -273,8 +298,13 @@ function ponteBrowser(): Ponte {
     // qui non si puo' ne' chiedere ne' garantire, quindi si dichiara di no e
     // l'interfaccia non promette quello che non puo' mantenere.
     audioDiSistema: false,
+    audioPerApplicazione: false,
     sorgenti: async () => [],
     preparaCattura: async () => {},
+    avviaAudioProcesso: async () => ({ errore: "Solo nell'applicazione per Windows." }),
+    fermaAudioProcesso: () => {},
+    onAudioProcessoDati: () => () => {},
+    onAudioProcessoFinito: () => () => {},
 
     leggiImpostazioni: () => leggi(),
 

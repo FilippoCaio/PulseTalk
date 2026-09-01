@@ -79,8 +79,16 @@ export async function elencaSorgenti(): Promise<Sorgente[]> {
  *               qualcosa agli altri senza averlo addosso.
  *
  * Cosa prendono davvero, e conviene esserne precisi: non "l'audio della
- * finestra scelta" — quello Windows non lo sa isolare — ma tutto cio' che esce
- * dal dispositivo di riproduzione predefinito. Nella quasi totalita' dei casi
+ * finestra scelta", ma tutto cio' che esce dal dispositivo di riproduzione
+ * predefinito.
+ *
+ * Isolare l'audio di una finestra Windows lo sa fare - da Windows 10 2004, con
+ * il process loopback - ma non lo sa fare Chromium, e da qui si parla a
+ * Chromium. Quella strada e' `main/audioProcesso.ts`, ed e' quella che prende
+ * l'applicazione condivisa e nient'altro; queste due modalita' restano per il
+ * caso in cui il suono debba anche restare muto sul computer di chi condivide,
+ * e per le macchine dove l'altra non parte. In quei due casi vale ancora tutto
+ * quello che c'e' scritto qui sotto. Nella quasi totalita' dei casi
  * la differenza non si nota. Si nota quando quel dispositivo e' un missaggio
  * ("Stereo Mix", un cavo virtuale, VoiceMeeter), oppure quando il microfono ha
  * "Ascolta questo dispositivo" acceso, oppure quando la scheda audio fa

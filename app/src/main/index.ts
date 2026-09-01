@@ -3,6 +3,12 @@ import { appendFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { agganciaCattura, elencaSorgenti, ricordaScelta } from './cattura'
 import {
+  audioDiProcessoDisponibile,
+  avviaAudioProcesso,
+  fermaAudioProcesso,
+  fermaTuttiGliAudioProcesso
+} from './audioProcesso'
+import {
   collegaServer,
   dimenticaToken,
   leggiImpostazioni,
@@ -133,6 +139,12 @@ async function creaFinestra(): Promise<void> {
     icon: join(import.meta.dirname, '../../build/icona.png'),
     webPreferences: {
       preload: join(import.meta.dirname, '../preload/index.mjs'),
+      // Se su questa macchina si puo' prendere l'audio di una sola
+      // applicazione. La pagina lo deve sapere subito - lo chiede il selettore
+      // delle sorgenti per scrivere l'avviso giusto, e `catturaSchermo` per
+      // decidere che strada prendere - e passarlo cosi' evita un giro di IPC
+      // per una risposta che non cambia mai finche' l'applicazione e' accesa.
+      additionalArguments: audioDiProcessoDisponibile() ? ['--audio-per-applicazione'] : [],
       // I tre interruttori che tengono la pagina dentro la sua scatola. La
       // pagina e' nostra, ma la stessa pagina gira anche nel browser e non
       // deve maturare l'abitudine a poteri che li' non avrebbe.
@@ -360,6 +372,19 @@ function agganciaCanali(): void {
     ricordaScelta(scelta)
   })
 
+  // L'audio della condivisione preso dal processo invece che dalle casse.
+  // Senza finestra non c'e' nessuno a cui mandare i campioni, e la cattura non
+  // ha motivo di partire.
+  ipcMain.handle(IPC.audioProcessoAvvia, (_evento, sorgenteId: string) =>
+    finestra
+      ? avviaAudioProcesso(finestra, sorgenteId)
+      : { errore: 'Nessuna finestra a cui mandare l\'audio.' }
+  )
+
+  ipcMain.on(IPC.audioProcessoFerma, (_evento, id: string) => {
+    fermaAudioProcesso(id)
+  })
+
   ipcMain.handle(IPC.leggiImpostazioni, () => leggiImpostazioni())
 
   ipcMain.handle(IPC.scriviImpostazioni, (_evento, modifiche: Partial<Impostazioni>) => {
@@ -532,6 +557,10 @@ if (!app.requestSingleInstanceLock()) {
   app.on('will-quit', () => {
     globalShortcut.unregisterAll()
     chiudiPuntatori()
+    // Le catture audio sono processi separati: senza questa riga una
+    // condivisione interrotta dalla chiusura dell'applicazione lascerebbe in
+    // giro un eseguibile che registra l'audio di qualcuno.
+    fermaTuttiGliAudioProcesso()
     void sito?.chiudi()
   })
 }
