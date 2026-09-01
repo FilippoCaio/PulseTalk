@@ -374,7 +374,9 @@ lasciato arancione, o di un port forward che non e' mai stato salvato.
 
 **Dall'app**, che e' il modo normale: *Impostazioni -> Server -> Inviti*,
 pagina visibile solo agli admin. Si sceglie il ruolo, per quante persone e per
-quanti giorni, e si ottiene un codice piu' un link pronto da mandare — che apre
+quanto vale — da un giorno a un anno, oppure **a vita**: quello non scade e
+resta buono finche' non finisce gli usi o finche' non lo si annulla dall'elenco
+sotto. Si ottiene un codice piu' un link pronto da mandare — che apre
 PulseTalk con il codice gia' compilato. Sta li' e non sotto al proprio account
 perche' e' amministrazione dell'istanza: chi crea un invito decide chi entra e
 con quali poteri, ed e' la stessa materia delle chiavi dei servizi.
@@ -384,6 +386,8 @@ con quali poteri, ed e' la stessa materia delle chiavi dei servizi.
 ```bash
 docker compose exec pulse-talk node src/cli.mjs invita --ruolo membro --usi 3
 ```
+
+`--giorni` accetta fino a 365, e `--giorni 0` fa quello a vita.
 
 Il codice non e' recuperabile dopo: il database ne conserva solo l'impronta,
 come per i token. Se si perde, se ne genera un altro e si annulla il vecchio.

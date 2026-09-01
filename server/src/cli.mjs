@@ -41,6 +41,9 @@ Ruoli:
   membro   trasmette schermo, camera e voce
   admin    crea spazi e canali, modera, invita
 
+Con --giorni 0 l'invito non scade: vale finche' non finisce gli usi o finche'
+non lo si annulla dall'app. Il massimo per uno che scade e' 365.
+
 Spazi e canali si creano dall'app: qui c'e' solo "spazi", che li elenca — serve
 a guardare cosa c'e' dentro al database senza aprirlo.
 
@@ -81,7 +84,7 @@ function comandoInvita(opzioni) {
   db.close();
 
   console.log(`
-Invito ${nome ? `per ${nome} ` : ''}con ruolo ${ruolo}, valido ${giorni} giorni,
+Invito ${nome ? `per ${nome} ` : ''}con ruolo ${ruolo}, ${giorni === 0 ? 'senza scadenza' : `valido ${giorni} giorni`},
 per ${usi === 1 ? 'una persona' : `${usi} persone`}:
 
     ${codice}
@@ -104,7 +107,7 @@ function comandoInviti() {
   for (const r of righe) {
     console.log(
       `${String(r.id).padEnd(4)} ${r.ruolo.padEnd(8)} ${`${r.usi}/${r.usiMax}`.padEnd(6)} ` +
-      `${quando(r.scade).padEnd(22)} ${r.nome}`,
+      `${(r.scade === 0 ? 'mai' : quando(r.scade)).padEnd(22)} ${r.nome}`,
     );
   }
 }

@@ -4,6 +4,31 @@ import type { Api, InvitoAperto } from '../lib/api'
 import { Avviso, Bottone, Campo, classiInput, Sezione } from '../ui'
 
 /**
+ * Per quanto vale il codice, dalla piu' lunga in giu'.
+ *
+ * "A vita" sta in cima perche' e' la scelta che si fa apposta: l'invito di
+ * casa, quello che si passa a chi arriva senza doverlo rifare ogni mese. Zero
+ * giorni e' il modo in cui il server la scrive — la stessa convenzione degli
+ * usi senza limite — e non vuol dire una porta senza serratura: gli usi hanno
+ * comunque un tetto, e l'elenco qui sotto lo annulla quando ha fatto il suo.
+ *
+ * Un elenco e non piu' una casella dove scrivere il numero: chi crea un invito
+ * sta scegliendo fra "per stasera" e "per sempre", non calibrando ventuno
+ * giorni. Le durate che servivano davvero erano queste.
+ */
+const DURATE: { giorni: number; nome: string }[] = [
+  { giorni: 0, nome: 'A vita' },
+  { giorni: 1, nome: 'Un giorno' },
+  { giorni: 3, nome: 'Tre giorni' },
+  { giorni: 7, nome: 'Una settimana' },
+  { giorni: 14, nome: 'Due settimane' },
+  { giorni: 30, nome: 'Un mese' },
+  { giorni: 90, nome: 'Tre mesi' },
+  { giorni: 180, nome: 'Sei mesi' },
+  { giorni: 365, nome: 'Un anno' }
+]
+
+/**
  * Far entrare qualcuno, da qui invece che da SSH.
  *
  * Il codice si vede **una volta sola**, esattamente come dalla riga di
@@ -138,22 +163,34 @@ export function ContenutoInviti({
                   onChange={(e) => setUsi(Math.max(1, Number(e.target.value) || 1))}
                 />
               </Campo>
-              <Campo etichetta="Valido per (giorni)">
-                <input
-                  type="number"
+              <Campo etichetta="Valido per">
+                <select
                   className={classiInput}
-                  min={1}
-                  max={30}
                   value={giorni}
-                  onChange={(e) => setGiorni(Math.max(1, Number(e.target.value) || 1))}
-                />
+                  onChange={(e) => setGiorni(Number(e.target.value))}
+                >
+                  {DURATE.map((d) => (
+                    <option key={d.giorni} value={d.giorni}>
+                      {d.nome}
+                    </option>
+                  ))}
+                </select>
               </Campo>
             </div>
+
+            {giorni === 0 && (
+              <Avviso tono="attenzione">
+                Un codice che non scade resta buono finche&apos; non finisce gli usi o finche&apos;
+                non lo annulli tu: se gira, gira per sempre. Qui sotto c&apos;e&apos; l&apos;elenco
+                per chiuderlo quando ha fatto il suo.
+              </Avviso>
+            )}
 
             {usi > 1 && (
               <Avviso tono="attenzione">
                 Un codice per piu&apos; persone entra chiunque ce l&apos;abbia, finche&apos; non si
-                esaurisce o scade. Inoltrato in una chat di gruppo, ci entra il gruppo.
+                esaurisce{giorni === 0 ? '' : ' o scade'}. Inoltrato in una chat di gruppo, ci entra
+                il gruppo.
               </Avviso>
             )}
 
@@ -182,7 +219,8 @@ export function ContenutoInviti({
                   {invito.ruolo}
                   <span className="numeri text-testo-3">
                     {' · '}
-                    {invito.usi}/{invito.usiMax} usati · scade il {quando(invito.scade)}
+                    {invito.usi}/{invito.usiMax} usati ·{' '}
+                    {invito.scade === 0 ? 'non scade' : `scade il ${quando(invito.scade)}`}
                   </span>
                 </span>
                 <button

@@ -403,12 +403,20 @@ export class TalkDb {
   creaInvito({ nome = '', ruolo, validoGiorni = 14, usiMax = 1, creatoDa = null }) {
     if (!RUOLI.includes(ruolo)) throw new Error(`ruolo sconosciuto: ${ruolo}`);
     const codice = segretoNuovo(18);
+
+    // Zero giorni vuol dire che non scade, e si salva come zero: la colonna e'
+    // NOT NULL, e "senza limite = 0" e' gia' la convenzione degli usi negli
+    // inviti agli spazi. Un numero negativo invece resta un conto vero e cade
+    // nel passato — e' cosi' che si fabbrica un invito gia' scaduto, e i test
+    // ci contano.
+    const scade = validoGiorni === 0 ? 0 : ora() + validoGiorni * 86400;
+
     this.sql
       .prepare(
         `INSERT INTO inviti (impronta, nome, ruolo, creato, scade, usiMax, creatoDa)
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(impronta(codice), nome ?? '', ruolo, ora(), ora() + validoGiorni * 86400, Math.max(1, usiMax), creatoDa);
+      .run(impronta(codice), nome ?? '', ruolo, ora(), scade, Math.max(1, usiMax), creatoDa);
     return codice;
   }
 
@@ -421,7 +429,8 @@ export class TalkDb {
    */
   #problemaConInvito(riga) {
     if (!riga) return 'codice non valido';
-    if (riga.scade < ora()) return 'codice scaduto';
+    // `scade` a zero e' l'invito a vita: non c'e' nessuna data da confrontare.
+    if (riga.scade !== 0 && riga.scade < ora()) return 'codice scaduto';
     if (riga.usi >= riga.usiMax) return 'codice gia\' usato';
     return null;
   }
@@ -430,7 +439,7 @@ export class TalkDb {
     return this.sql
       .prepare(
         `SELECT id, nome, ruolo, creato, scade, usi, usiMax, creatoDa
-           FROM inviti WHERE usi < usiMax AND scade > ? ORDER BY creato DESC`,
+           FROM inviti WHERE usi < usiMax AND (scade = 0 OR scade > ?) ORDER BY creato DESC`,
       )
       .all(ora());
   }

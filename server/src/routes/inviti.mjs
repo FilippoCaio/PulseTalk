@@ -12,9 +12,19 @@
 import { richiedeRuolo } from '../auth.mjs';
 import { RUOLI } from '../config.mjs';
 
-// Un mese. Piu' in la' non ha senso: un invito che resta aperto per un anno e'
-// una porta che nessuno ricorda di aver lasciato accostata.
-const GIORNI_MAX = 30;
+// Il tetto per un invito che una scadenza ce l'ha. Un anno: oltre, la data
+// smette di voler dire qualcosa. Prima era un mese, per non lasciare porte
+// accostate che nessuno ricorda — ma una porta che resta aperta e' una scelta
+// da fare apposta, non il risultato di un numero scritto grosso: per quella
+// c'e' A_VITA, e chi la sceglie sa cosa sta facendo.
+const GIORNI_MAX = 365;
+
+// Zero giorni: non scade mai. E' lo stesso zero degli usi negli inviti agli
+// spazi — in questo database "senza limite" si scrive cosi'. Resta comunque un
+// invito con un tetto di usi, e `DELETE /api/inviti/:id` lo chiude in ogni
+// momento: non scadere non vuol dire non finire.
+const A_VITA = 0;
+
 const USI_MAX = 50;
 
 export function rotteInviti(app, { db }) {
@@ -29,8 +39,11 @@ export function rotteInviti(app, { db }) {
       }
 
       const giorniValidi = Number(giorni);
-      if (!Number.isInteger(giorniValidi) || giorniValidi < 1 || giorniValidi > GIORNI_MAX) {
-        return risposta.code(400).send({ errore: `i giorni devono stare fra 1 e ${GIORNI_MAX}` });
+      const nonScade = giorniValidi === A_VITA;
+      if (!Number.isInteger(giorniValidi) || giorniValidi < A_VITA || giorniValidi > GIORNI_MAX) {
+        return risposta.code(400).send({
+          errore: `i giorni devono stare fra 1 e ${GIORNI_MAX}, oppure 0 per un invito che non scade`,
+        });
       }
 
       const usiValidi = Number(usi);
@@ -57,7 +70,7 @@ export function rotteInviti(app, { db }) {
         codice,
         ruolo,
         usi: usiValidi,
-        scade: Math.floor(Date.now() / 1000) + giorniValidi * 86400,
+        scade: nonScade ? A_VITA : Math.floor(Date.now() / 1000) + giorniValidi * 86400,
       });
     },
   );

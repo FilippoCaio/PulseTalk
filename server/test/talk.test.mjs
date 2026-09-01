@@ -262,10 +262,38 @@ describe('inviti dall\'app', () => {
     const { talk, base } = await conServer(t);
     const admin = await accesso(talk, base, { nome: 'Capo', ruolo: 'admin' });
 
-    for (const corpo of [{ giorni: 0 }, { giorni: 400 }, { usi: 0 }, { usi: 9999 }]) {
+    // Zero non e' piu' qui dentro: e' l'invito a vita. Il negativo si', perche'
+    // una durata all'indietro sarebbe un invito nato gia' scaduto.
+    for (const corpo of [{ giorni: -1 }, { giorni: 400 }, { usi: 0 }, { usi: 9999 }]) {
       const r = await admin.chiama('/api/inviti', { method: 'POST', body: JSON.stringify(corpo) });
       assert.equal(r.status, 400, `${JSON.stringify(corpo)} doveva essere rifiutato`);
     }
+  });
+
+  it('con zero giorni fa un invito che non scade', async (t) => {
+    const { talk, base } = await conServer(t);
+    const admin = await accesso(talk, base, { nome: 'Capo', ruolo: 'admin' });
+
+    const creato = await admin.chiama('/api/inviti', {
+      method: 'POST',
+      body: JSON.stringify({ giorni: 0 }),
+    });
+    assert.equal(creato.status, 201);
+    const { codice, scade } = await creato.json();
+    assert.equal(scade, 0, 'zero vuol dire che non ha una data');
+
+    // Il punto della prova: senza una data, l'elenco degli aperti lo perdeva —
+    // la query confrontava `scade > adesso`, e zero e' sempre nel passato.
+    const { inviti } = await (await admin.chiama('/api/inviti')).json();
+    assert.equal(inviti.length, 1, 'deve restare fra quelli aperti');
+    assert.equal(inviti[0].scade, 0);
+
+    const r = await fetch(`${base}/api/auth/riscatta`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ codice, utente: 'tardivo', password: PASSWORD }),
+    });
+    assert.equal(r.status, 200, 'e deve ancora far entrare');
   });
 });
 
