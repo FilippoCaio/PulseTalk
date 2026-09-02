@@ -278,13 +278,29 @@ export default function Riquadro({
   // Un fratello in `absolute inset-0` non e' ne' fuori — quindi non si taglia —
   // ne' sotto — quindi il video non lo copre. E non prende i clic, che
   // altrimenti si fermerebbero sul bordo invece di arrivare al riquadro.
+  const zittito = (volumi ?? []).some((voce) => voce.muto)
+
+  /**
+   * Il colore del bordo, in ordine di importanza.
+   *
+   * Verde chi parla, rosso cio' che si e' zittito, azzurro cio' che si sta
+   * guardando, grigio tutto il resto.
+   *
+   * Il rosso viene prima dell'azzurro e non dopo, ed e' la scelta che conta:
+   * l'azzurro dice dove si sta guardando - una cosa che si sa gia', perche' e'
+   * il riquadro grande davanti agli occhi - mentre il rosso dice che da li'
+   * non arriva piu' niente, che e' la cosa che si dimentica. Chi zittisce una
+   * condivisione e poi torna dieci minuti dopo si chiede perche' non si senta,
+   * e il bordo e' l'unico posto in cui la risposta puo' stare senza aprire
+   * niente.
+   */
   const bordo = dati.parla
     ? 'border-2 border-ok'
-    : aFuoco
-      ? 'border-2 border-vivo'
-      : 'border border-bordo group-hover:border-fondo-3'
-
-  const zittito = (volumi ?? []).some((voce) => voce.muto)
+    : zittito
+      ? 'border-2 border-male'
+      : aFuoco
+        ? 'border-2 border-vivo'
+        : 'border border-bordo group-hover:border-fondo-3'
 
   /** Vero per un istante dopo un trascinamento: serve a mangiarsi il clic dopo. */
   const pretesa = useRef(false)

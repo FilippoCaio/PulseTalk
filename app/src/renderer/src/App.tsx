@@ -1487,7 +1487,6 @@ export default function App(): React.JSX.Element {
           inert={colonneRitirate}
         >
           <PannelloVoce
-            utente={utente}
             canale={ingresso!.canale.nome}
             spazio={spazioDellaChiamata}
             stato={sessione.stato}
@@ -1512,7 +1511,6 @@ export default function App(): React.JSX.Element {
             }}
             torna={tornaAllaChiamata}
             esci={() => void esciDallaVoce()}
-            apriProfilo={() => setMostraProfilo(true)}
             impostazioni={impostazioni}
             salva={(modifiche) => void salva(modifiche)}
             apriImpostazioni={() => {

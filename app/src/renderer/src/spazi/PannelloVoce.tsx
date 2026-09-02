@@ -1,9 +1,7 @@
 import { useState } from 'react'
 import { ConnectionState } from 'livekit-client'
-import type { Impostazioni, StatoUtente, Utente } from '@shared/tipi'
+import type { Impostazioni } from '@shared/tipi'
 import ControlliAudio from '../ControlliAudio'
-import { coloreDi, inizialiDi } from '../lib/avatar'
-import { PallinoStato } from '../PopupProfilo'
 import {
   Altoparlante,
   Camera,
@@ -18,19 +16,28 @@ import {
 } from '../icone'
 
 /**
- * Il pannello della chiamata, in basso a sinistra.
+ * Il pannello della chiamata, in fondo alla colonna di sinistra.
  *
- * Copre tutte e due le colonne — quella degli spazi e quella dei canali —
- * perche' e' il comando che vale sopra a entrambe: la chiamata continua
- * qualunque spazio si stia guardando, e un pannello largo quanto una sola
- * colonna suggerirebbe il contrario.
+ * E' largo quanto quella colonna, e vale sopra a tutto quello che ci si
+ * sfoglia dentro: la chiamata continua qualunque spazio si stia guardando.
+ * Copriva anche la colonna degli spazi, quando gli spazi erano una colonna.
+ *
+ * Dentro ci sono due cose e basta: dove si sta parlando - con il ritardo e il
+ * pulsante rosso per uscire - e i cinque comandi in una riga.
+ *
+ * Chi si e' non c'e' piu': ritratto, nome e stato stanno in cima a sinistra,
+ * nella riga degli spazi, e tenerli anche qui sotto voleva dire la stessa
+ * faccia due volte a venti pixel di distanza. Con il nome se n'e' andata anche
+ * la ragione per cui i comandi stavano su due file: la prima portava il nome,
+ * ed era il nome a dire che quei tre - microfono, ascolto, impostazioni -
+ * riguardavano la persona e non la stanza. Senza, erano due file di quadrati
+ * identici divise da un confine che non si vedeva piu'.
  *
  * Le cuffie che silenziano tutto stanno qui e in nessun altro posto. Nella
  * barra della chiamata non ci sono apposta: due pulsanti per lo stesso stato
  * vogliono dire due posti da tenere d'accordo, e prima o poi uno dei due mente.
  */
 export default function PannelloVoce({
-  utente,
   canale,
   spazio,
   stato,
@@ -46,12 +53,10 @@ export default function PannelloVoce({
   apriCondivisione,
   torna,
   esci,
-  apriProfilo,
   impostazioni,
   salva,
   apriImpostazioni
 }: {
-  utente: Utente
   canale: string
   /**
    * Dove sta quel canale: il nome dello spazio, o "Messaggi diretti".
@@ -76,7 +81,6 @@ export default function PannelloVoce({
   apriCondivisione: () => void
   torna: () => void
   esci: () => void
-  apriProfilo: () => void
   impostazioni: Impostazioni
   salva: (modifiche: Partial<Impostazioni>) => void
   apriImpostazioni: () => void
@@ -157,140 +161,92 @@ export default function PannelloVoce({
         </button>
       </div>
 
-      {/* Chi sono, e tutto cio' che si comanda da qui.
+      {/* I cinque comandi, in una riga sola.
 
-          Una scatola sola, arrotondata e con un fondo suo: prima erano tre
-          righe separate da un filo, e l'occhio non trovava piu' il confine fra
-          "la chiamata" e "io". E ogni comando ha la sua scatola, perche' sei
-          icone appoggiate sullo stesso fondo si leggono come una striscia
-          unica: si mira quella accanto a quella che si voleva. */}
+          Qui sopra c'era anche chi si e': ritratto, nome e pallino dello
+          stato, con accanto i tre comandi che riguardano la persona e sotto
+          quelli che riguardano la stanza. Adesso l'utente sta in cima a
+          sinistra, nella riga degli spazi, e ripeterlo qui sotto vorrebbe dire
+          due volte la stessa faccia a venti pixel di distanza.
+
+          Restano i cinque comandi, tutti sulla stessa riga e tutti larghi
+          uguali: microfono, ascolto, camera, condivisione, impostazioni. La
+          divisione fra «cose mie» e «cose di questa stanza» - due file
+          separate - aveva senso finche' la prima fila portava anche il nome:
+          era il nome a dire di chi fossero quei tre. Senza, erano due file di
+          quadrati identici divise da un confine che non si vedeva piu'.
+
+          `basis-9` e non `basis-0`: la base e' la misura che avevano da sole,
+          ed e' quella che `flex-wrap` guarda per decidere quando andare a
+          capo. Con base zero nessuno supera mai la larghezza disponibile,
+          quindi non si andrebbe a capo mai - e nella colonna stretta le cinque
+          scatole si schiaccerebbero in fessure da pochi pixel invece di
+          impilarsi. */}
       <div className="rounded-2xl border border-bordo bg-fondo-3/40 p-1.5">
-        {/* Io, e accanto a me le tre cose che riguardano me.
-
-            Microfono, cuffie e impostazioni stanno sulla stessa riga del nome
-            e non nella fila sotto, ed e' la divisione che fa la differenza:
-            questi tre valgono ovunque — restano veri anche fuori da questa
-            chiamata, anche cambiando canale — mentre camera, condivisione e
-            riascolto sono cose che si fanno *dentro* alla stanza in cui si
-            sta. Prima erano sei quadrati in fila e la distinzione non si
-            vedeva: si cercava il muto fra sei icone tutte uguali invece che
-            accanto alla propria faccia, che e' dove lo si cerca. */}
         <div className="flex flex-wrap items-center gap-1.5">
-          <button
-            onClick={apriProfilo}
-            title={`${utente.nome} — apri il profilo`}
-            className="flex min-w-0 flex-1 basis-32 items-center gap-2 rounded-xl px-1 py-1 text-left transition-colors hover:bg-fondo-3"
-          >
-            <span className="relative shrink-0">
-              {utente.avatar ? (
-                <img src={utente.avatar} alt="" className="h-8 w-8 rounded-full object-cover" />
-              ) : (
-                <span
-                  className="flex h-8 w-8 items-center justify-center rounded-full text-[11px] font-semibold text-black/75"
-                  style={{ background: coloreDi(`u${utente.id}`) }}
-                >
-                  {inizialiDi(utente.nome)}
-                </span>
-              )}
-              <PallinoStato
-                stato={(utente.stato ?? 'online') as StatoUtente}
-                className="h-2.5 w-2.5"
-              />
-            </span>
-            <span className="min-w-0 flex-1 truncate text-xs font-medium text-testo">
-              {utente.nome}
-            </span>
-          </button>
-
-          {/* Questi tre non crescono: sono quadrati, e restano quadrati anche
-              quando avanza spazio. A crescere e' il nome li' accanto, che e'
-              l'unica cosa in questa riga che abbia qualcosa da guadagnarci. */}
-          <div className="flex flex-wrap items-center justify-center gap-1.5">
-            <div className="relative flex">
-              <Scatola
-                cresce={false}
-                tono={microfonoAcceso ? 'normale' : 'male'}
-                titolo={microfonoAcceso ? 'Zittisci il microfono' : 'Riaccendi il microfono'}
-                premi={alternaMicrofono}
-                secondario={{
-                  titolo: 'Microfono: dispositivo e volume in entrata',
-                  premi: () => {
-                    setMenuUscita(false)
-                    setMenuMicrofono((v) => !v)
-                  }
-                }}
-              >
-                {microfonoAcceso ? <Microfono /> : <MicrofonoSpento />}
-              </Scatola>
-              {menuMicrofono && (
-                <MenuRapido
-                  lato="entrata"
-                  impostazioni={impostazioni}
-                  salva={salva}
-                  chiudi={() => setMenuMicrofono(false)}
-                  apriImpostazioni={() => {
-                    setMenuMicrofono(false)
-                    apriImpostazioni()
-                  }}
-                />
-              )}
-            </div>
-
-            {/* L'unico posto in cui si spegne l'ascolto, e adesso anche quello
-                in cui si sceglie da dove esce. La freccetta e' la stessa del
-                microfono perche' la domanda e' la stessa, dall'altro lato:
-                prima l'altoparlante stava dentro alla tendina del microfono,
-                cioe' l'ultimo posto in cui uno va a cercarlo. */}
-            <div className="relative flex">
-              <Scatola
-                cresce={false}
-                tono={sordina ? 'male' : 'normale'}
-                titolo={sordina ? 'Riattiva tutto' : 'Silenzia tutto: non senti e non ti sentono'}
-                premi={alternaSordina}
-                secondario={{
-                  titolo: 'Ascolto: dispositivo e volume in uscita',
-                  premi: () => {
-                    setMenuMicrofono(false)
-                    setMenuUscita((v) => !v)
-                  }
-                }}
-              >
-                {sordina ? <CuffieSpente /> : <Cuffie />}
-              </Scatola>
-              {menuUscita && (
-                <MenuRapido
-                  lato="uscita"
-                  impostazioni={impostazioni}
-                  salva={salva}
-                  chiudi={() => setMenuUscita(false)}
-                  apriImpostazioni={() => {
-                    setMenuUscita(false)
-                    apriImpostazioni()
-                  }}
-                />
-              )}
-            </div>
-
-            <Scatola cresce={false} titolo="Impostazioni" premi={apriImpostazioni}>
-              <Ingranaggio />
+          <span className="relative flex grow basis-9">
+            <Scatola
+              tono={microfonoAcceso ? 'normale' : 'male'}
+              titolo={microfonoAcceso ? 'Zittisci il microfono' : 'Riaccendi il microfono'}
+              premi={alternaMicrofono}
+              secondario={{
+                titolo: 'Microfono: dispositivo e volume in entrata',
+                premi: () => {
+                  setMenuUscita(false)
+                  setMenuMicrofono((v) => !v)
+                }
+              }}
+            >
+              {microfonoAcceso ? <Microfono /> : <MicrofonoSpento />}
             </Scatola>
-          </div>
-        </div>
+            {menuMicrofono && (
+              <MenuRapido
+                lato="entrata"
+                impostazioni={impostazioni}
+                salva={salva}
+                chiudi={() => setMenuMicrofono(false)}
+                apriImpostazioni={() => {
+                  setMenuMicrofono(false)
+                  apriImpostazioni()
+                }}
+              />
+            )}
+          </span>
 
-        {/* Cio' che si fa dentro a questa stanza, a tutta larghezza.
+          {/* L'unico posto in cui si spegne l'ascolto, e anche quello in cui si
+              sceglie da dove esce. La freccetta e' la stessa del microfono
+              perche' la domanda e' la stessa, dall'altro lato: prima
+              l'altoparlante stava dentro alla tendina del microfono, cioe'
+              l'ultimo posto in cui uno va a cercarlo. */}
+          <span className="relative flex grow basis-9">
+            <Scatola
+              tono={sordina ? 'male' : 'normale'}
+              titolo={sordina ? 'Riattiva tutto' : 'Silenzia tutto: non senti e non ti sentono'}
+              premi={alternaSordina}
+              secondario={{
+                titolo: 'Ascolto: dispositivo e volume in uscita',
+                premi: () => {
+                  setMenuMicrofono(false)
+                  setMenuUscita((v) => !v)
+                }
+              }}
+            >
+              {sordina ? <CuffieSpente /> : <Cuffie />}
+            </Scatola>
+            {menuUscita && (
+              <MenuRapido
+                lato="uscita"
+                impostazioni={impostazioni}
+                salva={salva}
+                chiudi={() => setMenuUscita(false)}
+                apriImpostazioni={() => {
+                  setMenuUscita(false)
+                  apriImpostazioni()
+                }}
+              />
+            )}
+          </span>
 
-            Crescono per arrivare a tutti e due i bordi: una fila che finisce
-            prima del suo contenitore si legge come una fila incompleta, cioe'
-            sembra che manchi un pulsante.
-
-            `basis-9` e non `basis-0`, ed e' la riga che tiene in piedi anche
-            l'altro caso: la base e' la misura che avevano da sole, ed e' quella
-            che `flex-wrap` guarda per decidere quando andare a capo. Con base
-            zero nessuno supera mai la larghezza disponibile, quindi non si va
-            a capo mai — e nella colonna stretta, quella senza spazi aperti,
-            invece di impilarsi si sarebbero schiacciate in fessure da pochi
-            pixel. */}
-        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
           <Scatola
             acceso={cameraAccesa}
             titolo={cameraAccesa ? 'Spegni la camera' : 'Accendi la camera'}
@@ -311,6 +267,9 @@ export default function PannelloVoce({
             <SchermoCondividi />
           </Scatola>
 
+          <Scatola titolo="Impostazioni" premi={apriImpostazioni}>
+            <Ingranaggio />
+          </Scatola>
         </div>
       </div>
     </div>

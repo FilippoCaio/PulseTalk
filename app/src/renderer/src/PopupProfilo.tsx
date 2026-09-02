@@ -108,7 +108,17 @@ export default function PopupProfilo({
   return (
     <div
       ref={scatola}
-      className="menu-comparsa absolute right-3 bottom-3 left-3 z-50 rounded-xl border border-bordo bg-fondo-2 p-3 shadow-xl shadow-black/50 sm:right-auto sm:left-[4.5rem] sm:w-64"
+      // In alto a sinistra, sotto al proprio ritratto: e' li' che si e'
+      // premuto, ed e' li' che si guarda mentre si sceglie. Stava in basso
+      // finche' il ritratto stava in fondo alla colonna dei server; adesso
+      // quella colonna e' una riga in cima, e un pannellino che compare
+      // all'angolo opposto dello schermo rispetto al dito che l'ha chiamato e'
+      // un pannellino che sembra comparso da solo.
+      //
+      // I 4.5rem sono i 4 della riga piu' mezzo di stacco. Il `left-3` e' la
+      // stessa imbottitura del gruppo di sinistra: il pannello si allinea al
+      // ritratto invece di galleggiare accanto.
+      className="menu-comparsa absolute top-3 right-3 left-3 z-50 rounded-xl border border-bordo bg-fondo-2 p-3 shadow-xl shadow-black/50 sm:top-[4.5rem] sm:right-auto sm:left-3 sm:w-64"
     >
       <div className="flex items-center gap-3 pb-3">
         <span className="relative shrink-0">

@@ -57,15 +57,37 @@ const RAGGIO_RIPOSO_SOLO = 'rounded-[12px] hover:rounded-[6px]'
  *
  * Il guadagno non e' di gusto: sotto ai 1200 pixel due colonne piu' la sala
  * erano tre cose che si contendevano la larghezza, e la larghezza e' quella
- * che serve alla chiamata. In cima, la riga costa 56 pixel di altezza a
- * tutti e non toglie niente a nessuno in larghezza.
+ * che serve alla chiamata. In cima, la riga costa 64 pixel di altezza a tutti
+ * e non toglie niente a nessuno in larghezza.
+ *
+ * ## Tre zone, e i due separatori che le dividono
+ *
+ *   a sinistra   chi si e' e con chi si parla: il proprio ritratto, gli amici,
+ *                i messaggi diretti. Sono le cose che non appartengono a
+ *                nessuno spazio, e stanno larghe quanto la colonna qui sotto —
+ *                il separatore cade sul bordo di quella colonna, cosi' la riga
+ *                in cima e cio' che ci sta sotto sono la stessa geometria e non
+ *                due griglie che si somigliano;
+ *   in mezzo     gli spazi, che scorrono se sono tanti;
+ *   a destra     il server vero, dietro all'altro separatore. Cambiarlo cambia
+ *                tutto quello che sta a sinistra, e una cosa con quel peso non
+ *                va messa dove si passa continuamente.
  *
  * ## Il segno di quale e' aperto
  *
- * La barretta che stava a sinistra dell'icona adesso sta **sotto**: e' la
- * sottolineatura di una linguetta, che e' il segno che tutti hanno gia'
- * imparato per «sei qui» in orizzontale. Alta quanto la barretta era larga, e
- * larga quanto quella era alta: la stessa quantita' di inchiostro, girata.
+ * Non una riga sotto: la **linguetta**. Lo spazio aperto si veste del colore
+ * della schermata che apre — lo stesso fondo della chiamata — con gli angoli di
+ * sopra smussati e il bordo di sotto attaccato alla barra, che invece e' del
+ * colore dei pannelli. E' il gesto delle linguette di un browser, e dice una
+ * cosa che una sottolineatura non dice: che la linguetta e la pagina sono lo
+ * stesso oggetto, e che questa barra sta *sopra* a cio' che si guarda invece
+ * che accanto.
+ *
+ * Funziona perche' gli spazi cominciano esattamente dove comincia la schermata
+ * della chiamata: e' la stessa geometria del separatore di sinistra, guardata
+ * dall'altro lato. Il segno di «c'e' da leggere» si e' spostato di conseguenza
+ * — un punto sull'angolo dell'icona, come sui messaggi diretti — perche' il
+ * posto che aveva prima adesso vuol dire un'altra cosa.
  */
 export default function BarraSpazi({
   spazi,
@@ -154,182 +176,208 @@ export default function BarraSpazi({
 
   return (
     <nav
-      className={`flex h-16 w-full shrink-0 items-center gap-2 overflow-x-auto overflow-y-hidden border-b border-bordo bg-fondo px-3 ${className}`}
+      className={`flex h-16 w-full shrink-0 items-center overflow-x-auto overflow-y-hidden border-b border-bordo bg-fondo-2 ${className}`}
     >
-      {/* Il server vero, sopra a tutto e separato da una riga: cambiarlo
-          cambia *tutto* quello che sta sotto — spazi, canali, persone,
-          messaggi — e una cosa che ha quel peso non sta in mezzo alle altre. */}
-      {intestazione}
-      {intestazione && <span className="mx-0.5 h-8 w-px shrink-0 bg-bordo" />}
+      {/* A sinistra, chi si e' e con chi si parla: il proprio ritratto, gli
+          amici, i messaggi diretti. Sono le tre cose che non appartengono a
+          nessuno spazio - riguardano la persona, non il posto - e stanno
+          insieme, staccate dagli spazi da una riga.
 
-      {/* I messaggi diretti stanno in cima, sopra alla riga: non sono un
-          server, e metterli in mezzo agli altri li farebbe sembrare tali. */}
-      <button
-        onClick={apriDiretti}
-        title="Messaggi diretti"
-        aria-label="Messaggi diretti"
-        className="group relative flex h-12 w-12 shrink-0 items-center justify-center"
-      >
-        <span
-          className={`absolute -bottom-2 h-1 rounded-t-full bg-testo transition-all ${
-            direttiAperti ? 'w-8' : direttiNonLetti > 0 ? 'w-2' : 'w-0'
-          }`}
-        />
-        <span
-          className={`flex h-12 w-12 items-center justify-center transition-all ${
-            direttiAperti
-              ? `${RAGGIO_SCELTO} bg-vivo text-fondo`
-              : `${RAGGIO_RIPOSO} bg-fondo-2 text-testo-2 group-hover:bg-fondo-3 group-hover:text-testo`
-          }`}
+          Il gruppo e' largo esattamente quanto la colonna qui sotto, e il
+          separatore cade sul suo bordo: la riga in cima e la colonna diventano
+          la stessa geometria invece di due griglie che si somigliano. Il
+          `-ml-px` non e' pignoleria — il bordo della colonna sta *dentro* ai
+          suoi 15rem, quindi senza quel pixel il separatore le resterebbe
+          accanto invece che sopra. */}
+      <div className="flex h-full w-60 shrink-0 items-center gap-2 px-3">
+        {/* Apre il pannello, non le impostazioni: nove volte su dieci si preme
+            per cambiare stato o per guardarsi il nome, e aprire un pannello a
+            tutta pagina per quello e' un salto sproporzionato. */}
+        <button
+          onClick={apriProfilo}
+          title={utente.nome}
+          className="relative h-10 w-10 shrink-0 rounded-full ring-2 ring-transparent transition-all hover:ring-vivo"
         >
-          <Fumetto className="h-5 w-5" />
-        </span>
-        {direttiNonLetti > 0 && (
-          <span className="numeri absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-male px-1 text-[10px] font-semibold text-white">
-            {direttiNonLetti > 9 ? '9+' : direttiNonLetti}
-          </span>
-        )}
-      </button>
-
-      <span className="mx-0.5 h-8 w-px shrink-0 bg-bordo" />
-
-      {spazi.map((spazio) => {
-        const daLeggere = spazio.canali.reduce((somma, c) => somma + c.nonLetti, 0)
-        const attivo = spazio.id === aperto
-        // Il vocale di questa barra e' quello in cui si sta parlando adesso, se
-        // appartiene a questo spazio. Null quasi sempre: si sta in una stanza
-        // sola per volta.
-        const vocale = spazio.canali.find((c) => c.id === inVoce && c.tipo === 'voce') ?? null
-
-        return (
-          <button
-            key={spazio.id}
-            onClick={() => scegli(spazio.id)}
-            onMouseEnter={entra(spazio.id)}
-            onMouseLeave={esci(spazio.id)}
-            onFocus={entra(spazio.id)}
-            onBlur={esci(spazio.id)}
-            // Niente `title`: il cartellino dice gia' tutto, e i due insieme
-            // farebbero comparire due riquadri sovrapposti dopo un secondo.
-            aria-label={spazio.nome}
-            className="group relative flex h-12 w-12 shrink-0 items-center justify-center"
-          >
-            {/* Il segno sotto: largo quando e' aperto, un punto quando ha da
-                leggere, niente quando non c'e' niente da dire. */}
+          {utente.avatar ? (
+            <img src={utente.avatar} alt="" className="h-full w-full rounded-full object-cover" />
+          ) : (
             <span
-              className={`absolute -bottom-2 h-1 rounded-t-full bg-testo transition-all ${
-                attivo ? 'w-8' : daLeggere > 0 ? 'w-2' : 'w-0'
-              }`}
-            />
-            <span
-              className={`flex h-12 w-12 items-center justify-center text-lg font-semibold transition-all ${
-                attivo ? RAGGIO_SCELTO : RAGGIO_RIPOSO
-              }`}
-              style={{
-                background: attivo ? 'var(--color-vivo)' : coloreDi(`s${spazio.id}`),
-                // Il fondo del tema, non un nero scritto a mano: con un tema
-                // chiaro le iniziali devono scurirsi insieme a tutto il resto.
-                color: 'var(--color-fondo)'
-              }}
+              className="flex h-full w-full items-center justify-center rounded-full text-sm font-semibold text-black/75"
+              style={{ background: coloreDi(`u${utente.id}`) }}
             >
-              {spazio.icona || inizialiDi(spazio.nome)}
+              {inizialiDi(utente.nome)}
             </span>
+          )}
+          <PallinoStato
+            stato={utente.stato ?? 'online'}
+            className="h-3 w-3"
+            fondo="var(--color-fondo-2)"
+          />
+        </button>
 
-            {/* L'anello verde intorno all'icona del server in cui si sta
-                parlando: si vede da lontano, e da lontano e' l'unica cosa che
-                serve sapere.
+        {/* Il pallino rosso e' l'unica cosa che porta ad aprire questo
+            pannello: una richiesta di amicizia non ha nessun altro posto in cui
+            farsi notare. */}
+        <button
+          onClick={apriAmici}
+          title={richieste > 0 ? `Amici — ${richieste} in attesa` : 'Amici'}
+          aria-label="Amici"
+          className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-fondo text-testo-2 transition-colors hover:bg-fondo-3 hover:text-testo"
+        >
+          <Utenti />
+          {richieste > 0 && (
+            <span className="numeri absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-male px-1 text-[10px] font-semibold text-white">
+              {richieste > 9 ? '9+' : richieste}
+            </span>
+          )}
+        </button>
 
-                Il raggio e' lo stesso dell'icona — le stesse due costanti,
-                non un valore fisso ricopiato qui. L'icona cambia forma da sola
-                — smussata a riposo, quasi quadra da aperta o sotto al
-                cursore — e un anello
-                che non la seguiva restava squadrato intorno a un quadrato con
-                gli angoli tondi: si vedeva l'anello staccarsi negli angoli
-                proprio quando si guardava un altro server, cioe' quando
-                l'anello e' l'unica cosa che sta dicendo dove si sta
-                parlando. */}
-            {vocale && (
+        <button
+          onClick={apriDiretti}
+          title="Messaggi diretti"
+          aria-label="Messaggi diretti"
+          className="group relative flex h-10 w-10 shrink-0 items-center justify-center"
+        >
+          <span
+            className={`flex h-10 w-10 items-center justify-center transition-all ${
+              direttiAperti
+                ? `${RAGGIO_SCELTO} bg-vivo text-fondo`
+                : `${RAGGIO_RIPOSO} bg-fondo text-testo-2 group-hover:bg-fondo-3 group-hover:text-testo`
+            }`}
+          >
+            <Fumetto className="h-5 w-5" />
+          </span>
+          {direttiNonLetti > 0 && (
+            <span className="numeri absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-male px-1 text-[10px] font-semibold text-white">
+              {direttiNonLetti > 9 ? '9+' : direttiNonLetti}
+            </span>
+          )}
+        </button>
+      </div>
+
+      <span className="-ml-px h-8 w-px shrink-0 bg-bordo" />
+
+      {/* Gli spazi, e sono linguette.
+
+          Quello aperto non ha piu' una riga sotto: si veste del colore della
+          schermata che apre, con gli angoli di sopra smussati e il fondo
+          attaccato al bordo della barra. E' il gesto delle linguette di un
+          browser, e dice una cosa che una sottolineatura non dice — che la
+          linguetta e la pagina sono lo stesso oggetto, e che quella barra sta
+          *sopra* a cio' che si sta guardando invece che accanto.
+
+          Funziona perche' sotto agli spazi comincia esattamente la schermata
+          della chiamata, che e' di quel colore: e' la stessa geometria del
+          separatore qui sopra, guardata dall'altro lato. */}
+      <div className="flex h-full min-w-0 flex-1 items-stretch gap-1 overflow-x-auto px-2">
+        {spazi.map((spazio) => {
+          const daLeggere = spazio.canali.reduce((somma, c) => somma + c.nonLetti, 0)
+          const attivo = spazio.id === aperto
+          // Il vocale di questa barra e' quello in cui si sta parlando adesso,
+          // se appartiene a questo spazio. Null quasi sempre: si sta in una
+          // stanza sola per volta.
+          const vocale = spazio.canali.find((c) => c.id === inVoce && c.tipo === 'voce') ?? null
+
+          return (
+            <button
+              key={spazio.id}
+              onClick={() => scegli(spazio.id)}
+              onMouseEnter={entra(spazio.id)}
+              onMouseLeave={esci(spazio.id)}
+              onFocus={entra(spazio.id)}
+              onBlur={esci(spazio.id)}
+              // Niente `title`: il cartellino dice gia' tutto, e i due insieme
+              // farebbero comparire due riquadri sovrapposti dopo un secondo.
+              aria-label={spazio.nome}
+              className={`group relative mt-2 flex h-[calc(100%-0.5rem)] shrink-0 items-center justify-center px-2.5 transition-colors ${
+                attivo ? 'rounded-t-xl bg-fondo' : 'rounded-t-xl hover:bg-fondo/50'
+              }`}
+            >
               <span
-                className={`pointer-events-none absolute inset-0 border-2 border-ok transition-all ${
+                className={`flex h-10 w-10 items-center justify-center text-base font-semibold transition-all ${
                   attivo ? RAGGIO_SCELTO : RAGGIO_RIPOSO
                 }`}
-              />
-            )}
+                style={{
+                  background: attivo ? 'var(--color-vivo)' : coloreDi(`s${spazio.id}`),
+                  // Il fondo del tema, non un nero scritto a mano: con un tema
+                  // chiaro le iniziali devono scurirsi insieme a tutto il resto.
+                  color: 'var(--color-fondo)'
+                }}
+              >
+                {spazio.icona || inizialiDi(spazio.nome)}
+              </span>
 
-            {sopra?.id === spazio.id && (
-              <OverlaySpazio
-                spazio={spazio}
-                canaleVocale={vocale}
-                profili={profili}
-                ancora={sopra.ancora}
-              />
-            )}
-          </button>
-        )
-      })}
+              {/* Da leggere: un punto sull'angolo, come i messaggi diretti.
+                  Era una barretta sotto all'icona, ed era lo stesso segno con
+                  cui si diceva «sei qui»: adesso quel posto e' della
+                  linguetta, e due significati sullo stesso segno non si
+                  distinguono piu'. */}
+              {daLeggere > 0 && !attivo && (
+                <span className="absolute top-1.5 right-1.5 h-2.5 w-2.5 rounded-full bg-testo ring-2 ring-fondo-2" />
+              )}
 
-      {/* Lo puo' premere chiunque abbia un account.
-          Prima era riservato a chi amministra l'istanza, ed era una regola
-          presa dal caso piu' piccolo — quattro persone in casa, e una sola che
-          crea. Uno spazio nuovo pero' nasce vuoto e invisibile: dentro c'e'
-          chi l'ha fatto e nessun altro, e nella barra degli altri non compare
-          niente finche' non li si invita. Non c'e' quindi niente da
-          proteggere, e c'era da chiedere il permesso per farsi un posto dove
-          parlare in tre. */}
-      <button
-        onClick={() => setCreando(true)}
-        title="Nuovo spazio"
-        aria-label="Nuovo spazio"
-        className={`flex h-12 w-12 shrink-0 items-center justify-center ${RAGGIO_RIPOSO_SOLO} border border-dashed border-bordo text-testo-3 transition-all hover:border-vivo hover:text-vivo`}
-      >
-        <Piu />
-      </button>
+              {/* L'anello verde intorno all'icona del server in cui si sta
+                  parlando: si vede da lontano, e da lontano e' l'unica cosa che
+                  serve sapere.
 
-      <div className="flex-1" />
+                  Il raggio e' lo stesso dell'icona — le stesse due costanti,
+                  non un valore fisso ricopiato qui. L'icona cambia forma da
+                  sola — smussata a riposo, quasi quadra da aperta o sotto al
+                  cursore — e un anello che non la seguiva restava squadrato
+                  intorno a un quadrato con gli angoli tondi. */}
+              {vocale && (
+                <span
+                  className={`pointer-events-none absolute top-1/2 left-1/2 h-10 w-10 -translate-x-1/2 -translate-y-1/2 border-2 border-ok transition-all ${
+                    attivo ? RAGGIO_SCELTO : RAGGIO_RIPOSO
+                  }`}
+                />
+              )}
 
-      {/* Il pallino rosso e' l'unica cosa che porta ad aprire questo pannello:
-          una richiesta di amicizia non ha nessun altro posto in cui farsi
-          notare. */}
-      <button
-        onClick={apriAmici}
-        title={richieste > 0 ? `Amici — ${richieste} in attesa` : 'Amici'}
-        aria-label="Amici"
-        className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-fondo-2 text-testo-2 transition-colors hover:bg-fondo-3 hover:text-testo"
-      >
-        <Utenti />
-        {richieste > 0 && (
-          <span className="numeri absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-male px-1 text-[10px] font-semibold text-white">
-            {richieste > 9 ? '9+' : richieste}
-          </span>
-        )}
-      </button>
+              {sopra?.id === spazio.id && (
+                <OverlaySpazio
+                  spazio={spazio}
+                  canaleVocale={vocale}
+                  profili={profili}
+                  ancora={sopra.ancora}
+                />
+              )}
+            </button>
+          )
+        })}
 
-      {/* Apre il pannello, non le impostazioni: nove volte su dieci si preme
-          per cambiare stato o per guardarsi il nome, e aprire un pannello a
-          tutta pagina per quello e' un salto sproporzionato. */}
-      <button
-        onClick={apriProfilo}
-        title={utente.nome}
-        className="relative h-10 w-10 shrink-0 rounded-full ring-2 ring-transparent transition-all hover:ring-vivo"
-      >
-        {utente.avatar ? (
-          <img src={utente.avatar} alt="" className="h-full w-full rounded-full object-cover" />
-        ) : (
-          <span
-            className="flex h-full w-full items-center justify-center rounded-full text-sm font-semibold text-black/75"
-            style={{ background: coloreDi(`u${utente.id}`) }}
+        {/* Lo puo' premere chiunque abbia un account.
+
+            Prima era riservato a chi amministra l'istanza, ed era una regola
+            presa dal caso piu' piccolo — quattro persone in casa, e una sola
+            che crea. Uno spazio nuovo pero' nasce vuoto e invisibile: dentro
+            c'e' chi l'ha fatto e nessun altro, e nella barra degli altri non
+            compare niente finche' non li si invita. Non c'e' quindi niente da
+            proteggere, e c'era da chiedere il permesso per farsi un posto dove
+            parlare in tre. */}
+        <span className="flex h-full shrink-0 items-center pl-1">
+          <button
+            onClick={() => setCreando(true)}
+            title="Nuovo spazio"
+            aria-label="Nuovo spazio"
+            className={`flex h-10 w-10 shrink-0 items-center justify-center ${RAGGIO_RIPOSO_SOLO} border border-dashed border-bordo text-testo-3 transition-all hover:border-vivo hover:text-vivo`}
           >
-            {inizialiDi(utente.nome)}
-          </span>
-        )}
-        <PallinoStato stato={utente.stato ?? 'online'} className="h-3 w-3" fondo="var(--color-fondo)" />
-      </button>
+            <Piu />
+          </button>
+        </span>
+      </div>
 
-      {/* `fixed` e non `absolute`: da quando la barra e' una riga alta
-          cinquanta pixel, un velo ancorato a lei sarebbe una striscia, e la
-          finestrella dentro finirebbe schiacciata e tagliata. Ancorata alla
-          finestra copre tutto, che e' quello che una richiesta modale deve
-          fare. */}
+      {/* Il server vero, in fondo a destra e dietro a una riga: cambiarlo
+          cambia *tutto* quello che sta a sinistra — spazi, canali, persone,
+          messaggi. Una cosa che ha quel peso non sta in mezzo alle altre, e
+          nemmeno in cima all'elenco che governa: sta dall'altra parte, dove
+          non la si preme per sbaglio passando da uno spazio all'altro. */}
+      {intestazione && (
+        <>
+          <span className="h-8 w-px shrink-0 bg-bordo" />
+          <span className="flex h-full shrink-0 items-center px-3">{intestazione}</span>
+        </>
+      )}
+
       {creando && (
         <div
           className="velo fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-6 backdrop-blur-sm"
