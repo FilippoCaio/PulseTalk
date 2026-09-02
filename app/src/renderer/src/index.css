@@ -565,6 +565,119 @@ textarea {
 }
 
 /*
+ * La riga degli spazi scorre, ma la sua barra di scorrimento non si vede.
+ *
+ * Quei dieci pixel cadrebbero esattamente dove la linguetta aperta si attacca
+ * al contenuto, e la taglierebbero via dal fondo proprio nel punto in cui i
+ * raccordi la stanno unendo: la linguetta finirebbe appoggiata sopra a una
+ * barretta grigia invece che dentro alla pagina.
+ *
+ * Si scorre con la rotellina, e non e' un ripiego: su un contenitore che
+ * scorre solo in orizzontale, Chromium gira da solo il movimento verticale.
+ */
+.barra-spazi::-webkit-scrollbar {
+  height: 0;
+  width: 0;
+}
+
+/*
+ * Le giunzioni di una linguetta, cioe' il pezzo che la fa sembrare una
+ * linguetta invece di un rettangolo appoggiato.
+ *
+ * Il problema e' vecchio quanto le schede dei browser: la riga che divide la
+ * barra da cio' che ci sta sotto deve **entrare** nella linguetta, non
+ * tagliarla. Un angolo retto fa sembrare la scheda incollata sopra; un angolo
+ * concavo la fa sembrare la stessa lamiera piegata.
+ *
+ * Come e' fatto: due quadratini da dieci pixel appoggiati ai fianchi, e dentro
+ * a ognuno un gradiente radiale con i bordi netti. Il cerchio ha il centro
+ * nell'angolo esterno, e i tre colori dicono le tre cose che ci sono in quel
+ * quadratino:
+ *
+ *   entro i 9 pixel   il fondo della barra, che e' cio' che sta di la';
+ *   fra 9 e 10        un pixel del colore del bordo: e' la riga che curva;
+ *   oltre i 10        il fondo della linguetta, che continua sotto.
+ *
+ * Un gradiente e non un SVG perche' e' una forma sola, ripetuta due volte e
+ * specchiata, e vive nei colori del tema: un SVG andrebbe ridipinto a mano a
+ * ogni cambio di tavolozza, un gradiente legge le variabili come tutto il
+ * resto.
+ */
+.linguetta-tab::before,
+.linguetta-tab::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  width: 10px;
+  height: 10px;
+  pointer-events: none;
+}
+
+.linguetta-tab::before {
+  left: -10px;
+  background: radial-gradient(
+    circle at 0 0,
+    var(--color-fondo-2) 9px,
+    var(--color-bordo) 9px,
+    var(--color-bordo) 10px,
+    var(--color-fondo) 10px
+  );
+}
+
+.linguetta-tab::after {
+  right: -10px;
+  background: radial-gradient(
+    circle at 100% 0,
+    var(--color-fondo-2) 9px,
+    var(--color-bordo) 9px,
+    var(--color-bordo) 10px,
+    var(--color-fondo) 10px
+  );
+}
+
+/*
+ * La stessa cosa girata di novanta gradi, per la linguetta attaccata al bordo
+ * delle colonne: li' la riga che deve curvare e' verticale, e la linguetta
+ * sporge verso destra invece che verso l'alto.
+ *
+ * Solo quando e' agganciata a quel bordo. Dentro all'overlay della chiamata la
+ * stessa linguetta galleggia sul video, e li' non c'e' nessuna riga da
+ * raccordare: i due quadratini sarebbero due macchie appoggiate sopra
+ * a un'immagine.
+ */
+.linguetta-agganciata::before,
+.linguetta-agganciata::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  width: 10px;
+  height: 10px;
+  pointer-events: none;
+}
+
+.linguetta-agganciata::before {
+  top: -10px;
+  background: radial-gradient(
+    circle at 100% 0,
+    var(--color-fondo) 9px,
+    var(--color-bordo) 9px,
+    var(--color-bordo) 10px,
+    var(--color-fondo-2) 10px
+  );
+}
+
+.linguetta-agganciata::after {
+  bottom: -10px;
+  background: radial-gradient(
+    circle at 100% 100%,
+    var(--color-fondo) 9px,
+    var(--color-bordo) 9px,
+    var(--color-bordo) 10px,
+    var(--color-fondo-2) 10px
+  );
+}
+
+/*
  * La riga degli spazi, che si ritira in altezza invece che in larghezza.
  *
  * Stessa idea della colonna qui sopra e stessa durata: quando si chiude la

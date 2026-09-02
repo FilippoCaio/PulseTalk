@@ -176,8 +176,21 @@ export default function BarraSpazi({
 
   return (
     <nav
-      className={`flex h-16 w-full shrink-0 items-center overflow-x-auto overflow-y-hidden border-b border-bordo bg-fondo-2 ${className}`}
+      className={`barra-spazi relative flex h-16 w-full shrink-0 items-center overflow-x-auto overflow-y-hidden bg-fondo-2 ${className}`}
     >
+      {/* La riga che divide la barra da cio' che ci sta sotto.
+
+          Non e' piu' il `border-b` della barra, ed e' tutta la differenza: un
+          bordo passa **sotto** alle linguette e le taglia via dal contenuto,
+          che e' esattamente cio' che una linguetta non deve fare. Disegnata
+          come un fratello, invece, la linguetta aperta le passa sopra e la
+          interrompe - e ai suoi fianchi i due quadratini di `.linguetta-tab`
+          la riprendono curvando.
+
+          Sta dentro alla barra e non fuori perche' quando gli spazi sono tanti
+          la barra scorre: fuori resterebbe ferma mentre le linguette le
+          scivolano davanti, e il raccordo si staccherebbe dal suo posto. */}
+      <span className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-bordo" />
       {/* A sinistra, chi si e' e con chi si parla: il proprio ritratto, gli
           amici, i messaggi diretti. Sono le tre cose che non appartengono a
           nessuno spazio - riguardano la persona, non il posto - e stanno
@@ -289,8 +302,21 @@ export default function BarraSpazi({
               // Niente `title`: il cartellino dice gia' tutto, e i due insieme
               // farebbero comparire due riquadri sovrapposti dopo un secondo.
               aria-label={spazio.nome}
-              className={`group relative mt-2 flex h-[calc(100%-0.5rem)] shrink-0 items-center justify-center px-2.5 transition-colors ${
-                attivo ? 'rounded-t-xl bg-fondo' : 'rounded-t-xl hover:bg-fondo/50'
+              /* `pb-2` e non solo `mt-2`: lo stacco sopra lo si vede - e' il
+                 gradino che fa la linguetta - ma senza uno stacco uguale sotto
+                 l'icona si troverebbe quattro pixel piu' in basso di quelle
+                 che stanno fuori dalle linguette, e in una riga di icone
+                 tutte uguali quattro pixel sono la differenza fra allineate e
+                 storte.
+
+                 Il bordo c'e' anche da spenta, trasparente: senza, la
+                 linguetta aperta sarebbe due pixel piu' larga delle altre e
+                 tutte quelle a destra scatterebbero di lato a ogni cambio di
+                 spazio. */
+              className={`group relative mt-2 flex h-[calc(100%-0.5rem)] shrink-0 items-center justify-center rounded-t-xl border border-b-0 px-2.5 pb-2 transition-colors ${
+                attivo
+                  ? 'linguetta-tab border-bordo bg-fondo'
+                  : 'border-transparent hover:bg-fondo/50'
               }`}
             >
               <span

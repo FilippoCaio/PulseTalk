@@ -1559,6 +1559,7 @@ export default function App(): React.JSX.Element {
         <LinguettaColonne
           ritirate={colonneRitirate}
           alterna={alternaColonne}
+          agganciata={!colonneRitirate}
           className="linguetta-colonne absolute top-1/2 z-30 -translate-y-1/2"
           style={{ left: colonneRitirate || !dueColonne ? 0 : '15rem' }}
         />
