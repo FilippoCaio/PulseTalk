@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { ConnectionState } from 'livekit-client'
 import type { Impostazioni } from '@shared/tipi'
 import ControlliAudio from '../ControlliAudio'
+import { scriviTempoInsieme } from '../lib/usaTempoInsieme'
 import {
   Altoparlante,
   Camera,
@@ -9,7 +10,6 @@ import {
   Cuffie,
   CuffieSpente,
   Esci,
-  Ingranaggio,
   Microfono,
   MicrofonoSpento,
   SchermoCondividi
@@ -39,6 +39,7 @@ import {
  */
 export default function PannelloVoce({
   canale,
+  secondiInChiamata,
   spazio,
   stato,
   latenza,
@@ -58,6 +59,8 @@ export default function PannelloVoce({
   apriImpostazioni
 }: {
   canale: string
+  /** Da quanti secondi si e' in questa chiamata. Nullo finche' non si sa. */
+  secondiInChiamata: number | null
   /**
    * Dove sta quel canale: il nome dello spazio, o "Messaggi diretti".
    *
@@ -119,7 +122,7 @@ export default function PannelloVoce({
             fino a riempire la riga e spingeva il numero fuori dalla vista del
             nome. Adesso e' largo quanto il testo che porta, si stringe se il
             nome e' lungo, e lo spazio che avanza sta dopo. */}
-        <div className="flex min-w-0 flex-1 basis-24 items-center gap-1">
+        <div className="flex min-w-0 flex-1 basis-24 items-start gap-1">
           <button
             onClick={torna}
             disabled={guardando}
@@ -133,13 +136,34 @@ export default function PannelloVoce({
             </span>
           </button>
 
-          <Latenza
-            valore={latenza}
-            collegando={collegando}
-            statistiche={impostazioni.mostraStatistiche}
-            alterna={() => salva({ mostraStatistiche: !impostazioni.mostraStatistiche })}
-          />
+          {/* I millisecondi in cima, allineati al nome del canale, e sotto da
+              quanto si e' in chiamata.
 
+              Prima la latenza era centrata sulla riga, cioe' a meta' fra le due
+              righe del nome: un numero che galleggia fra due testi sembra
+              appartenere a tutti e due e a nessuno. In cima e' alla stessa
+              altezza del nome del canale, e si legge come una cosa **di quel
+              canale li'**.
+
+              Il cronometro sotto risponde all'altra domanda che ci si fa
+              guardando quel riquadro mentre si sta leggendo altrove: non «come
+              va la linea» ma «da quanto sono qui». */}
+          <div className="flex shrink-0 flex-col items-end gap-0.5">
+            <Latenza
+              valore={latenza}
+              collegando={collegando}
+              statistiche={impostazioni.mostraStatistiche}
+              alterna={() => salva({ mostraStatistiche: !impostazioni.mostraStatistiche })}
+            />
+            {secondiInChiamata !== null && (
+              <span
+                className="numeri px-1 text-[10px] leading-tight text-testo-3"
+                title="Da quanto sei in questa chiamata"
+              >
+                {scriviTempoInsieme(secondiInChiamata)}
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Quadrato, come tutti gli altri comandi.
@@ -267,9 +291,6 @@ export default function PannelloVoce({
             <SchermoCondividi />
           </Scatola>
 
-          <Scatola titolo="Impostazioni" premi={apriImpostazioni}>
-            <Ingranaggio />
-          </Scatola>
         </div>
       </div>
     </div>

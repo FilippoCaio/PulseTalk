@@ -78,6 +78,54 @@ export function usaTempoInsieme(stanza: Room | null): number | null {
 }
 
 /**
+ * Da quanto ci sono **io**, in questa chiamata.
+ *
+ * L'altro cronometro dice l'eta' della conversazione - da quando e' entrato il
+ * primo - e serve a chi arriva a capire in cosa sta entrando. Questo dice il
+ * proprio tempo, ed e' un'altra domanda: quanto sono stato al telefono. Le due
+ * risposte non coincidono quasi mai, e la seconda e' quella che si guarda
+ * mentre si e' altrove con la testa.
+ *
+ * Stessa sorgente e stessa avvertenza sugli orologi dell'altro: `joinedAt` lo
+ * mette il server, il confronto e' con l'ora di questo computer.
+ */
+export function usaTempoInChiamata(stanza: Room | null): number | null {
+  const [da, setDa] = useState<number | null>(null)
+  const [secondi, setSecondi] = useState(0)
+
+  useEffect(() => {
+    if (!stanza) {
+      setDa(null)
+      return
+    }
+
+    const rileggi = (): void => {
+      const mio = stanza.localParticipant.joinedAt?.getTime()
+      setDa(typeof mio === 'number' && mio > 0 ? mio : null)
+    }
+
+    rileggi()
+    stanza.on(RoomEvent.Connected, rileggi).on(RoomEvent.Reconnected, rileggi)
+    return () => {
+      stanza.off(RoomEvent.Connected, rileggi).off(RoomEvent.Reconnected, rileggi)
+    }
+  }, [stanza])
+
+  useEffect(() => {
+    if (da == null) {
+      setSecondi(0)
+      return
+    }
+    const aggiorna = (): void => setSecondi(Math.max(0, Math.floor((Date.now() - da) / 1000)))
+    aggiorna()
+    const passo = window.setInterval(aggiorna, 1000)
+    return () => window.clearInterval(passo)
+  }, [da])
+
+  return da == null ? null : secondi
+}
+
+/**
  * Il cronometro scritto come lo si legge a colpo d'occhio.
  *
  * Sotto l'ora due cifre e due punti, sopra tre gruppi: `07:12` e `1:04:39`.

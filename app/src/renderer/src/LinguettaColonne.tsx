@@ -53,7 +53,19 @@ export function LinguettaColonne({
       title={cosaFa}
       aria-label={cosaFa}
       aria-expanded={!ritirate}
-      className={`hidden h-16 w-5 items-center justify-center rounded-r-lg border border-l-0 border-bordo bg-fondo-2 text-testo-3 opacity-70 backdrop-blur hover:bg-fondo-3 hover:text-testo hover:opacity-100 md:flex ${
+      /* Nessuna opacita', nessuna sfocatura, e nessun cambio di fondo sotto al
+         cursore: il fondo dev'essere **lo stesso** del pannello a cui e'
+         attaccata, e i tre difetti erano tutti li'.
+
+         L'opacita' al 70% la faceva un'altra tinta - il colore della colonna
+         mescolato a cio' che aveva dietro - mentre i raccordi ai fianchi sono
+         dipinti pieni: la linguetta si staccava dalla colonna proprio nel punto
+         in cui doveva esserne la continuazione. E il fondo che si schiariva
+         passandoci sopra disegnava dentro un rettangolo arrotondato che i
+         raccordi non seguivano, cioe' un secondo bordo dentro al primo.
+
+         Sotto al cursore adesso cambia solo la freccia. */
+      className={`hidden h-16 w-5 items-center justify-center rounded-r-lg border border-l-0 border-bordo bg-fondo-2 text-testo-3 hover:text-testo md:flex ${
         agganciata ? 'linguetta-agganciata' : ''
       } ${className}`}
       style={style}

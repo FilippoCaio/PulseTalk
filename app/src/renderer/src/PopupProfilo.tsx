@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import type { StatoUtente, Utente } from '@shared/tipi'
 import { coloreDi, inizialiDi } from './lib/avatar'
-import { Ingranaggio, Persona, Utenti } from './icone'
+import { Persona, Utenti } from './icone'
 
 /**
  * Il colore del pallino di stato, e come si chiama a parole.
@@ -73,14 +73,12 @@ export default function PopupProfilo({
   utente,
   cambiaStato,
   apriAmici,
-  apriImpostazioni,
   apriProfilo,
   chiudi
 }: {
   utente: Utente
   cambiaStato: (stato: StatoUtente) => void
   apriAmici: () => void
-  apriImpostazioni: () => void
   apriProfilo: () => void
   chiudi: () => void
 }): React.JSX.Element {
@@ -169,8 +167,12 @@ export default function PopupProfilo({
 
       <div className="mt-2 border-t border-bordo pt-2">
         <Voce icona={<Utenti />} testo="Amici" fai={apriAmici} chiudi={chiudi} />
+        {/* Niente «Impostazioni» qui: l'ingranaggio sta due centimetri piu' in
+            la' nella stessa riga, e una voce che ripete un pulsante visibile
+            allunga l'elenco senza aggiungere una strada. «Il tuo profilo»
+            resta perche' porta a una pagina precisa dentro alle impostazioni,
+            non alle impostazioni. */}
         <Voce icona={<Persona />} testo="Il tuo profilo" fai={apriProfilo} chiudi={chiudi} />
-        <Voce icona={<Ingranaggio />} testo="Impostazioni" fai={apriImpostazioni} chiudi={chiudi} />
       </div>
     </div>
   )

@@ -624,6 +624,19 @@ textarea {
   );
 }
 
+/*
+ * La prima linguetta non ha il raccordo a sinistra.
+ *
+ * A sinistra non c'e' niente da raccordare: il suo fianco comincia dove
+ * finisce la colonna dei canali, e scendendo diventa la riga che divide quella
+ * colonna dalla chiamata. Un raccordo li' curverebbe verso una barra che da
+ * quella parte non esiste, e staccherebbe la linguetta dalla riga proprio nel
+ * punto in cui le due sono la stessa linea.
+ */
+.linguetta-tab-prima::before {
+  display: none;
+}
+
 .linguetta-tab::after {
   right: -10px;
   background: radial-gradient(

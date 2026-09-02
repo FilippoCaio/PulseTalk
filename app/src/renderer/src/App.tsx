@@ -20,6 +20,7 @@ import { Api } from './lib/api'
 import { usaChat } from './lib/usaChat'
 import { usaMondo } from './lib/usaMondo'
 import { usaSessione } from './lib/usaSessione'
+import { usaTempoInChiamata } from './lib/usaTempoInsieme'
 import { usaDiretti } from './lib/usaDiretti'
 import { usaSessioniMedia } from './lib/usaSessioniMedia'
 import { suona } from './lib/suoni'
@@ -164,6 +165,14 @@ export default function App(): React.JSX.Element {
   const [cambioVocale, setCambioVocale] = useState<Canale | null>(null)
 
   const sessione = usaSessione(impostazioni ?? ({} as Impostazioni))
+  /**
+   * Da quanto si e' in chiamata, per il pannello in fondo alla colonna.
+   *
+   * Vive qui e non dentro al pannello perche' il pannello va e viene - c'e'
+   * solo mentre si guarda altrove - e un cronometro che si smonta ricomincia
+   * da capo ogni volta che si torna a leggere un canale.
+   */
+  const secondiInChiamata = usaTempoInChiamata(sessione.stanza)
 
 
   useEffect(() => {
@@ -1442,6 +1451,10 @@ export default function App(): React.JSX.Element {
         apriAmici={() => setMostraAmici(true)}
         richieste={amicizie?.ricevute.length ?? 0}
         apriProfilo={() => setMostraProfilo(true)}
+        apriImpostazioni={() => {
+          setSezioneImpostazioni(null)
+          setMostraImpostazioni(true)
+        }}
         apriDiretti={() => {
           setVista('diretti')
           setMenuSpazioAperto(false)
@@ -1479,7 +1492,15 @@ export default function App(): React.JSX.Element {
           di stringersi, e non e' una scelta di gusto — dentro ha una tendina
           che si apre verso l'alto, e un contenitore che taglia cio' che esce
           (`overflow: hidden`) la mozzerebbe a meta' ogni volta. */}
-      {inVoce && utente && (
+      {/* Solo mentre si guarda altrove.
+
+          Dentro alla chiamata questi comandi ci sono gia', in fondo alla sala e
+          piu' grandi: due file di pulsanti per le stesse cose, a dieci
+          centimetri l'una dall'altra, sono due file da tenere d'accordo e una
+          da premere per sbaglio. Questo pannello serve quando la chiamata non
+          si vede - si sta leggendo un canale, si e' passati a un altro server -
+          ed e' esattamente li' che compare. */}
+      {inVoce && utente && !guardaLaChiamata && (
         <div
           className={`pannello-scorrevole absolute bottom-0 left-0 z-20 ${
             navigazioneMobileAperta ? 'block' : 'hidden md:block'
@@ -1488,6 +1509,7 @@ export default function App(): React.JSX.Element {
         >
           <PannelloVoce
             canale={ingresso!.canale.nome}
+            secondiInChiamata={secondiInChiamata}
             spazio={spazioDellaChiamata}
             stato={sessione.stato}
             latenza={sessione.latenza}
@@ -1572,10 +1594,6 @@ export default function App(): React.JSX.Element {
             void api.profilo({ stato }).then((r) => setUtente(r.utente))
           }}
           apriAmici={() => setMostraAmici(true)}
-          apriImpostazioni={() => {
-            setSezioneImpostazioni(null)
-            setMostraImpostazioni(true)
-          }}
           apriProfilo={() => {
             setSezioneImpostazioni('profilo')
             setMostraImpostazioni(true)

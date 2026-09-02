@@ -4,7 +4,7 @@ import { coloreDi, inizialiDi } from '../lib/avatar'
 import { PallinoStato } from '../PopupProfilo'
 import OverlaySpazio from './OverlaySpazio'
 import { Bottone, Campo, classiInput } from '../ui'
-import { Fumetto, Piu, Utenti } from '../icone'
+import { Fumetto, Ingranaggio, Piu, Utenti } from '../icone'
 
 /**
  * Quanto sono smussati i quadrati dei server, a riposo e da scelti.
@@ -99,6 +99,7 @@ export default function BarraSpazi({
   richieste,
   apriProfilo,
   apriDiretti,
+  apriImpostazioni,
   direttiAperti = false,
   direttiNonLetti = 0,
   inVoce = null,
@@ -118,6 +119,15 @@ export default function BarraSpazi({
   apriProfilo: () => void
   /** Apre la sezione dei messaggi diretti. */
   apriDiretti: () => void
+  /**
+   * Apre le impostazioni.
+   *
+   * Sta qui e non piu' in fondo alla colonna della chiamata: quel pannello
+   * compare solo mentre si e' in chiamata e si sta guardando altrove, e le
+   * impostazioni si aprono anche - soprattutto - quando non si sta parlando
+   * con nessuno.
+   */
+  apriImpostazioni: () => void
   direttiAperti?: boolean
   /** Quanti messaggi diretti aspettano una risposta. */
   direttiNonLetti?: number
@@ -266,9 +276,26 @@ export default function BarraSpazi({
             </span>
           )}
         </button>
+
+        {/* Le impostazioni, dopo i diretti e non in fondo alla chiamata: sono
+            la cosa che si apre anche - e soprattutto - quando non si sta
+            parlando con nessuno, e il pannello in cui stavano prima compare
+            solo mentre una chiamata e' in corso. */}
+        <button
+          onClick={apriImpostazioni}
+          title="Impostazioni"
+          aria-label="Impostazioni"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-fondo text-testo-2 transition-colors hover:bg-fondo-3 hover:text-testo"
+        >
+          <Ingranaggio className="h-5 w-5" />
+        </button>
       </div>
 
-      <span className="-ml-px h-8 w-px shrink-0 bg-bordo" />
+      {/* Fra il gruppo di sinistra e gli spazi non c'e' nessun separatore, ed
+          e' voluto: la prima linguetta comincia esattamente dove finisce la
+          colonna qui sotto, e il suo fianco sinistro **e'** la riga che divide
+          i due pannelli. Un separatore li' in mezzo sarebbe una seconda riga
+          verticale a un pixel dalla prima. */}
 
       {/* Gli spazi, e sono linguette.
 
@@ -282,8 +309,8 @@ export default function BarraSpazi({
           Funziona perche' sotto agli spazi comincia esattamente la schermata
           della chiamata, che e' di quel colore: e' la stessa geometria del
           separatore qui sopra, guardata dall'altro lato. */}
-      <div className="flex h-full min-w-0 flex-1 items-stretch gap-1 overflow-x-auto px-2">
-        {spazi.map((spazio) => {
+      <div className="barra-spazi flex h-full min-w-0 flex-1 items-stretch gap-1 overflow-x-auto pr-2">
+        {spazi.map((spazio, indice) => {
           const daLeggere = spazio.canali.reduce((somma, c) => somma + c.nonLetti, 0)
           const attivo = spazio.id === aperto
           // Il vocale di questa barra e' quello in cui si sta parlando adesso,
@@ -315,12 +342,18 @@ export default function BarraSpazi({
                  spazio. */
               className={`group relative mt-2 flex h-[calc(100%-0.5rem)] shrink-0 items-center justify-center rounded-t-xl border border-b-0 px-2.5 pb-2 transition-colors ${
                 attivo
-                  ? 'linguetta-tab border-bordo bg-fondo'
+                  ? `linguetta-tab border-bordo bg-fondo ${
+                      // La prima non ha il raccordo a sinistra: li' non c'e'
+                      // niente da raccordare. Il suo fianco scende dritto e
+                      // diventa la riga che divide la colonna dalla chiamata,
+                      // che e' esattamente sotto di lui.
+                      indice === 0 ? 'linguetta-tab-prima' : ''
+                    }`
                   : 'border-transparent hover:bg-fondo/50'
               }`}
             >
               <span
-                className={`flex h-10 w-10 items-center justify-center text-base font-semibold transition-all ${
+                className={`relative flex h-10 w-10 items-center justify-center text-base font-semibold transition-all ${
                   attivo ? RAGGIO_SCELTO : RAGGIO_RIPOSO
                 }`}
                 style={{
@@ -331,6 +364,29 @@ export default function BarraSpazi({
                 }}
               >
                 {spazio.icona || inizialiDi(spazio.nome)}
+
+                {/* L'anello verde di chi sta parlando in quello spazio, dentro
+                    all'icona e non centrato sul pulsante.
+
+                    Il pulsante ha l'imbottitura in basso che tiene le icone in
+                    fila con quelle fuori dalle linguette, quindi il suo centro
+                    non e' il centro dell'icona: l'anello, appeso al pulsante,
+                    finiva quattro pixel piu' in basso - alto uguale e largo
+                    uguale, ma sfalsato. Appeso all'icona non puo' piu' non
+                    combaciare.
+
+                    Il raggio e' lo stesso dell'icona, dalle stesse due
+                    costanti: l'icona cambia forma da sola - smussata a riposo,
+                    quasi quadra da aperta - e un anello che non la seguiva
+                    restava squadrato intorno a un quadrato con gli angoli
+                    tondi. */}
+                {vocale && (
+                  <span
+                    className={`pointer-events-none absolute inset-0 border-2 border-ok transition-all ${
+                      attivo ? RAGGIO_SCELTO : RAGGIO_RIPOSO
+                    }`}
+                  />
+                )}
               </span>
 
               {/* Da leggere: un punto sull'angolo, come i messaggi diretti.
@@ -351,14 +407,6 @@ export default function BarraSpazi({
                   sola — smussata a riposo, quasi quadra da aperta o sotto al
                   cursore — e un anello che non la seguiva restava squadrato
                   intorno a un quadrato con gli angoli tondi. */}
-              {vocale && (
-                <span
-                  className={`pointer-events-none absolute top-1/2 left-1/2 h-10 w-10 -translate-x-1/2 -translate-y-1/2 border-2 border-ok transition-all ${
-                    attivo ? RAGGIO_SCELTO : RAGGIO_RIPOSO
-                  }`}
-                />
-              )}
-
               {sopra?.id === spazio.id && (
                 <OverlaySpazio
                   spazio={spazio}
