@@ -1,137 +1,114 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import type { Room } from 'livekit-client'
+import { useEffect, useMemo, useState } from 'react'
 import { catturaLaChiamata } from '../lib/catturaChiamata'
-import { usaRegistrazione, type Bersaglio } from '../lib/usaRegistrazione'
+import type { Bersaglio, Registratore } from '../lib/usaRegistrazione'
 import type { Riquadro } from '../lib/usaSessione'
 import { ponte } from '../ponte'
-import { Giu, SchermoCondividi, Utenti } from '../icone'
+import { SchermoCondividi, Utenti } from '../icone'
 import { Pallino } from '../ui'
 
 /**
- * La barra della registrazione, in cima alla sala.
+ * La registrazione, in due pezzi che stanno in due posti diversi.
  *
- * Un componente solo per tre stati diversi, e sta in alto e non fra i comandi
- * che vanno e vengono col cursore. E' la regola che tiene in piedi tutto il
- * resto: **se si sta registrando dev'essere impossibile non accorgersene**. Un
- * indicatore che si nasconde dopo tre secondi come gli altri comandi sarebbe
- * un indicatore che non c'e'.
+ * `BarraRegistrazione` e' la barra rossa, e sta in cima alla sala **sempre**,
+ * fuori dai comandi che vanno e vengono col cursore. E' la regola che tiene in
+ * piedi tutto il resto: se si sta registrando dev'essere impossibile non
+ * accorgersene. Un indicatore che si nasconde dopo tre secondi come gli altri
+ * comandi sarebbe un indicatore che non c'e'.
  *
- * I tre stati:
+ * Il **tasto** invece sta fra i comandi della chiamata, accanto a microfono,
+ * camera e condivisione, e con loro compare e sparisce: e' un comando come
+ * quelli, si preme una volta e per il resto del tempo non serve piu' a niente.
+ * Prima era un pulsantino sospeso in alto al centro, sempre acceso sopra ai
+ * riquadri: occupava per tutta la chiamata il posto piu' visibile della
+ * finestra per una cosa che si fa una volta ogni tanto.
  *
- *   nessuno registra   un pulsante discreto, con accanto la freccetta di cosa
- *                      registrare quando c'e' piu' di una risposta;
- *   registra un altro  una barra rossa con dentro la domanda che conta —
- *                      la tua voce c'e' o non c'e', e come cambiarlo;
- *   registro io        la stessa barra, con il cronometro e lo stop.
- *
- * Il pezzo che vale la pena difendere e' la frase del secondo stato. Dice
- * *chi* registra e con quale nome, dice che il file finisce sul computer di
- * quella persona e non sul server, e dice che togliere il consenso vale da qui
- * in avanti e non all'indietro. Sono tre cose che l'utente non puo' dedurre e
- * che cambiano la risposta che darebbe.
- *
- * ## Il pulsante c'e' sempre, la freccetta quando serve
- *
- * Prima il pulsante compariva solo con una condivisione in corso, e registrava
- * quella: senza schermi non c'era niente da registrare. Adesso si puo'
- * registrare anche la chiamata cosi' com'e' — la finestra, con i riquadri e i
- * nomi — e quindi qualcosa da registrare c'e' sempre.
- *
- * Le due cose stanno in un pulsante solo e non in due: quello grande fa la
- * risposta piu' probabile, la freccetta apre le altre. Due pulsanti affiancati
- * avrebbero chiesto a tutti, ogni volta, una scelta che nella maggior parte
- * delle chiamate ha una risposta sola.
+ * Da qui escono i pezzi che servono a montarlo di la' — l'elenco di cosa si
+ * puo' registrare, cosa succede premendo, e il pannello della scelta - invece
+ * del pulsante gia' fatto: la forma dei tasti di quella barra e' roba sua, e
+ * un pulsante costruito qui sarebbe stato l'unico diverso dagli altri.
  */
-export default function Registrazione({
-  stanza,
-  riquadri,
-  nomeCanale
-}: {
-  stanza: Room | null
-  /** Servono a sapere quali condivisioni si possono registrare, e di chi sono. */
+
+/** Una cosa che si puo' registrare: la chiamata intera, o una condivisione. */
+export interface CosaRegistrare {
+  id: string
+  nome: string
+  sotto: string
+  icona: React.JSX.Element
+  /** Prepara l'immagine da registrare. Nulla se nel frattempo e' sparita. */
+  prepara: () => Promise<Bersaglio | null>
+}
+
+/**
+ * Cosa si puo' registrare adesso.
+ *
+ * La chiamata sta in cima perche' e' l'unica voce che c'e' sempre, ed e' quella
+ * che il tasto fa senza aprire niente. Nel browser non c'e': una pagina non
+ * puo' guardare se stessa senza chiedere all'utente di scegliersi a mano la
+ * scheda giusta nella finestra di Chrome, e li' si registra una condivisione e
+ * basta.
+ */
+export function coseDaRegistrare(riquadri: Riquadro[]): CosaRegistrare[] {
+  const elenco: CosaRegistrare[] = []
+
+  if (ponte.elettrone) {
+    elenco.push({
+      id: 'chiamata',
+      nome: 'Tutta la chiamata',
+      sotto: "La finestra di PulseTalk com'e' adesso: i riquadri, i nomi, e chi ha la camera accesa.",
+      icona: <Utenti className="h-4 w-4" />,
+      prepara: async () => {
+        const stream = await catturaLaChiamata()
+        const video = stream.getVideoTracks()[0]
+        if (!video) return null
+        return { cosa: 'chiamata', nome: 'la chiamata', video, nostra: true, contenutoDi: null }
+      }
+    })
+  }
+
+  for (const r of riquadri.filter((q) => q.tipo === 'schermo' && q.traccia && !q.bloccato)) {
+    elenco.push({
+      id: r.id,
+      nome: r.etichetta ? `${r.nome} — ${r.etichetta}` : r.nome,
+      sotto: "Solo cio' che sta mostrando, con il suo audio: nessun riquadro, nessuna faccia.",
+      icona: <SchermoCondividi className="h-4 w-4" />,
+      prepara: async () => {
+        const video = r.traccia?.mediaStreamTrack
+        if (!video) return null
+        return {
+          cosa: 'schermo',
+          nome: `lo schermo di ${r.nome}`,
+          video,
+          nostra: false,
+          contenutoDi: r.identita
+        }
+      }
+    })
+  }
+
+  return elenco
+}
+
+/**
+ * Il comando pronto da appendere alla barra: cosa c'e', e cosa fa premerlo.
+ *
+ * Un hook e non tre pezzi sparsi perche' i tre stati che si porta dietro -
+ * l'attesa della cattura, l'errore, e l'elenco - vivono insieme e si spengono
+ * insieme. Chi lo usa deve solo decidere dove disegnarli.
+ */
+export function usaComandoRegistrazione(
+  /** Nullo dove la registrazione non c'e': l'hook gira lo stesso e non fa niente. */
+  registratore: Registratore | null,
   riquadri: Riquadro[]
-  nomeCanale: string
-}): React.JSX.Element | null {
-  const registratore = usaRegistrazione(stanza, nomeCanale)
-
-  const [menu, setMenu] = useState(false)
-  const [errore, setErrore] = useState<string | null>(null)
-  /** Fra il clic e i primi fotogrammi: la cattura della finestra e' asincrona. */
+): {
+  voci: CosaRegistrare[]
+  parti: (voce: CosaRegistrare) => Promise<void>
+  inArrivo: boolean
+  errore: string | null
+} {
   const [inArrivo, setInArrivo] = useState(false)
-  const scatola = useRef<HTMLDivElement>(null)
+  const [errore, setErrore] = useState<string | null>(null)
 
-  /** Le condivisioni che stanno davvero arrivando: le altre non hanno pixel. */
-  const condivisioni = useMemo(
-    () => riquadri.filter((r) => r.tipo === 'schermo' && r.traccia && !r.bloccato),
-    [riquadri]
-  )
-
-  /**
-   * Cosa si puo' registrare, nell'ordine in cui lo si sceglie.
-   *
-   * La chiamata sta in cima perche' e' l'unica voce che c'e' sempre, ed e'
-   * quella che il pulsante grande fa senza aprire niente. Nel browser non c'e':
-   * una pagina non puo' guardare se stessa senza chiedere all'utente di
-   * scegliersi a mano la scheda giusta nella finestra di Chrome, e li' si
-   * registra una condivisione e basta.
-   */
-  const voci = useMemo(() => {
-    const elenco: {
-      id: string
-      nome: string
-      sotto: string
-      icona: React.JSX.Element
-      prepara: () => Promise<Bersaglio | null>
-    }[] = []
-
-    if (ponte.elettrone) {
-      elenco.push({
-        id: 'chiamata',
-        nome: 'Tutta la chiamata',
-        sotto: 'La finestra di PulseTalk com\'e\' adesso: i riquadri, i nomi, e chi ha la camera accesa.',
-        icona: <Utenti className="h-4 w-4" />,
-        prepara: async () => {
-          const stream = await catturaLaChiamata()
-          const video = stream.getVideoTracks()[0]
-          if (!video) return null
-          return { cosa: 'chiamata', nome: 'la chiamata', video, nostra: true, contenutoDi: null }
-        }
-      })
-    }
-
-    for (const r of condivisioni) {
-      elenco.push({
-        id: r.id,
-        nome: r.etichetta ? `${r.nome} — ${r.etichetta}` : r.nome,
-        sotto: 'Solo cio\' che sta mostrando, con il suo audio: nessun riquadro, nessuna faccia.',
-        icona: <SchermoCondividi className="h-4 w-4" />,
-        prepara: async () => {
-          const video = r.traccia?.mediaStreamTrack
-          if (!video) return null
-          return {
-            cosa: 'schermo',
-            nome: `lo schermo di ${r.nome}`,
-            video,
-            nostra: false,
-            contenutoDi: r.identita
-          }
-        }
-      })
-    }
-
-    return elenco
-  }, [condivisioni])
-
-  // Il menu si chiude cliccando fuori. Il pulsante che lo apre sta dentro alla
-  // scatola, quindi il clic che lo apre non e' anche quello che lo richiude.
-  useEffect(() => {
-    if (!menu) return
-    const fuori = (e: MouseEvent): void => {
-      if (!scatola.current?.contains(e.target as Node)) setMenu(false)
-    }
-    window.addEventListener('mousedown', fuori)
-    return () => window.removeEventListener('mousedown', fuori)
-  }, [menu])
+  const voci = useMemo(() => coseDaRegistrare(riquadri), [riquadri])
 
   // Un errore che resta li' per sempre diventa parte dell'arredamento.
   useEffect(() => {
@@ -140,11 +117,8 @@ export default function Registrazione({
     return () => window.clearTimeout(via)
   }, [errore])
 
-  const altri = registratore.mia ? [] : registratore.registrano
-  const qualcunoRegistra = !!registratore.mia || altri.length > 0
-
-  async function parti(voce: (typeof voci)[number]): Promise<void> {
-    setMenu(false)
+  const parti = async (voce: CosaRegistrare): Promise<void> => {
+    if (!registratore) return
     setErrore(null)
     setInArrivo(true)
     try {
@@ -152,85 +126,73 @@ export default function Registrazione({
       if (bersaglio) registratore.avvia(bersaglio)
       else setErrore('Quella sorgente non sta mandando niente da registrare.')
     } catch (e) {
-      setErrore(e instanceof Error ? e.message : 'La registrazione non e\' partita.')
+      setErrore(e instanceof Error ? e.message : "La registrazione non e' partita.")
     } finally {
       setInArrivo(false)
     }
   }
 
-  // Niente da registrare e nessuno che registra: non c'e' niente da dire.
-  if (!qualcunoRegistra && (voci.length === 0 || !registratore.possibile)) return null
+  return { voci, parti, inArrivo, errore }
+}
 
-  if (!qualcunoRegistra) {
-    const primo = voci[0]
-    const conFreccetta = voci.length > 1
+/** Il pannello che si apre dalla freccetta: cosa registrare, fra quelle che ci sono. */
+export function MenuRegistrazione({
+  voci,
+  scegli,
+  errore
+}: {
+  voci: CosaRegistrare[]
+  scegli: (voce: CosaRegistrare) => void
+  errore: string | null
+}): React.JSX.Element {
+  return (
+    <div className="w-[min(20rem,calc(100vw-1rem))] space-y-1 rounded-xl border border-bordo bg-fondo-2 p-1.5 shadow-xl shadow-black/40">
+      <span className="mb-1 block px-1.5 pt-1 text-[11px] tracking-wide text-testo-3 uppercase">
+        Cosa registrare
+      </span>
 
-    return (
-      <div className="pointer-events-none flex flex-col items-center gap-1.5">
-        <div ref={scatola} className="pointer-events-auto relative">
-          <div className="flex items-center rounded-full border border-bordo bg-fondo-2/90 text-xs text-testo-2 backdrop-blur transition-colors hover:border-male/50">
-            <button
-              onClick={() => void parti(primo)}
-              disabled={inArrivo}
-              title={
-                primo.id === 'chiamata'
-                  ? 'Registra la chiamata con le voci di chi acconsente'
-                  : 'Registra questa condivisione con le voci di chi acconsente'
-              }
-              className={`flex items-center gap-2 py-1.5 transition-colors hover:text-testo disabled:opacity-60 ${
-                conFreccetta ? 'rounded-l-full pl-3 pr-2.5' : 'rounded-full px-3'
-              }`}
-            >
-              <span className="h-2.5 w-2.5 rounded-full border-2 border-male" />
-              {inArrivo ? 'Preparo…' : 'Registra'}
-            </button>
+      {voci.map((v) => (
+        <button
+          key={v.id}
+          onClick={() => scegli(v)}
+          className="flex w-full items-start gap-2 rounded-lg px-2 py-2 text-left transition-colors hover:bg-fondo-3/60"
+        >
+          <span className="mt-0.5 shrink-0 text-testo-3">{v.icona}</span>
+          <span className="min-w-0">
+            <span className="block truncate text-sm text-testo">{v.nome}</span>
+            <span className="block text-[11px] leading-snug text-testo-3">{v.sotto}</span>
+          </span>
+        </button>
+      ))}
 
-            {conFreccetta && (
-              <>
-                <span className="h-4 w-px bg-bordo" />
-                <button
-                  onClick={() => setMenu((v) => !v)}
-                  title="Scegli cosa registrare"
-                  aria-label="Scegli cosa registrare"
-                  aria-expanded={menu}
-                  className="rounded-r-full py-1.5 pl-1.5 pr-2.5 transition-colors hover:text-testo"
-                >
-                  <Giu className={`h-3.5 w-3.5 transition-transform ${menu ? 'rotate-180' : ''}`} />
-                </button>
-              </>
-            )}
-          </div>
+      {errore && <p className="px-2 pb-1 text-[11px] text-male">{errore}</p>}
+    </div>
+  )
+}
 
-          {/* Verso il basso, al contrario delle tendine del selettore delle
-              sorgenti: questo pulsante vive in cima alla sala, e lo spazio ce
-              l'ha tutto sotto. */}
-          {menu && (
-            <div className="absolute top-full left-1/2 z-20 mt-1.5 w-80 -translate-x-1/2 rounded-xl border border-bordo bg-fondo-2 p-1 shadow-xl shadow-black/50">
-              {voci.map((v) => (
-                <button
-                  key={v.id}
-                  onClick={() => void parti(v)}
-                  className="flex w-full items-start gap-2 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-fondo-3/60"
-                >
-                  <span className="mt-0.5 shrink-0 text-testo-3">{v.icona}</span>
-                  <span className="min-w-0">
-                    <span className="block truncate text-sm text-testo">{v.nome}</span>
-                    <span className="block text-[11px] leading-snug text-testo-3">{v.sotto}</span>
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+/**
+ * La barra rossa: qualcuno sta registrando, e non si puo' non vederlo.
+ *
+ * Tre stati diventati due, da quando il tasto se n'e' andato fra i comandi:
+ *
+ *   registra un altro  la barra con dentro la domanda che conta — la tua voce
+ *                      c'e' o non c'e', e come cambiarlo;
+ *   registro io        la stessa barra, con il cronometro e lo stop.
+ *
+ * Il pezzo che vale la pena difendere e' la frase del primo. Dice *chi*
+ * registra e con quale nome, dice che il file finisce sul computer di quella
+ * persona e non sul server, e dice che togliere il consenso vale da qui in
+ * avanti e non all'indietro. Sono tre cose che l'utente non puo' dedurre e che
+ * cambiano la risposta che darebbe.
+ */
+export default function BarraRegistrazione({
+  registratore
+}: {
+  registratore: Registratore
+}): React.JSX.Element | null {
+  const altri = registratore.mia ? [] : registratore.registrano
 
-        {errore && (
-          <p className="pointer-events-none max-w-sm rounded-lg border border-male/40 bg-fondo-2/95 px-2.5 py-1 text-[11px] text-male backdrop-blur">
-            {errore}
-          </p>
-        )}
-      </div>
-    )
-  }
+  if (!registratore.mia && altri.length === 0) return null
 
   const laChiamata = registratore.mia
     ? registratore.mia.cosa === 'chiamata'

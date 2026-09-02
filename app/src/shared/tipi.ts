@@ -581,6 +581,40 @@ export const MISURE_OVERLAY: Record<DimensioneOverlay, number> = {
   grande: 48
 }
 
+/**
+ * L'anello di chi parla, e quanto spazio si prende attorno alla faccia.
+ *
+ * Tutto in proporzione alla faccia, e non in pixel fissi: un anello da due
+ * pixel attorno a una faccia da 48 e' un filo che non si vede, e lo stesso
+ * anello attorno a una da 28 e' una fascia. Quello che deve restare uguale fra
+ * le tre misure e' il **rapporto**, cioe' quanto l'anello pesa rispetto a cio'
+ * che circonda.
+ *
+ * Sono due anelli concentrici e non uno. Il verde da solo, appoggiato a una
+ * foto profilo, si perde: le foto sono scure sui bordi quasi sempre, e il
+ * verde di sopra ci si appiattisce dentro. Lo stacco scuro fra la faccia e il
+ * verde e' cio' che lo rende un anello invece che un contorno - lo separa da
+ * quello che ha dentro e da quello che ha dietro, che di solito e' uno
+ * schermo pieno di roba.
+ *
+ * Stanno **fuori** dalla faccia e non sopra: dentro avrebbero mangiato un
+ * quinto della foto proprio nel momento in cui si guarda chi sta parlando. Lo
+ * spazio per l'anello e' sempre riservato, anche quando nessuno parla, cosi'
+ * la finestra non cambia misura a ogni sillaba.
+ */
+export function anelloOverlay(lato: number): {
+  /** Lo stacco scuro attaccato alla faccia. */
+  scuro: number
+  /** Il verde, subito fuori. */
+  verde: number
+  /** Quanto sporgono in tutto: e' lo spazio da riservare attorno. */
+  tutto: number
+} {
+  const scuro = Math.max(1, Math.round(lato * 0.055))
+  const verde = Math.max(2, Math.round(lato * 0.1))
+  return { scuro, verde, tutto: scuro + verde }
+}
+
 /** Quando si legge il nome accanto alla faccia. */
 export type NomiOverlay = 'sempre' | 'parlando' | 'mai'
 

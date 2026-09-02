@@ -5,6 +5,17 @@ import { LinguettaColonne } from '../LinguettaColonne'
 import type { AudioCondiviso, AudioRemoto } from '../lib/usaSessione'
 import { scegli, usaDispositivi, vociTendina } from '../lib/usaDispositivi'
 import { scriviTempoInsieme } from '../lib/usaTempoInsieme'
+import type { Registratore } from '../lib/usaRegistrazione'
+import type { Riquadro } from '../lib/usaSessione'
+import { MenuRegistrazione, usaComandoRegistrazione } from './Registrazione'
+
+/**
+ * L'elenco vuoto, uno solo per tutti.
+ *
+ * Un `[]` scritto dentro alla chiamata sarebbe un array nuovo a ogni
+ * ridisegno, e il `useMemo` che ci sta dietro non memorizzerebbe piu' niente.
+ */
+const SENZA_RIQUADRI: Riquadro[] = []
 import {
   Altoparlante,
   AltoparlanteMuto,
@@ -18,6 +29,7 @@ import {
   MicrofonoSpento,
   Sottotitoli,
   Onde,
+  Registra,
   Riavvolgi,
   SchermoCondividi,
   SchermoIntero,
@@ -79,6 +91,7 @@ export default function OverlayChiamata({
   modificaCondivisione,
   smettiDiCondividere,
   riascolta,
+  registrazione,
   salva,
   apriImpostazioni,
   esci
@@ -186,12 +199,23 @@ export default function OverlayChiamata({
   modificaCondivisione: (id: string, soloAudio: boolean) => void
   smettiDiCondividere: (id: string) => void
   riascolta: () => void
+  /**
+   * La registrazione, per il tasto che sta fra i comandi.
+   *
+   * Arriva gia' fatta da fuori e non si costruisce qui: la barra rossa in cima
+   * alla sala e questo tasto devono guardare **la stessa** registrazione, e due
+   * `usaRegistrazione` in due componenti sarebbero stati due registratori
+   * diversi che non sanno l'uno dell'altro.
+   */
+  registrazione?: { registratore: Registratore; riquadri: Riquadro[] }
   salva: (modifiche: Partial<Impostazioni>) => void
   apriImpostazioni: () => void
   esci: () => void
 }): React.JSX.Element {
   const [visibile, setVisibile] = useState(true)
-  const [aperto, setAperto] = useState<'microfono' | 'camera' | 'condivisioni' | 'audio' | null>(
+  const [aperto, setAperto] = useState<
+    'microfono' | 'camera' | 'condivisioni' | 'audio' | 'registra' | null
+  >(
     null
   )
   const scadenza = useRef<number | null>(null)
@@ -296,6 +320,25 @@ export default function OverlayChiamata({
   useEffect(() => {
     if (aperto === 'condivisioni' && schermiAttivi.length === 0) setAperto(null)
   }, [aperto, schermiAttivi.length])
+
+  /**
+   * Cosa si puo' registrare, e cosa succede premendo.
+   *
+   * L'hook gira anche senza `registrazione` - non si possono chiamare hook
+   * dentro a un `if` - e con un registratore che non c'e' non fa niente:
+   * l'elenco resta quello delle condivisioni presenti e nessuno lo guarda.
+   */
+  const comandoRec = usaComandoRegistrazione(
+    registrazione?.registratore ?? null,
+    registrazione?.riquadri ?? SENZA_RIQUADRI
+  )
+
+  // La freccetta apre una scelta: se c'e' una cosa sola da registrare non c'e'
+  // niente da scegliere, e il pannello si chiude da solo invece di restare
+  // aperto e vuoto.
+  useEffect(() => {
+    if (aperto === 'registra' && comandoRec.voci.length < 2) setAperto(null)
+  }, [aperto, comandoRec.voci.length])
 
   // Quanti audio ci sono in giro, e se almeno uno sta davvero suonando: il
   // primo numero va nel cerchietto, il secondo decide se l'icona si muove.
@@ -535,6 +578,16 @@ export default function OverlayChiamata({
             smettiLoro={nonGuardareCondivisione}
           />
         )}
+        {aperto === 'registra' && comandoRec.voci.length > 0 && (
+          <MenuRegistrazione
+            voci={comandoRec.voci}
+            errore={comandoRec.errore}
+            scegli={(voce) => {
+              setAperto(null)
+              void comandoRec.parti(voce)
+            }}
+          />
+        )}
         {aperto === 'condivisioni' && schermiAttivi.length > 0 && (
           <MenuCondivisioni
             schermi={schermiAttivi}
@@ -627,6 +680,42 @@ export default function OverlayChiamata({
                 premi={apriCondivisione}
               >
                 <SchermoCondividi />
+              </Tasto>
+            </ConFreccia>
+          )}
+
+          {/* Registra, accanto alla condivisione perche' parla della stessa
+              cosa: cio' che si sta mostrando e dicendo. Il tasto grande fa la
+              risposta piu' probabile - tutta la chiamata - e la freccetta apre
+              le altre, che ci sono solo quando qualcuno sta condividendo.
+
+              Registrando diventa rosso come «esci»: e' l'unico altro comando
+              della barra che sta facendo qualcosa mentre non lo si guarda. */}
+          {registrazione?.registratore.possibile && comandoRec.voci.length > 0 && (
+            <ConFreccia
+              aperto={aperto === 'registra'}
+              etichetta="Scegli cosa registrare"
+              apri={
+                comandoRec.voci.length > 1 && !registrazione.registratore.mia
+                  ? () => setAperto(aperto === 'registra' ? null : 'registra')
+                  : undefined
+              }
+            >
+              <Tasto
+                tono={registrazione.registratore.mia ? 'male' : 'normale'}
+                titolo={
+                  registrazione.registratore.mia
+                    ? `Ferma e salva: stai registrando ${registrazione.registratore.mia.nome}`
+                    : comandoRec.inArrivo
+                      ? 'Sto preparando la registrazione…'
+                      : `Registra ${comandoRec.voci[0].nome.toLowerCase()}`
+                }
+                premi={() => {
+                  if (registrazione.registratore.mia) registrazione.registratore.ferma()
+                  else void comandoRec.parti(comandoRec.voci[0])
+                }}
+              >
+                <Registra />
               </Tasto>
             </ConFreccia>
           )}

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import {
+  anelloOverlay,
   MISURE_OVERLAY,
   type DimensioneOverlay,
   type Impostazioni,
@@ -245,6 +246,10 @@ function Anteprima({
   utente: Utente
 }): React.JSX.Element {
   const lato = MISURE_OVERLAY[impostazioni.overlayAvatar]
+  // Le stesse misure dell'overlay vero, dalla stessa funzione: un'anteprima
+  // con l'anello di uno spessore diverso direbbe una bugia proprio sulla cosa
+  // che si sta scegliendo.
+  const anello = anelloOverlay(lato)
 
   const tutte = [
     { id: `u${utente.id}`, nome: utente.nome, parla: false, muto: false, avatar: utente.avatar },
@@ -274,7 +279,10 @@ function Anteprima({
           Con queste impostazioni non si vede niente finche&rsquo; qualcuno non parla.
         </p>
       ) : (
-        <div className="flex flex-col items-start gap-1.5">
+        <div
+          className="flex flex-col items-start"
+          style={{ gap: 6 + anello.tutto, padding: anello.tutto }}
+        >
           {inScena.map((f) => {
             const nome =
               impostazioni.overlayNomi === 'sempre' ||
@@ -290,7 +298,9 @@ function Anteprima({
                     fontSize: Math.round(lato * 0.36),
                     background: f.avatar ? '#1a2030' : coloreDi(f.id),
                     boxShadow: f.parla
-                      ? 'inset 0 0 0 2px #3ecf8e, 0 3px 10px rgba(0,0,0,.55), 0 0 0 1px rgba(62,207,142,.35)'
+                      ? `0 0 0 ${anello.scuro}px #0b0e14, 0 0 0 ${
+                          anello.scuro + anello.verde
+                        }px #3ecf8e, 0 3px 10px rgba(0,0,0,.55)`
                       : '0 3px 10px rgba(0,0,0,.55), 0 0 0 1px rgba(0,0,0,.35)'
                   }}
                 >

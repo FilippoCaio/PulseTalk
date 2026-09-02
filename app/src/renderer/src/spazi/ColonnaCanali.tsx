@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
-import type { Canale, Spazio } from '@shared/tipi'
+import type { Canale, Presente, Spazio } from '@shared/tipi'
 import MenuRiquadro from '../sala/MenuRiquadro'
 import { nomeRestrizione } from '../lib/usaRestrizioni'
 import type { PersonaInVoce } from './personaInVoce'
 import { puo } from '@shared/permessi'
 import { coloreDi, inizialiDi } from '../lib/avatar'
+import { scriviTempoInsieme } from '../lib/usaTempoInsieme'
 import { Avviso, Bottone, Campo, classiInput } from '../ui'
 import {
   Altoparlante,
@@ -343,6 +344,15 @@ function RigaCanale({
             )}
           </span>
           <span className="min-w-0 flex-1 truncate">{canale.nome}</span>
+          {/* Da quanto si sta insieme qui dentro.
+
+              Solo sul canale in cui si e', e non su tutti quelli con qualcuno
+              dentro: l'ora d'ingresso ce l'hanno anche gli altri, ma una
+              colonna con cinque cronometri che corrono e' una colonna che si
+              smette di leggere. Qui invece risponde alla domanda che ci si fa
+              davvero - da quanto stiamo parlando - e sta nel punto in cui gia'
+              si guarda per sapere dove si e'. */}
+          {inVoce && <TempoNelCanale presenti={canale.presenti} />}
           {typeof canale.restanoMs === 'number' && Number.isFinite(canale.restanoMs) && (
             <ScadenzaCanale restanoMs={canale.restanoMs} />
           )}
@@ -892,6 +902,50 @@ function DurataCanale({
       </div>
       {valore === 'custom' && <span className="mt-1 block text-xs text-testo-3">Da 1 minuto a 48 ore.</span>}
     </Campo>
+  )
+}
+
+/**
+ * Da quando e' entrato il primo, in verde.
+ *
+ * L'ora d'ingresso di ognuno la mette la SFU e arriva gia' dentro alle
+ * presenze: il piu' piccolo di quei numeri e' l'inizio della conversazione. Non
+ * c'e' niente da salvare da nessuna parte - quando l'ultimo esce, quei numeri
+ * escono con lui, e chi entra dopo trova solo il proprio. Il cronometro si
+ * azzera da solo perche' non resta piu' niente da cui contare.
+ *
+ * Batte ogni secondo perche' sotto il minuto e' li' che si vede muovere; dopo
+ * un'ora la cifra cambia lo stesso una volta al minuto, e nessuno guarda i
+ * secondi di una riunione lunga - ma un cronometro fermo per cinquantanove
+ * secondi appena entrati sembra rotto.
+ */
+function TempoNelCanale({ presenti }: { presenti: Presente[] }): React.JSX.Element | null {
+  const da = presenti.reduce<number | null>(
+    (primo, p) =>
+      typeof p.entrato === 'number' && p.entrato > 0 && (primo === null || p.entrato < primo)
+        ? p.entrato
+        : primo,
+    null
+  )
+
+  const [adesso, setAdesso] = useState(() => Date.now())
+
+  useEffect(() => {
+    if (da === null) return
+    setAdesso(Date.now())
+    const passo = window.setInterval(() => setAdesso(Date.now()), 1000)
+    return () => window.clearInterval(passo)
+  }, [da])
+
+  if (da === null) return null
+
+  return (
+    <span
+      className="numeri shrink-0 text-[10px] text-ok"
+      title="Da quando e' entrato il primo. Si azzera quando il canale resta vuoto."
+    >
+      {scriviTempoInsieme(Math.max(0, Math.floor((adesso - da) / 1000)))}
+    </span>
   )
 }
 

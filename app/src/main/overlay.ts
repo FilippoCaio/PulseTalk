@@ -1,11 +1,10 @@
 import { BrowserWindow, screen } from 'electron'
-import { MISURE_OVERLAY } from '@shared/tipi'
+import { anelloOverlay, MISURE_OVERLAY } from '@shared/tipi'
 import type {
   DimensioneOverlay,
   Impostazioni,
   NomiOverlay,
-  PersonaOverlay,
-  UtentiOverlay
+  PersonaOverlay
 } from '@shared/tipi'
 
 /**
@@ -57,10 +56,10 @@ import type {
  * bisogno di respiro attorno, e sono i pochi pixel di `BORDO`.
  */
 
-/** Lo spazio fra una faccia e l'altra. */
+/** Lo spazio fra una faccia e l'altra, oltre a quello dell'anello. */
 const SPAZIO = 6
 /** Il respiro attorno al contenuto: e' li' che si disegna l'ombra. */
-const BORDO = 10
+const BORDO = 8
 /** Quanto puo' essere lunga la linguetta del nome prima di tagliare. */
 const NOME = 168
 /** Lo stacco dal bordo dello schermo, la prima volta che compare. */
@@ -71,8 +70,20 @@ interface Stato {
   parlano: string[]
   avatar: DimensioneOverlay
   nomi: NomiOverlay
-  utenti: UtentiOverlay
-  massimo: number
+  /**
+   * Le misure, calcolate qui e mandate di la'.
+   *
+   * La pagina potrebbe ricavarsele da sola dalla misura della faccia - la
+   * formula e' una riga - ma allora sarebbero due copie della stessa formula,
+   * una che decide quanto e' grande la finestra e una che decide quanto e'
+   * grande cio' che ci sta dentro. Il giorno in cui divergono, l'anello finisce
+   * tagliato dal bordo e nessuno sa perche'.
+   */
+  lato: number
+  bordo: number
+  spazio: number
+  scuro: number
+  verde: number
 }
 
 let finestra: BrowserWindow | null = null
@@ -117,12 +128,44 @@ function visibili(): PersonaOverlay[] {
   return elenco
 }
 
+/**
+ * Tutte le misure che dipendono dalla faccia, ricavate una volta sola.
+ *
+ * L'anello di chi parla sta fuori dalla faccia, quindi il suo spessore entra
+ * due volte: nel respiro attorno al contenuto - altrimenti il bordo della
+ * finestra lo taglierebbe a meta' - e nella distanza fra una faccia e l'altra,
+ * altrimenti l'anello di chi parla finirebbe addosso a chi sta sotto.
+ *
+ * Lo spazio c'e' sempre, anche quando non parla nessuno: riservarlo solo al
+ * bisogno vorrebbe dire una finestra che cambia misura a ogni sillaba, cioe'
+ * un pannello che pulsa in un angolo dello schermo.
+ */
+function misure(): {
+  lato: number
+  anello: number
+  bordo: number
+  spazio: number
+  scuro: number
+  verde: number
+} {
+  const lato = MISURE_OVERLAY[impostazioni?.overlayAvatar ?? 'grande']
+  const { scuro, verde, tutto } = anelloOverlay(lato)
+  return {
+    lato,
+    anello: tutto,
+    bordo: BORDO + tutto,
+    spazio: SPAZIO + tutto,
+    scuro,
+    verde
+  }
+}
+
 function misuraFinestra(quante: number): { larghezza: number; altezza: number } {
-  const av = MISURE_OVERLAY[impostazioni?.overlayAvatar ?? 'grande']
+  const { lato, bordo, spazio } = misure()
   const conNomi = (impostazioni?.overlayNomi ?? 'sempre') !== 'mai'
   return {
-    larghezza: BORDO * 2 + av + (conNomi ? 8 + NOME : 0),
-    altezza: BORDO * 2 + quante * av + Math.max(0, quante - 1) * SPAZIO
+    larghezza: bordo * 2 + lato + (conNomi ? 8 + NOME : 0),
+    altezza: bordo * 2 + quante * lato + Math.max(0, quante - 1) * spazio
   }
 }
 
@@ -166,23 +209,16 @@ function pagina(): string {
   /* Tutta la superficie trascina: il pannello si prende dal punto in cui lo si
      vede, non da una maniglia che bisogna prima trovare. */
   body{-webkit-app-region:drag}
-  #lista{box-sizing:border-box;padding:${BORDO}px;display:flex;
-    flex-direction:column;gap:${SPAZIO}px;align-items:flex-start}
+  /* Imbottitura e distanze le scrive JS: dipendono dalla misura delle facce,
+     e quella si cambia da un menu mentre la finestra e' aperta. */
+  #lista{box-sizing:border-box;display:flex;
+    flex-direction:column;align-items:flex-start}
   .riga{display:flex;align-items:center;gap:8px;max-width:100%}
   .ritratto{position:relative;flex:0 0 auto;border-radius:50%;overflow:hidden;
     background:#1a2030;color:#fff;display:flex;align-items:center;
     justify-content:center;font-weight:600;
-    /* L'ombra e' cio' che tiene la faccia staccata da qualunque sfondo: un
-       gioco chiaro, un foglio bianco, un video. Senza, su un fondo chiaro
-       l'overlay sembra stampato sopra. */
-    box-shadow:0 3px 10px rgba(0,0,0,.55),0 0 0 1px rgba(0,0,0,.35);
-    transition:box-shadow .12s ease}
+    transition:box-shadow .1s ease}
   .ritratto img{width:100%;height:100%;object-fit:cover;display:block}
-  /* Il bordo verde di chi parla, dentro al cerchio invece che attorno: cosi'
-     la faccia non cambia dimensione quando comincia a parlare, e la colonna
-     non si allarga di due pixel a ogni sillaba. */
-  .parla{box-shadow:inset 0 0 0 2px #3ecf8e,0 3px 10px rgba(0,0,0,.55),
-    0 0 0 1px rgba(62,207,142,.35)}
   .muto{position:absolute;right:-1px;bottom:-1px;width:42%;height:42%;
     border-radius:50%;background:#f4525a;box-shadow:0 0 0 2px rgba(0,0,0,.5);
     display:flex;align-items:center;justify-content:center}
@@ -195,13 +231,37 @@ function pagina(): string {
 </style>
 <div id="lista"></div>
 <script>
-  const stato = { persone: [], parlano: [], avatar: 'grande', nomi: 'sempre' }
-  const MISURE = ${JSON.stringify(MISURE_OVERLAY)}
+  const stato = {
+    persone: [], parlano: [], nomi: 'sempre',
+    lato: 48, bordo: 14, spazio: 12, scuro: 3, verde: 5
+  }
+
+  /**
+   * L'ombra di una faccia.
+   *
+   * Ferma: solo lo stacco dal fondo, che e' cio' che la tiene staccata da un
+   * gioco chiaro o da un foglio bianco.
+   *
+   * Mentre parla: due anelli concentrici fuori dal cerchio, lo scuro attaccato
+   * alla faccia e il verde subito fuori. Il primo della lista si disegna sopra,
+   * quindi lo scuro con lo sbordo piccolo copre la parte interna del verde, che
+   * ne ha uno piu' grande: da fuori si vedono due fasce invece di un contorno
+   * solo. Senza lo stacco scuro, il verde appoggiato a una foto scura sparisce.
+   */
+  function ombra(parla) {
+    const fondo = '0 3px 10px rgba(0,0,0,.55)'
+    if (!parla) return fondo + ',0 0 0 1px rgba(0,0,0,.35)'
+    const dentro = '0 0 0 ' + stato.scuro + 'px #0b0e14'
+    const fuori = '0 0 0 ' + (stato.scuro + stato.verde) + 'px #3ecf8e'
+    return dentro + ',' + fuori + ',' + fondo
+  }
 
   function dipingi() {
-    const lato = MISURE[stato.avatar] || MISURE.grande
+    const lato = stato.lato
     const lista = document.getElementById('lista')
     lista.textContent = ''
+    lista.style.padding = stato.bordo + 'px'
+    lista.style.gap = stato.spazio + 'px'
 
     for (const p of stato.persone) {
       const parla = stato.parlano.includes(p.id)
@@ -210,10 +270,11 @@ function pagina(): string {
       riga.className = 'riga'
 
       const ritratto = document.createElement('div')
-      ritratto.className = parla ? 'ritratto parla' : 'ritratto'
+      ritratto.className = 'ritratto'
       ritratto.style.width = lato + 'px'
       ritratto.style.height = lato + 'px'
       ritratto.style.fontSize = Math.round(lato * 0.36) + 'px'
+      ritratto.style.boxShadow = ombra(parla)
 
       if (p.avatar) {
         const img = document.createElement('img')
@@ -279,11 +340,22 @@ function crea(): BrowserWindow {
   nuova.setAlwaysOnTop(true, 'screen-saver')
   nuova.setMenu(null)
 
-  // Trascinata: dove l'ha lasciata ci resta anche domani. Si scrive alla fine
-  // del movimento e non durante, altrimenti sarebbero cento scritture del file
-  // delle impostazioni per un trascinamento.
+  /**
+   * Trascinata: dove l'ha lasciata ci resta, anche domani.
+   *
+   * Si scrive alla fine del movimento e non durante, altrimenti sarebbero
+   * cento scritture del file delle impostazioni per un trascinamento.
+   *
+   * E si scrive in **due** posti: sul disco e nella copia che questo modulo
+   * tiene in mano. Prima solo sul disco, ed era il difetto per cui l'overlay
+   * tornava in alto a destra appena qualcuno parlava: la copia locale restava
+   * a com'era - senza posizione, cioe' «mettiti in alto a destra» - e il primo
+   * ridisegno utile la rimetteva li'. Chi parla fa ridisegnare dieci volte al
+   * minuto, quindi il difetto si vedeva subito e sembrava un capriccio.
+   */
   nuova.on('moved', () => {
     const [x, y] = nuova.getPosition()
+    if (impostazioni) impostazioni = { ...impostazioni, overlayX: x, overlayY: y }
     quandoSiSposta?.({ overlayX: x, overlayY: y })
   })
 
@@ -304,13 +376,17 @@ let quandoSiSposta: ((modifiche: Partial<Impostazioni>) => void) | null = null
 function spingi(): void {
   if (!finestra || finestra.isDestroyed()) return
   const elenco = visibili()
+  const { lato, bordo, spazio, scuro, verde } = misure()
   const dati: Stato = {
     persone: elenco,
     parlano: [...parlano],
     avatar: impostazioni?.overlayAvatar ?? 'grande',
     nomi: impostazioni?.overlayNomi ?? 'sempre',
-    utenti: impostazioni?.overlayUtenti ?? 'sempre',
-    massimo: impostazioni?.overlayMassimo ?? 0
+    lato,
+    bordo,
+    spazio,
+    scuro,
+    verde
   }
   finestra.webContents
     .executeJavaScript(`window.applica && window.applica(${JSON.stringify(dati)})`)
@@ -343,8 +419,26 @@ function rivedi(): void {
   finestra ??= crea()
 
   const { larghezza, altezza } = misuraFinestra(quante)
-  const dove = posizione(larghezza, altezza)
-  finestra.setBounds({ x: dove.x, y: dove.y, width: larghezza, height: altezza })
+  const gia = finestra.isVisible()
+
+  if (gia) {
+    /**
+     * Aperta, si cambia solo la misura.
+     *
+     * La posizione e' di chi l'ha trascinata, e questa funzione gira a ogni
+     * cambio di voce: ridargliela ogni volta vorrebbe dire strappargliela di
+     * mano mentre la sta spostando. Si tocca `setBounds` solo quando la misura
+     * cambia davvero - una faccia in piu', una in meno - perche' su una
+     * finestra trasparente anche un setBounds identico costa un ridisegno.
+     */
+    const adesso = finestra.getBounds()
+    if (adesso.width !== larghezza || adesso.height !== altezza) {
+      finestra.setBounds({ x: adesso.x, y: adesso.y, width: larghezza, height: altezza })
+    }
+  } else {
+    const dove = posizione(larghezza, altezza)
+    finestra.setBounds({ x: dove.x, y: dove.y, width: larghezza, height: altezza })
+  }
 
   spingi()
 

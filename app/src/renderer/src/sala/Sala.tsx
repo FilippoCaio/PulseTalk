@@ -16,12 +16,13 @@ import type { Riquadro as DatiRiquadro, Sessione } from '../lib/usaSessione'
 import { usaMisura } from '../lib/misura'
 import { usaOverlay } from '../lib/usaOverlay'
 import { usaTempoInsieme } from '../lib/usaTempoInsieme'
+import { usaRegistrazione } from '../lib/usaRegistrazione'
 import { usaSpostamento } from '../lib/animazioni'
 import { ponte } from '../ponte'
 import { Chiudi, Matita, Pausa, Play, Riavvolgi, SchermoCondividi, SchermoStop } from '../icone'
 import { Avviso } from '../ui'
 import OverlayChiamata from './OverlayChiamata'
-import Registrazione from './Registrazione'
+import BarraRegistrazione from './Registrazione'
 import MenuRiquadro from './MenuRiquadro'
 import Chat from '../chat/Chat'
 import type { usaChat } from '../lib/usaChat'
@@ -240,6 +241,17 @@ export default function Sala({
   // che la SFU manda con ogni partecipante. Vive qui perche' qui c'e' la
   // stanza; a mostrarlo e' la barra alta, accanto al nome del canale.
   const secondiInsieme = usaTempoInsieme(sessione.stanza)
+
+  /**
+   * La registrazione, una sola per tutta la sala.
+   *
+   * Vive qui e non dentro a uno dei due pezzi che la mostrano: la barra rossa
+   * in cima e il tasto fra i comandi sono due finestre sulla stessa cosa, e un
+   * `usaRegistrazione` per ciascuno sarebbe stato due registratori che non si
+   * sanno l'uno dell'altro - con il tasto che dice «registra» mentre la barra
+   * dice che stai gia' registrando.
+   */
+  const registratore = usaRegistrazione(sessione.stanza, ingresso.canale.nome)
 
   /** Trascinato uno sopra a un altro, i due si scambiano di posto. */
   const scambia = (da: string, a: string): void => {
@@ -753,11 +765,7 @@ export default function Sala({
             quandoCambia={setTrascrizioneAttiva}
           />
         )}
-        <Registrazione
-          stanza={sessione.stanza}
-          riquadri={sessione.riquadri}
-          nomeCanale={ingresso.canale.nome}
-        />
+        <BarraRegistrazione registratore={registratore} />
       </div>
       {/* L'intestazione non e' piu' una fascia fissa: nome del canale,
           riascolto e chat sono passati nella barra alta dell'overlay, che
@@ -1180,6 +1188,7 @@ export default function Sala({
         riascoltoAttivo={sessione.riascoltoAttivo}
         secondiRiascolto={impostazioni.secondiRiascolto || 30}
         nomeCanale={ingresso.canale.nome}
+        registrazione={{ registratore, riquadri: sessione.riquadri }}
         secondiInsieme={secondiInsieme}
         quantePersone={persone.length}
         soloAscolto={ingresso.canale.soloAscolto}

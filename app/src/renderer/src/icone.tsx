@@ -419,6 +419,23 @@ export function Persona(props: Props): React.JSX.Element {
 }
 
 /** La freccia che torna indietro con il tempo: riascolta. */
+/**
+ * Il tondo della registrazione.
+ *
+ * Due cerchi e non uno: quello pieno da solo si legge come un pallino di
+ * stato - e' lo stesso segno che dice «sta parlando» o «e' online» - mentre
+ * l'anello attorno lo rende il tasto di un registratore, che e' cio' che tutti
+ * hanno gia' imparato da qualche altra parte.
+ */
+export function Registra(props: Props): React.JSX.Element {
+  return (
+    <Base {...props}>
+      <circle cx="12" cy="12" r="8.5" />
+      <circle cx="12" cy="12" r="4" fill="currentColor" stroke="none" />
+    </Base>
+  )
+}
+
 export function Riavvolgi(props: Props): React.JSX.Element {
   return (
     <Base {...props}>
