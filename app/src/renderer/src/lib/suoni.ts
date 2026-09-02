@@ -32,6 +32,8 @@ export type Suono =
   | 'altroUscito'
   | 'sordinaAccesa'
   | 'sordinaSpenta'
+  | 'registrazioneIniziata'
+  | 'registrazioneFinita'
 
 interface Nota {
   /** Hertz. 440 e' il la. */
@@ -97,6 +99,30 @@ const SEQUENZE: Record<Suono, Nota[]> = {
     { frequenza: 392, quando: 100, durata: 140, volume: 0.38, forma: 'triangle' }
   ],
 
+  /**
+   * La registrazione: tre note che salgono, e non e' un suono come gli altri.
+   *
+   * Lo sentono **tutti** quelli in stanza, non solo chi preme, e non si spegne
+   * con gli altri suoni: e' l'unico avviso che raggiunge chi in quel momento
+   * sta guardando altrove, ed e' anche l'unico modo di dirlo a chi ha la
+   * finestra ridotta a icona. In parecchi posti del mondo un avviso udibile
+   * prima di registrare non e' una gentilezza: e' la condizione perche' si
+   * possa fare.
+   *
+   * Piu' lente e piu' distanti delle altre - 200 millisecondi buoni - perche'
+   * un suono che si confonde con quello del microfono non avvisa nessuno.
+   */
+  registrazioneIniziata: [
+    { frequenza: 523, quando: 0, durata: 110, volume: 0.5 },
+    { frequenza: 659, quando: 130, durata: 110, volume: 0.5 },
+    { frequenza: 880, quando: 260, durata: 220, volume: 0.5 }
+  ],
+  registrazioneFinita: [
+    { frequenza: 880, quando: 0, durata: 110, volume: 0.45 },
+    { frequenza: 659, quando: 130, durata: 110, volume: 0.45 },
+    { frequenza: 523, quando: 260, durata: 220, volume: 0.45 }
+  ],
+
   // Entrare e uscire da una stanza: intervallo largo, si sente da lontano.
   entrato: [
     { frequenza: 392, quando: 0, durata: 90, volume: 0.5 },
@@ -142,8 +168,24 @@ export function configuraSuoni(opzioni: { acceso: boolean; volume: number }): vo
  * rimasta dietro a lungo — si prova a risvegliarlo, e se non si sveglia
  * pazienza: un suono mancato non e' un errore da mostrare a nessuno.
  */
-export function suona(quale: Suono): void {
-  if (!acceso || volume <= 0) return
+export function suona(quale: Suono, { sempre = false }: { sempre?: boolean } = {}): void {
+  /**
+   * `sempre` scavalca le due manopole, ed e' usato da una cosa sola: l'avviso
+   * che qualcuno ha cominciato a registrare.
+   *
+   * Scavalcare una scelta dell'utente e' brutto e qui e' il punto. Gli altri
+   * suoni riguardano chi li sente - il proprio microfono, chi entra - e chi li
+   * spegne rinuncia a una comodita' sua. Questo riguarda **gli altri**: e'
+   * l'unico avviso che arriva a chi in quel momento sta guardando altrove, e
+   * un avviso che chi registra puo' spegnere dalle proprie impostazioni non
+   * avvisa nessuno. In parecchi posti del mondo, poi, un segnale udibile prima
+   * di registrare non e' una gentilezza ma la condizione perche' si possa
+   * fare.
+   *
+   * Il volume ha un fondo, non il valore scelto: a zero non si sentirebbe.
+   */
+  if (!sempre && (!acceso || volume <= 0)) return
+  const forza = sempre ? Math.max(volume, 0.5) : volume
 
   try {
     contesto ??= new AudioContext()
@@ -151,7 +193,7 @@ export function suona(quale: Suono): void {
 
     const adesso = contesto.currentTime
     const generale = contesto.createGain()
-    generale.gain.value = volume
+    generale.gain.value = forza
     generale.connect(contesto.destination)
 
     for (const nota of SEQUENZE[quale]) {

@@ -63,8 +63,19 @@ export default function OverlaySpazio({
       // nessun `overflow` di mezzo lo puo' tagliare. In cambio le coordinate
       // vanno misurate: le prende chi lo fa comparire, dal bottone, nello
       // stesso momento in cui il mouse ci arriva.
-      className="pointer-events-none fixed z-40 w-max max-w-64 -translate-y-1/2 rounded-xl border border-bordo bg-fondo-2 px-3 py-2 shadow-lg shadow-black/40"
-      style={{ left: ancora.right + 8, top: ancora.top + ancora.height / 2 }}
+      // Sotto all'icona e centrato su di lei, da quando la barra degli spazi
+      // e' una riga in cima: di fianco, come stava, sarebbe uscito dallo
+      // schermo su tutte le icone tranne le prime due, e su una barra che
+      // scorre sarebbe finito sopra alla vicina invece che accanto alla sua.
+      //
+      // Il `left` si tiene dentro alla finestra da solo: un cartellino largo
+      // duecento pixel centrato sull'ultima icona a destra sporgerebbe, e
+      // sporgendo allargherebbe la pagina.
+      className="pointer-events-none fixed z-40 w-max max-w-64 -translate-x-1/2 rounded-xl border border-bordo bg-fondo-2 px-3 py-2 shadow-lg shadow-black/40"
+      style={{
+        left: Math.min(Math.max(ancora.left + ancora.width / 2, 140), window.innerWidth - 140),
+        top: ancora.bottom + 8
+      }}
       role="tooltip"
     >
       <p className="truncate text-sm font-medium text-testo">{spazio.nome}</p>

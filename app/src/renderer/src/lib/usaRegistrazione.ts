@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { RoomEvent, Track, type Participant, type Room } from 'livekit-client'
+import type { RegolaRegistrazione } from '@shared/tipi'
+import type { Api } from './api'
+import { suona } from './suoni'
 import {
   avviaRegistrazione,
   salvaRegistrazione,
@@ -58,6 +61,31 @@ import {
  * cosa che questo modulo mescola. Le immagini non si mescolano: o si registra
  * quella finestra o non la si registra, e l'unica difesa vera e' che tutti
  * sappiano che sta succedendo.
+ *
+ * ## La regola del server, e le tre cose che aggiunge
+ *
+ * Chi amministra decide a quali condizioni si registra qui dentro
+ * (`TALK_REGISTRAZIONE`): libera come e' sempre stata, col consenso di tutti,
+ * oppure vietata. Su «consenso di tutti» il pulsante non parte finche' resta
+ * una persona che non ha risposto, e la registrazione **si ferma da sola** se
+ * entra qualcuno che non ha detto di si': un consenso che vale solo per chi
+ * c'era all'inizio non e' una regola, e' un momento.
+ *
+ * Le altre due cose valgono su ogni server, anche il piu' permissivo, perche'
+ * non sono funzioni ma prove:
+ *
+ *   il **tono** che sentono tutti quando comincia e quando finisce, che non si
+ *   spegne dalle impostazioni di chi registra;
+ *
+ *   la **riga nel registro** sul server - chi, cosa, quando, quanti c'erano e
+ *   quanti avevano acconsentito - che risponde alla domanda «chi mi ha
+ *   registrato il 4 marzo» senza dipendere dal ricordo di nessuno.
+ *
+ * Tutte e tre valgono per il client onesto. Un programma modificato registra
+ * lo stesso, come puo' farlo OBS aperto di fianco: cio' che si puo' ottenere
+ * non e' impedirlo, e' che la strada normale sia impossibile da usare di
+ * nascosto — ed e' anche l'unica cosa che si possa scrivere in una
+ * informativa.
  */
 
 const CONSENSO = 'rec-consenso'
@@ -115,11 +143,32 @@ export interface Registratore {
   vociDentro: number
   avvia: (bersaglio: Bersaglio) => void
   ferma: () => void
+  /** La regola di questo server. */
+  regola: RegolaRegistrazione
+  /**
+   * Perche' non si puo' registrare adesso, se non si puo'.
+   *
+   * Una frase e non un booleano: il pulsante resta al suo posto, spento, e il
+   * titolo dice cosa manca. Un pulsante che sparisce non spiega niente, e chi
+   * lo cercava resta a chiedersi se l'ha sognato.
+   */
+  bloccato: string | null
 }
 
 export function usaRegistrazione(
   stanza: Room | null,
-  nomeCanale: string
+  {
+    api,
+    canale,
+    nomeCanale,
+    regola = 'libera'
+  }: {
+    /** Serve al registro sul server. Nullo nelle chiamate dirette, che non hanno un canale. */
+    api: Api | null
+    canale: number | null
+    nomeCanale: string
+    regola?: RegolaRegistrazione
+  }
 ): Registratore {
   const [consensoMio, setConsensoMio] = useState<boolean | null>(null)
   const [acconsentono, setAcconsentono] = useState<Set<string>>(new Set())
@@ -137,6 +186,10 @@ export function usaRegistrazione(
   const corrente = useRef<Registrazione | null>(null)
   /** Cosa si sta registrando: serve a `ferma` e all'audio dei contenuti. */
   const bersaglio = useRef<Bersaglio | null>(null)
+  /** La riga aperta nel registro del server, da chiudere quando si smette. */
+  const riga = useRef<number | null>(null)
+  /** Chi stava registrando al giro prima: serve al tono, non allo stato. */
+  const registravano = useRef<Set<string>>(new Set())
 
   /**
    * Chi acconsente, riletto da capo a ogni cambiamento.
@@ -152,16 +205,36 @@ export function usaRegistrazione(
     setAcconsentono(
       new Set(tutti.filter((p) => p.attributes?.[CONSENSO] === 'si').map((p) => p.identity))
     )
+    const attivi = tutti.filter((p) => p.attributes?.[ATTIVA] === 'si')
+
     setRegistrano(
-      tutti
-        .filter((p) => p.attributes?.[ATTIVA] === 'si')
-        .map((p) => ({
-          nome: p.name || p.identity,
-          // Chi non lo manda registra uno schermo: e' cio' che facevano tutte
-          // le versioni prima che la chiamata intera si potesse registrare.
-          cosa: p.attributes?.[COSA] === 'chiamata' ? 'chiamata' : ('schermo' as CosaSiRegistra)
-        }))
+      attivi.map((p) => ({
+        nome: p.name || p.identity,
+        // Chi non lo manda registra uno schermo: e' cio' che facevano tutte
+        // le versioni prima che la chiamata intera si potesse registrare.
+        cosa: p.attributes?.[COSA] === 'chiamata' ? 'chiamata' : ('schermo' as CosaSiRegistra)
+      }))
     )
+
+    /**
+     * Il tono, a chiunque sia in stanza.
+     *
+     * Sul cambiamento e non sullo stato: `rileggi` gira a ogni evento della
+     * stanza - qualcuno alza la mano, cambia nome, entra - e suonare a ogni
+     * giro sarebbe un allarme antifurto. Suona quando compare un nome che
+     * prima non c'era, e quando l'ultimo sparisce.
+     *
+     * Suona anche a chi entra in una stanza dove si sta gia' registrando, ed
+     * e' voluto: e' esattamente il caso in cui bisogna accorgersene.
+     */
+    const adesso = new Set(attivi.map((p) => p.identity))
+    const prima = registravano.current
+    if ([...adesso].some((id) => !prima.has(id))) {
+      suona('registrazioneIniziata', { sempre: true })
+    } else if (prima.size > 0 && adesso.size === 0) {
+      suona('registrazioneFinita', { sempre: true })
+    }
+    registravano.current = adesso
     const mio = stanza.localParticipant.attributes?.[CONSENSO]
     setConsensoMio(mio === 'si' ? true : mio === 'no' ? false : null)
   }, [stanza])
@@ -187,6 +260,20 @@ export function usaRegistrazione(
         .off(RoomEvent.Connected, rileggi)
     }
   }, [stanza, rileggi])
+
+  /**
+   * Chi c'e' in stanza e non ha detto di si'.
+   *
+   * Il proprio nome non compare: chi preme «registra» acconsente premendo, e
+   * `avvia` scrive il si' negli attributi un istante dopo. Vedersi elencare
+   * fra quelli che mancano mentre si sta per registrare sarebbe solo confusione.
+   */
+  const mancano = useCallback((): string[] => {
+    if (!stanza) return []
+    return [...stanza.remoteParticipants.values()]
+      .filter((p) => p.attributes?.[CONSENSO] !== 'si')
+      .map((p) => p.name || p.identity)
+  }, [stanza])
 
   const rispondi = useCallback(
     (si: boolean): void => {
@@ -301,8 +388,21 @@ export function usaRegistrazione(
   const ferma = useCallback((): void => {
     const registrazione = corrente.current
     const cosa = bersaglio.current
+    const suRegistro = riga.current
     corrente.current = null
     bersaglio.current = null
+    riga.current = null
+
+    // La riga sul server si chiude subito, senza aspettare che il file sia
+    // scritto: il registro dice quando si e' smesso di registrare, non quando
+    // il disco ha finito di girare.
+    if (suRegistro !== null) {
+      void api?.chiudiRegistrazione(suRegistro).catch(() => {
+        // Una riga che resta aperta e' brutta ma innocua, e riprovare qui
+        // vorrebbe dire una coda di richieste per una cosa che nessuno legge
+        // in tempo reale.
+      })
+    }
     setMia(null)
     setSecondi(0)
     setVociDentro(0)
@@ -334,6 +434,21 @@ export function usaRegistrazione(
 
   const avvia = useCallback(
     (scelto: Bersaglio): void => {
+      // La regola del server prima di tutto. Il pulsante di solito e' gia'
+      // spento, ma «di solito» non e' una garanzia: fra il disegno del
+      // pulsante e il clic puo' essere entrato qualcuno.
+      const impedimento =
+        regola === 'vietata'
+          ? 'vietata'
+          : regola === 'consenso-di-tutti' && mancano().length > 0
+            ? 'senza consenso'
+            : null
+
+      if (impedimento) {
+        if (scelto.nostra) scelto.video.stop()
+        return
+      }
+
       if (corrente.current || !sapRegistrare()) {
         // La traccia era stata catturata per una registrazione che non parte:
         // lasciarla accesa vorrebbe dire tenersi una cattura dello schermo di
@@ -346,6 +461,32 @@ export function usaRegistrazione(
       setMia({ cosa: scelto.cosa, nome: scelto.nome })
       setSecondi(0)
       annuncia(scelto.cosa)
+
+      /**
+       * La riga nel registro del server.
+       *
+       * Presenti e consensi contati adesso: dicono in che condizioni questa
+       * registrazione e' cominciata, che e' la domanda a cui bisogna saper
+       * rispondere dopo. Se la chiamata fallisce la registrazione va avanti
+       * lo stesso - fermarla perche' il registro non risponde vorrebbe dire
+       * che un server occupato spegne una funzione - e resta il tono, che
+       * l'hanno sentito tutti.
+       */
+      if (api && canale !== null && stanza) {
+        const presenti = stanza.remoteParticipants.size + 1
+        const consensi =
+          [...stanza.remoteParticipants.values()].filter(
+            (p) => p.attributes?.[CONSENSO] === 'si'
+          ).length + 1
+        void api
+          .apriRegistrazione(canale, { cosa: scelto.cosa, presenti, consensi })
+          .then(({ id }) => {
+            riga.current = id
+          })
+          .catch(() => {
+            riga.current = null
+          })
+      }
 
       // Chi preme registra acconsente, e va detto invece di darlo per scontato
       // in silenzio: prima la propria voce restava fuori dal file finche' non
@@ -364,8 +505,26 @@ export function usaRegistrazione(
       // su una traccia morta scriverebbe minuti di nero.
       scelto.video.addEventListener('ended', () => ferma(), { once: true })
     },
-    [annuncia, ferma, consensoMio, rispondi]
+    [annuncia, ferma, consensoMio, rispondi, regola, mancano, api, canale, stanza]
   )
+
+  /**
+   * Su «consenso di tutti», entra qualcuno che non ha risposto: si ferma.
+   *
+   * E' la meta' che rende la regola una regola. Chiedere il consenso solo
+   * all'inizio vorrebbe dire che chi arriva al minuto due viene registrato
+   * senza che nessuno gli abbia chiesto niente - e chi arriva dopo e' il caso
+   * normale, non l'eccezione. Vale anche per chi ci ripensa: togliere il
+   * consenso ferma tutto invece di togliere solo la propria voce.
+   *
+   * Il file gia' scritto si salva, come in ogni altro modo di finire: sono
+   * minuti in cui tutti avevano detto di si'.
+   */
+  useEffect(() => {
+    if (!mia || regola !== 'consenso-di-tutti') return
+    if (mancano().length === 0) return
+    ferma()
+  }, [mia, regola, mancano, acconsentono, ferma])
 
   // Uscendo dalla stanza con una registrazione aperta il file va salvato lo
   // stesso: e' roba gia' scritta, e buttarla via perche' si e' chiuso male
@@ -387,8 +546,23 @@ export function usaRegistrazione(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  const senzaConsenso = regola === 'consenso-di-tutti' ? mancano() : []
+
   return {
     possibile: sapRegistrare(),
+    regola,
+    bloccato:
+      regola === 'vietata'
+        ? 'Su questo server le registrazioni sono vietate.'
+        : senzaConsenso.length > 0
+          ? `Qui si registra solo con il consenso di tutti: manca ${
+              senzaConsenso.length === 1
+                ? senzaConsenso[0]
+                : `${senzaConsenso.length} persone (${senzaConsenso.slice(0, 3).join(', ')}${
+                    senzaConsenso.length > 3 ? '…' : ''
+                  })`
+            }.`
+          : null,
     consensoMio,
     rispondi,
     acconsentono,

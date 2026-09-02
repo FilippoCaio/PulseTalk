@@ -193,6 +193,21 @@ export interface SettimanaTutti {
   archivio: string[]
 }
 
+/** Una riga del registro: chi ha registrato cosa, quando, e in che condizioni. */
+export interface RigaRegistrazione {
+  id: number
+  canale: number
+  chi: number
+  nome: string
+  cosa: 'chiamata' | 'schermo'
+  avviata: number
+  chiusa: number | null
+  presenti: number
+  consensi: number
+  /** Presente solo nell'elenco di uno spazio, dove i canali sono piu' d'uno. */
+  canaleNome?: string
+}
+
 export interface StatoIstanza {
   categorie: CategoriaIstanza[]
   gruppi: GruppoIstanza[]
@@ -984,6 +999,41 @@ export class Api {
     })
     if (!risposta.ok) throw new ErroreApi('allegato non disponibile', risposta.status)
     return URL.createObjectURL(await risposta.blob())
+  }
+
+  // -- Il registro delle registrazioni ---------------------------------------
+
+  /**
+   * Apre la riga del registro e torna il suo numero.
+   *
+   * Presenti e consensi si mandano perche' li sa solo il client: il consenso
+   * vive negli attributi del partecipante sulla SFU, e il server non li vede.
+   * Sono numeri e non nomi - al registro serve dire in che condizioni una
+   * registrazione e' cominciata, non fare l'elenco di chi c'era.
+   */
+  apriRegistrazione(
+    canale: number,
+    dati: { cosa: 'chiamata' | 'schermo'; presenti: number; consensi: number }
+  ): Promise<{ id: number }> {
+    return this.chiama(`/api/canali/${canale}/registrazioni`, {
+      method: 'POST',
+      body: JSON.stringify(dati)
+    })
+  }
+
+  /** La chiude. Solo la propria, e chiuderla due volte non e' un errore. */
+  chiudiRegistrazione(id: number): Promise<{ chiusa: boolean }> {
+    return this.chiama(`/api/registrazioni/${id}`, { method: 'PATCH', body: '{}' })
+  }
+
+  /** Chi ha registrato questo canale, dal piu' recente. */
+  registrazioniDi(canale: number): Promise<{ registrazioni: RigaRegistrazione[] }> {
+    return this.chiama(`/api/canali/${canale}/registrazioni`)
+  }
+
+  /** Lo stesso per tutto lo spazio: e' li' che si va a cercare, dopo. */
+  registrazioniDelloSpazio(spazio: number): Promise<{ registrazioni: RigaRegistrazione[] }> {
+    return this.chiama(`/api/spazi/${spazio}/registrazioni`)
   }
 
   // -- Le ore nei canali vocali ----------------------------------------------

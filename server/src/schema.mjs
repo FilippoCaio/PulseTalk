@@ -218,6 +218,36 @@ CREATE TABLE IF NOT EXISTS trascrizioni (
 );
 CREATE INDEX IF NOT EXISTS idx_trascrizioni_canale ON trascrizioni(canale, id DESC);
 
+-- Chi ha registrato, cosa, e quando ------------------------------------------
+--
+-- Non e' una funzione: e' la prova. Una registrazione e' l'unica cosa che si
+-- porta via da qui la voce di altre persone, e il giorno in cui qualcuno chiede
+-- "chi mi ha registrato il 4 marzo" ci deve essere una risposta che non dipende
+-- dal ricordo di nessuno.
+--
+-- La riga la apre e la chiude il client che registra, quindi un programma
+-- modificato puo' non scriverla - come puo' registrare con OBS senza dire
+-- niente a nessuno. Non e' una ragione per non tenerla: serve a rendere
+-- verificabile la strada onesta, che e' l'unica cosa che una regola scritta
+-- possa pretendere.
+--
+-- Presenti e consensi sono contati al momento dell'avvio, e restano: dicono in
+-- che condizioni quella registrazione e' cominciata, che e' esattamente la
+-- domanda a cui bisogna saper rispondere dopo.
+CREATE TABLE IF NOT EXISTS registrazioni (
+  id       INTEGER PRIMARY KEY,
+  canale   INTEGER NOT NULL REFERENCES canali(id) ON DELETE CASCADE,
+  chi      INTEGER NOT NULL REFERENCES utenti(id) ON DELETE CASCADE,
+  -- 'chiamata' e' la finestra intera, con dentro le facce; 'schermo' e' una
+  -- condivisione sola. Sono due cose diverse da spiegare a chi chiede.
+  cosa     TEXT    NOT NULL,
+  avviata  INTEGER NOT NULL,
+  chiusa   INTEGER,
+  presenti INTEGER NOT NULL DEFAULT 0,
+  consensi INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_registrazioni_canale ON registrazioni(canale, id DESC);
+
 CREATE TABLE IF NOT EXISTS consensi_trascrizione (
   trascrizione INTEGER NOT NULL REFERENCES trascrizioni(id) ON DELETE CASCADE,
   utente       INTEGER NOT NULL REFERENCES utenti(id),

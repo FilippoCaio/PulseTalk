@@ -6,6 +6,7 @@ import { puo, puoQualcosa, type Permesso } from '@shared/permessi'
 import { BottoneIcona } from '../../ui'
 import {
   Calendario,
+  Registra,
   Cartella,
   Catena,
   Chiudi,
@@ -21,6 +22,7 @@ import PermessiCanali from './PermessiCanali'
 import Struttura from './Struttura'
 import InvitiSpazio from './InvitiSpazio'
 import EventiSpazio from './EventiSpazio'
+import Registrazioni from './Registrazioni'
 
 /**
  * Le impostazioni di un server.
@@ -44,6 +46,7 @@ type Sezione =
   | 'struttura'
   | 'inviti'
   | 'eventi'
+  | 'registrazioni'
 
 interface Voce {
   id: Sezione
@@ -80,7 +83,16 @@ const VOCI: Voce[] = [
     ]
   },
   { id: 'inviti', nome: 'Inviti', Icona: Catena, serve: ['createInvites'] },
-  { id: 'eventi', nome: 'Eventi', Icona: Calendario, serve: ['createEvents', 'manageEvents'] }
+  { id: 'eventi', nome: 'Eventi', Icona: Calendario, serve: ['createEvents', 'manageEvents'] },
+  // Ultima, e con i permessi di chi risponde delle persone: e' la pagina che
+  // si apre quando qualcuno chiede «chi mi ha registrato», e chi la apre e'
+  // quello a cui la domanda arriva.
+  {
+    id: 'registrazioni',
+    nome: 'Registrazioni',
+    Icona: Registra,
+    serve: ['manageServerSettings', 'manageMembers', 'kickMembers', 'banMembers']
+  }
 ]
 
 export default function PannelloSpazio({
@@ -220,6 +232,8 @@ export default function PannelloSpazio({
           {sezione === 'struttura' && <Struttura api={api} spazio={spazio} ricarica={ricarica} />}
 
           {sezione === 'inviti' && <InvitiSpazio api={api} spazio={spazio} ruoli={ruoli} />}
+
+          {sezione === 'registrazioni' && <Registrazioni api={api} spazio={spazio} />}
 
           {sezione === 'eventi' && (
             <EventiSpazio api={api} spazio={spazio} io={io} profili={profili} />

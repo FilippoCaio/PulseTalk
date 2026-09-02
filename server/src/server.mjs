@@ -42,6 +42,7 @@ import { creaUnsplash } from './provider/immagini.mjs';
 import { rotteAllegati, spazzaAllegati, spazzaParziali } from './routes/allegati.mjs';
 import { rotteAdmin, rotteChiaveAi } from './routes/admin.mjs';
 import { rotteOre } from './routes/ore.mjs';
+import { rotteRegistrazioni } from './routes/registrazioni.mjs';
 import { rotteAi } from './routes/ai.mjs';
 import { rotteAutoWriter } from './routes/autowriter.mjs';
 import { rotteBot } from './routes/bot.mjs';
@@ -266,6 +267,7 @@ export async function creaTalk(configIniziale, { ambiente = process.env } = {}) 
   rotteChiaveAi(app, { db, servizi });
   rotteBot(app, { db, eventi });
   rotteMessaggi(app, { db, eventi });
+  rotteRegistrazioni(app, { db, config, servizi });
   await rotteAllegati(app, { db, config });
   await rotteWebhook(app, { verificatore: creaVerificatore(config), presenze, eventi, db, chiamate, avvisi });
 

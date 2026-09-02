@@ -251,7 +251,14 @@ export default function Sala({
    * sanno l'uno dell'altro - con il tasto che dice «registra» mentre la barra
    * dice che stai gia' registrando.
    */
-  const registratore = usaRegistrazione(sessione.stanza, ingresso.canale.nome)
+  const registratore = usaRegistrazione(sessione.stanza, {
+    api,
+    canale: ingresso.canale.id,
+    nomeCanale: ingresso.canale.nome,
+    // La regola arriva con il gettone. Sui server piu' vecchi di questa
+    // funzione il campo non c'e', e li' vale «libera»: e' quello che facevano.
+    regola: ingresso.registrazione ?? 'libera'
+  })
 
   /** Trascinato uno sopra a un altro, i due si scambiano di posto. */
   const scambia = (da: string, a: string): void => {

@@ -691,34 +691,48 @@ export default function OverlayChiamata({
 
               Registrando diventa rosso come «esci»: e' l'unico altro comando
               della barra che sta facendo qualcosa mentre non lo si guarda. */}
-          {registrazione?.registratore.possibile && comandoRec.voci.length > 0 && (
-            <ConFreccia
-              aperto={aperto === 'registra'}
-              etichetta="Scegli cosa registrare"
-              apri={
-                comandoRec.voci.length > 1 && !registrazione.registratore.mia
-                  ? () => setAperto(aperto === 'registra' ? null : 'registra')
-                  : undefined
-              }
-            >
-              <Tasto
-                tono={registrazione.registratore.mia ? 'male' : 'normale'}
-                titolo={
-                  registrazione.registratore.mia
-                    ? `Ferma e salva: stai registrando ${registrazione.registratore.mia.nome}`
-                    : comandoRec.inArrivo
-                      ? 'Sto preparando la registrazione…'
-                      : `Registra ${comandoRec.voci[0].nome.toLowerCase()}`
+          {registrazione?.registratore.possibile &&
+            registrazione.registratore.regola !== 'vietata' &&
+            comandoRec.voci.length > 0 && (
+              <ConFreccia
+                aperto={aperto === 'registra'}
+                etichetta="Scegli cosa registrare"
+                apri={
+                  comandoRec.voci.length > 1 &&
+                  !registrazione.registratore.mia &&
+                  !registrazione.registratore.bloccato
+                    ? () => setAperto(aperto === 'registra' ? null : 'registra')
+                    : undefined
                 }
-                premi={() => {
-                  if (registrazione.registratore.mia) registrazione.registratore.ferma()
-                  else void comandoRec.parti(comandoRec.voci[0])
-                }}
               >
-                <Registra />
-              </Tasto>
-            </ConFreccia>
-          )}
+                {/* Spento, non sparito: il titolo dice cosa manca — di solito
+                    il nome di chi non ha ancora risposto. Un pulsante che si
+                    toglie di mezzo lascia chi lo cercava a chiedersi se se lo
+                    sia immaginato, e non spiega niente a chi dovrebbe
+                    rispondere. */}
+                <Tasto
+                  tono={registrazione.registratore.mia ? 'male' : 'normale'}
+                  spento={!registrazione.registratore.mia && !!registrazione.registratore.bloccato}
+                  titolo={
+                    registrazione.registratore.mia
+                      ? `Ferma e salva: stai registrando ${registrazione.registratore.mia.nome}`
+                      : registrazione.registratore.bloccato
+                        ? registrazione.registratore.bloccato
+                        : comandoRec.inArrivo
+                          ? 'Sto preparando la registrazione…'
+                          : `Registra ${comandoRec.voci[0].nome.toLowerCase()}`
+                  }
+                  premi={() => {
+                    if (registrazione.registratore.mia) registrazione.registratore.ferma()
+                    else if (!registrazione.registratore.bloccato) {
+                      void comandoRec.parti(comandoRec.voci[0])
+                    }
+                  }}
+                >
+                  <Registra />
+                </Tasto>
+              </ConFreccia>
+            )}
 
           {/* Gli audio condivisi hanno una porta tutta loro, e non stanno
               nell'elenco delle condivisioni: uno schermo si guarda, un audio si

@@ -225,6 +225,17 @@ export const CAMPI_ISTANZA = [
     tipo: 'testo',
     segreta: true,
   },
+  // -- Le registrazioni -----------------------------------------------------
+  {
+    chiave: 'TALK_REGISTRAZIONE',
+    gruppo: 'registrazione-regola',
+    etichetta: 'Chi puo\' registrare, e a quali condizioni',
+    aiuto:
+      "«Libera»: chiunque registra, e chi non acconsente resta fuori dall'audio. «Consenso di tutti»: non parte finche' qualcuno in stanza non ha risposto, e si ferma se entra chi non ha detto di si'. «Vietata»: il pulsante non c'e'. Vale per l'applicazione vera; un programma modificato o OBS aperto di fianco registrano lo stesso, e nessuna impostazione puo' cambiarlo.",
+    tipo: 'scelta',
+    valori: ['libera', 'consenso-di-tutti', 'vietata'],
+  },
+
   // -- Il lavoro ------------------------------------------------------------
   {
     chiave: 'TALK_LAVORO',
@@ -322,6 +333,14 @@ export const CATEGORIE_ISTANZA = [
       "Client ID e secret sono l'applicazione registrata su Spotify, e ne serve una per server — non una per persona. L'account personale si collega gia' da se': ognuno entra con il proprio quando avvia l'ascolto.",
   },
   {
+    id: 'registrazione',
+    nome: 'Registrazioni',
+    sotto:
+      "Registrare una chiamata vuol dire portarsi a casa la voce di altre persone. Qui si decide a quali condizioni si puo' fare su questo server, e si legge chi lo ha fatto.",
+    senzaPersonale:
+      "Non c'e' una versione personale, e sarebbe un controsenso: e' una regola che protegge chi viene registrato, non chi registra. Se ognuno potesse allentarla per se', non proteggerebbe piu' nessuno.",
+  },
+  {
     id: 'lavoro',
     nome: 'Lavoro',
     sotto:
@@ -382,6 +401,13 @@ export const GRUPPI_ISTANZA = [
     categoria: 'immagini',
     nome: 'Generazione in casa',
     sotto: "Immagini che non esistono ancora, fatte da una macchina della tua rete invece che da OpenAI.",
+  },
+  {
+    id: 'registrazione-regola',
+    categoria: 'registrazione',
+    nome: 'La regola',
+    sotto:
+      "Cosa deve succedere prima che una chiamata possa essere registrata. Il registro di chi ha registrato cosa lo tiene il server comunque, e non si spegne.",
   },
   {
     id: 'lavoro-ore',

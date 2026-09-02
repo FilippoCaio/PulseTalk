@@ -59,7 +59,11 @@ export default function AvvisoAggiornamento({
   const bloccato = fase === 'pronto' && inVoce
 
   return (
-    <div className="pointer-events-none absolute inset-x-0 top-0 z-50 flex justify-center p-3">
+    // `top-16` e non `top-0`: sopra ci sono le linguette degli spazi, e una
+    // striscia che galleggia proprio li' coprirebbe l'unica cosa con cui ci si
+    // sposta fra un posto e l'altro. Scende sotto la riga, dove copre solo del
+    // contenuto — che si scorre — invece della navigazione.
+    <div className="pointer-events-none absolute inset-x-0 top-16 z-50 flex justify-center p-3">
       <div className="scheda pointer-events-auto flex w-full max-w-2xl items-start gap-3 rounded-xl border border-bordo bg-fondo-2/95 p-3 shadow-xl shadow-black/40 backdrop-blur">
         <span className="mt-0.5 shrink-0 text-vivo">
           <Giu className="h-4 w-4" />

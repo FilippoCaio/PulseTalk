@@ -564,8 +564,30 @@ textarea {
   border-right-width: 0;
 }
 
+/*
+ * La riga degli spazi, che si ritira in altezza invece che in larghezza.
+ *
+ * Stessa idea della colonna qui sopra e stessa durata: quando si chiude la
+ * sezione di sinistra per lasciare tutto alla chiamata, la riga in cima se ne
+ * va con lei. Se restasse, «chiudere le colonne» toglierebbe di mezzo meta'
+ * della navigazione e lascerebbe l'altra meta' sospesa in cima allo schermo.
+ */
+.riga-collassabile {
+  overflow: hidden;
+  transition:
+    height var(--tempo-corto) var(--dolce),
+    opacity var(--tempo-lampo) var(--dolce);
+}
+
+.riga-collassata {
+  opacity: 0;
+  pointer-events: none;
+  border-bottom-width: 0;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .colonna-collassabile {
+  .colonna-collassabile,
+  .riga-collassabile {
     transition: none;
   }
 }

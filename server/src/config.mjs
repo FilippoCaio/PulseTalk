@@ -25,6 +25,17 @@ function intero(env, nome, fallback, { min = 1, max = Number.MAX_SAFE_INTEGER } 
   return n;
 }
 
+/** Un valore fra pochi possibili, con l'elenco nell'errore: si sbaglia una volta sola. */
+function fraQueste(env, nome, valori, fallback) {
+  const grezzo = env[nome];
+  if (grezzo === undefined || grezzo === '') return fallback;
+  const pulito = String(grezzo).trim().toLowerCase();
+  if (!valori.includes(pulito)) {
+    throw new Error(`${nome} deve essere ${valori.join(', ')} - non "${grezzo}"`);
+  }
+  return pulito;
+}
+
 function booleano(env, nome, fallback) {
   const grezzo = env[nome];
   if (grezzo === undefined || grezzo === '') return fallback;
@@ -155,6 +166,34 @@ export function leggiConfig(env = process.env) {
   return {
     root: resolve(root),
     dbPath: env.TALK_DB ? resolve(env.TALK_DB) : resolve(root, 'talk.db'),
+
+    /**
+     * Che regola vale, su questo server, per registrare una chiamata.
+     *
+     *   libera            chiunque puo' registrare, e chi non acconsente resta
+     *                     fuori dall'audio. E' come ha sempre funzionato.
+     *   consenso-di-tutti la registrazione non parte finche' c'e' anche una
+     *                     sola persona in stanza che non ha detto di si', e si
+     *                     ferma da sola se entra qualcuno che non ha risposto.
+     *   vietata           il pulsante non c'e'.
+     *
+     * Di serie `libera`, e non e' pigrizia: e' cio' che facevano tutte le
+     * versioni fino a ieri, e cambiare la regola sotto ai piedi di chi
+     * aggiorna vorrebbe dire spegnere una funzione senza dirlo a nessuno. Chi
+     * ha bisogno di una regola piu' stretta - un'azienda, un server pubblico -
+     * la sceglie, e il pannello gli spiega quando serve.
+     *
+     * Vale per il client onesto. Un programma modificato registra lo stesso,
+     * come puo' farlo OBS aperto di fianco: quello che questa regola cambia e'
+     * cosa succede quando la strada normale viene usata, ed e' anche l'unica
+     * cosa che si possa scrivere in una informativa.
+     */
+    registrazione: fraQueste(
+      env,
+      'TALK_REGISTRAZIONE',
+      ['libera', 'consenso-di-tutti', 'vietata'],
+      'libera',
+    ),
 
     /**
      * Le impostazioni di chi usa PulseTalk per lavorare.

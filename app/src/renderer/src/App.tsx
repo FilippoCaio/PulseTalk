@@ -1393,7 +1393,7 @@ export default function App(): React.JSX.Element {
   // -- Le tre colonne ---------------------------------------------------------
 
   return (
-    <div className="relative flex h-full overflow-hidden">
+    <div className="relative flex h-full flex-col overflow-hidden">
       {/* La novita' si vede appena si apre l'applicazione, e si manda via.
           Sopra a tutto e senza rubare spazio: e' una striscia che galleggia,
           non una riga che spinge giu' le tre colonne. */}
@@ -1418,10 +1418,10 @@ export default function App(): React.JSX.Element {
           faceva niente. Una regola in linea non ha breakpoint contro cui
           perdere. */}
       <div
-        className={`colonna-collassabile w-16 shrink-0 ${
-          navigazioneMobileAperta ? 'flex' : 'hidden md:flex'
-        } ${colonneRitirate ? 'colonna-collassata' : ''}`}
-        style={{ width: colonneRitirate ? 0 : undefined }}
+        className={`riga-collassabile flex w-full shrink-0 ${
+          colonneRitirate ? 'riga-collassata' : ''
+        }`}
+        style={{ height: colonneRitirate ? 0 : '4rem' }}
         inert={colonneRitirate}
       >
       <BarraSpazi
@@ -1466,27 +1466,24 @@ export default function App(): React.JSX.Element {
         />
       )}
 
-      {/* Il pannello della chiamata copre le due colonne insieme.
-          
-          La larghezza e' la somma delle due qui accanto — w-16 della barra
-          degli spazi e w-60 dei canali — e sta scritta a mano perche' un
-          overlay non puo' misurarle: cambiando una delle due, va cambiata
-          anche questa. Senza spazio aperto la colonna dei canali non esiste, e
-          il pannello si restringe sulla sola barra.
+      {/* Il pannello della chiamata sta in fondo alla colonna di sinistra.
 
-          Le due colonne si ritirano cambiando larghezza e non sparendo, quindi
-          la somma qui sopra resta quella: 4rem + 15rem, gli stessi numeri di
-          prima. A tutto schermo questo pannello se ne va scorrendo a sinistra
-          invece di stringersi, e non e' una scelta di gusto — dentro ha una
-          tendina che si apre verso l'alto, e un contenitore che taglia cio' che
-          esce (`overflow: hidden`) la mozzerebbe a meta' ogni volta. */}
+          La larghezza e' quella della colonna dei canali — 15rem — e sta
+          scritta a mano perche' un overlay non puo' misurare i fratelli:
+          cambiando quella, va cambiata anche questa. Erano 19rem finche' a
+          sinistra ce n'erano due, e la barra degli spazi valeva i suoi 4rem:
+          adesso quella e' una riga in cima e non toglie piu' larghezza a
+          niente.
+
+          A tutto schermo questo pannello se ne va scorrendo a sinistra invece
+          di stringersi, e non e' una scelta di gusto — dentro ha una tendina
+          che si apre verso l'alto, e un contenitore che taglia cio' che esce
+          (`overflow: hidden`) la mozzerebbe a meta' ogni volta. */}
       {inVoce && utente && (
         <div
           className={`pannello-scorrevole absolute bottom-0 left-0 z-20 ${
             navigazioneMobileAperta ? 'block' : 'hidden md:block'
-          } ${spazioAperto ? 'w-full md:w-[19rem]' : 'w-16'} ${
-            colonneRitirate ? 'pannello-ritirato' : ''
-          }`}
+          } w-full md:w-60 ${colonneRitirate ? 'pannello-ritirato' : ''}`}
           inert={colonneRitirate}
         >
           <PannelloVoce
@@ -1554,18 +1551,18 @@ export default function App(): React.JSX.Element {
           una preferenza che sopravvive alla chiamata, e senza un pulsante
           anche nella chat non ci sarebbe piu' modo di riaprirla.
 
-          Il `left` e' calcolato e non e' una classe: sta sul bordo destro delle
-          colonne, e quel bordo cade a 19rem quando ce ne sono due, a 4rem
-          quando c'e' la sola barra dei server, a zero quando sono ritirate. Le
-          stesse misure del pannello della voce qui sopra, e come quelle vanno
-          rifatte a mano il giorno in cui una colonna cambia larghezza: un
-          elemento in posizione assoluta non puo' misurare i fratelli. */}
+          Il `left` e' calcolato e non e' una classe: sta sul bordo destro della
+          colonna, che cade a 15rem quando c'e' e a zero quando e' ritirata o
+          quando non ce n'e' nessuna. La stessa misura del pannello della voce
+          qui sopra, e come quella va rifatta a mano il giorno in cui la
+          colonna cambia larghezza: un elemento in posizione assoluta non puo'
+          misurare i fratelli. */}
       {!salaInVista && (
         <LinguettaColonne
           ritirate={colonneRitirate}
           alterna={alternaColonne}
           className="linguetta-colonne absolute top-1/2 z-30 -translate-y-1/2"
-          style={{ left: colonneRitirate ? 0 : dueColonne ? '19rem' : '4rem' }}
+          style={{ left: colonneRitirate || !dueColonne ? 0 : '15rem' }}
         />
       )}
 
@@ -1588,309 +1585,322 @@ export default function App(): React.JSX.Element {
         />
       )}
 
-      {vista === 'diretti' ? (
-        <>
-          {/* I messaggi diretti prendono le stesse due colonne dei server:
-              stessa larghezza, stesso bordo, stesso posto per il pannello
-              della voce. Cambiare geometria fra le due viste vorrebbe dire far
-              saltare l'interfaccia a ogni passaggio. */}
-          <div
-            className={`colonna-collassabile w-[calc(100%-4rem)] shrink-0 border-r border-bordo bg-fondo-2 md:w-60 ${
-              navigazioneMobileAperta ? 'flex' : 'hidden md:flex'
-            } ${colonneRitirate ? 'colonna-collassata' : ''}`}
-            style={{ width: colonneRitirate ? 0 : undefined }}
-            inert={colonneRitirate}
-          >
-          {/* La larghezza di dentro e' fissa e in unita' di finestra, non in
-              percentuale del contenitore: se seguisse il contenitore che si
-              sta stringendo, a ogni fotogramma l'elenco andrebbe a capo e poi
-              si troncherebbe, e per un terzo di secondo la colonna sembrerebbe
-              rompersi invece che ritirarsi. */}
-          <div ref={colonna} className="flex w-[calc(100vw-4rem)] shrink-0 flex-col md:w-60">
-            <ColonnaDiretti
-              api={api}
-              conversazioni={diretti.conversazioni}
-              apertaId={conversazioneAperta?.id ?? null}
-              scegli={(c) => {
-                setConversazioneApertaId(c.id)
-                setNavigazioneMobileAperta(false)
-              }}
-              apriAmici={() => setMostraAmici(true)}
-              quandoApre={(chi) => {
-                void diretti.apriCon(chi).then((c) => {
-                  if (!c) return
+      {/* Le due colonne, sotto alla riga degli spazi.
+
+          Questo involucro esiste da quando gli spazi sono passati in cima:
+          la radice adesso impila in verticale — riga, poi contenuto — e senza
+          qualcosa che rimetta in riga cio' che sta sotto, la colonna dei
+          canali finirebbe sopra alla chiamata invece che accanto.
+
+          `min-h-0` non e' decorazione: senza, un figlio che scorre porta
+          l'altezza del contenitore oltre lo schermo invece di scorrere
+          dentro ai suoi limiti, ed e' il modo in cui una chat lunga si
+          mangia la barra dei comandi. */}
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        {vista === 'diretti' ? (
+          <>
+            {/* I messaggi diretti prendono le stesse due colonne dei server:
+                stessa larghezza, stesso bordo, stesso posto per il pannello
+                della voce. Cambiare geometria fra le due viste vorrebbe dire far
+                saltare l'interfaccia a ogni passaggio. */}
+            <div
+              className={`colonna-collassabile w-full shrink-0 border-r border-bordo bg-fondo-2 md:w-60 ${
+                navigazioneMobileAperta ? 'flex' : 'hidden md:flex'
+              } ${colonneRitirate ? 'colonna-collassata' : ''}`}
+              style={{ width: colonneRitirate ? 0 : undefined }}
+              inert={colonneRitirate}
+            >
+            {/* La larghezza di dentro e' fissa e in unita' di finestra, non in
+                percentuale del contenitore: se seguisse il contenitore che si
+                sta stringendo, a ogni fotogramma l'elenco andrebbe a capo e poi
+                si troncherebbe, e per un terzo di secondo la colonna sembrerebbe
+                rompersi invece che ritirarsi. */}
+            <div ref={colonna} className="flex w-screen shrink-0 flex-col md:w-60">
+              <ColonnaDiretti
+                api={api}
+                conversazioni={diretti.conversazioni}
+                apertaId={conversazioneAperta?.id ?? null}
+                scegli={(c) => {
                   setConversazioneApertaId(c.id)
                   setNavigazioneMobileAperta(false)
-                })
-              }}
-            />
-          </div>
-          </div>
-
-          <main
-            ref={finestra}
-            className={`${navigazioneMobileAperta ? 'hidden md:flex' : 'flex'} min-w-0 flex-1 flex-col`}
-          >
-            {!guardaLaChiamata && (
-              <BarraMobile
-                titolo={conversazioneAperta?.con.nome ?? 'Messaggi diretti'}
-                apri={() => setNavigazioneMobileAperta(true)}
+                }}
+                apriAmici={() => setMostraAmici(true)}
+                quandoApre={(chi) => {
+                  void diretti.apriCon(chi).then((c) => {
+                    if (!c) return
+                    setConversazioneApertaId(c.id)
+                    setNavigazioneMobileAperta(false)
+                  })
+                }}
               />
-            )}
-            {avviso && (
-              <div className="p-3">
-                <Avviso tono="attenzione">
-                  <div className="flex items-start gap-3">
-                    <p className="min-w-0 flex-1">{avviso}</p>
-                    <BottoneIcona
-                      tono="fantasma"
-                      title="Chiudi l'avviso"
-                      className="h-7 w-7 shrink-0"
-                      onClick={() => setAvviso(null)}
-                    >
-                      <Chiudi className="h-3.5 w-3.5" />
-                    </BottoneIcona>
-                  </div>
-                </Avviso>
-              </div>
-            )}
-            {diretti.errore && (
-              <div className="p-3">
-                <Avviso>{diretti.errore}</Avviso>
-              </div>
-            )}
+            </div>
+            </div>
 
-            {/* `ingresso` di nuovo per esteso accanto al booleano: un `true`
-                non racconta a TypeScript che li' dentro non e' nullo. */}
-            {salaDiretta && ingresso ? (
-              // In chiamata con questa persona: al posto della chat c'e' la
-              // sala, con la conversazione nel pannello laterale. E' lo stesso
-              // componente dei canali vocali — una chiamata a due non e' un
-              // altro tipo di chiamata, e' una chiamata con due persone.
-              <Sala
-                api={api}
-                ingresso={ingresso}
-                sessione={sessione}
-                impostazioni={impostazioni}
+            <main
+              ref={finestra}
+              className={`${navigazioneMobileAperta ? 'hidden md:flex' : 'flex'} min-w-0 flex-1 flex-col`}
+            >
+              {!guardaLaChiamata && (
+                <BarraMobile
+                  titolo={conversazioneAperta?.con.nome ?? 'Messaggi diretti'}
+                  apri={() => setNavigazioneMobileAperta(true)}
+                />
+              )}
+              {avviso && (
+                <div className="p-3">
+                  <Avviso tono="attenzione">
+                    <div className="flex items-start gap-3">
+                      <p className="min-w-0 flex-1">{avviso}</p>
+                      <BottoneIcona
+                        tono="fantasma"
+                        title="Chiudi l'avviso"
+                        className="h-7 w-7 shrink-0"
+                        onClick={() => setAvviso(null)}
+                      >
+                        <Chiudi className="h-3.5 w-3.5" />
+                      </BottoneIcona>
+                    </div>
+                  </Avviso>
+                </div>
+              )}
+              {diretti.errore && (
+                <div className="p-3">
+                  <Avviso>{diretti.errore}</Avviso>
+                </div>
+              )}
+
+              {/* `ingresso` di nuovo per esteso accanto al booleano: un `true`
+                  non racconta a TypeScript che li' dentro non e' nullo. */}
+              {salaDiretta && ingresso ? (
+                // In chiamata con questa persona: al posto della chat c'e' la
+                // sala, con la conversazione nel pannello laterale. E' lo stesso
+                // componente dei canali vocali — una chiamata a due non e' un
+                // altro tipo di chiamata, e' una chiamata con due persone.
+                <Sala
+                  api={api}
+                  ingresso={ingresso}
+                  sessione={sessione}
+                  impostazioni={impostazioni}
+                  profili={profili}
+                  moderatore={false}
+                  salvaImpostazioni={salva}
+                  chatVocale={chatDiretta}
+                  canaleVocale={canaleDiretto}
+                  utente={utente}
+                  media={media}
+                  schermoIntero={{ attivo: chiamataPiena, alterna: alternaChiamataPiena }}
+                  colonne={{ ritirate: colonneRitirate, alterna: alternaColonne }}
+                  tornaAiServer={lasciaVistaChiamata}
+                  condivisioneRichiesta={richiestaCondivisione}
+                  condivisioneServita={condivisioneServita}
+                  restrizioni={restrizioni}
+                  esci={esciDallaVoce}
+                  apriImpostazioni={() => setMostraImpostazioni(true)}
+                />
+              ) : conversazioneAperta ? (
+                <Diretto
+                  api={api}
+                  conversazione={conversazioneAperta}
+                  chat={chatDiretta}
+                  io={utente}
+                  profili={profili}
+                  chiamata={chiamataAperta}
+                  chiamando={chiamando}
+                  telefona={() => void telefona(conversazioneAperta.id)}
+                  riaggancia={() => void riaggancia(conversazioneAperta.id)}
+                  mostraAnteprimeLink={impostazioni.mostraAnteprimeLink ?? true}
+                />
+              ) : (
+                <div className="flex flex-1 flex-col items-center justify-center gap-1 text-center">
+                  <p className="text-testo-2">Nessuna conversazione aperta.</p>
+                  <p className="text-sm text-testo-3">
+                    Con il + nella colonna a sinistra si scrive a chiunque abbia un account qui.
+                  </p>
+                </div>
+              )}
+            </main>
+          </>
+        ) : spazioAperto ? (
+          <>
+            {/* Bordo e sfondo stanno qui e non sulla colonna: la riga verticale
+                deve correre dall'alto al basso senza spezzarsi dove finisce
+                l'elenco dei canali e comincia la barra della voce. */}
+            <div
+              className={`colonna-collassabile w-full shrink-0 border-r border-bordo bg-fondo-2 md:w-60 ${
+                navigazioneMobileAperta ? 'flex' : 'hidden md:flex'
+              } ${colonneRitirate ? 'colonna-collassata' : ''}`}
+              style={{ width: colonneRitirate ? 0 : undefined }}
+              inert={colonneRitirate}
+            >
+            <div ref={colonna} className="flex w-screen shrink-0 flex-col md:w-60">
+              <ColonnaCanali
+                spazio={spazioAperto}
+                apertoId={canaleAperto?.id ?? null}
+                inVoce={inVoce}
+                scegli={(canale) => {
+                  setCanaleApertoId(canale.id)
+                  setNavigazioneMobileAperta(false)
+                }}
+                entraInVoce={(canale) => {
+                  setNavigazioneMobileAperta(false)
+                  entraInVoce(canale)
+                }}
+                parlanti={sessione.parlanti}
+                esciDallaVoce={() => void esciDallaVoce()}
+                crea={async (dati) => {
+                  await api.creaCanale(spazioAperto.id, dati)
+                  mondo.ricarica()
+                }}
+                elimina={async (canale) => {
+                  if (canale.id === inVoce) await esciDallaVoce()
+                  await api.eliminaCanale(canale.id)
+                  mondo.ricarica()
+                }}
+                apriRicerca={() => setMostraRicerca(true)}
+                gestisciIscritti={(canale) => setIscrittiDi(canale)}
+                modificaCanale={async (canale, modifiche) => {
+                  await api.aggiornaCanale(canale.id, modifiche)
+                  mondo.ricarica()
+                }}
                 profili={profili}
-                moderatore={false}
-                salvaImpostazioni={salva}
-                chatVocale={chatDiretta}
-                canaleVocale={canaleDiretto}
-                utente={utente}
-                media={media}
-                schermoIntero={{ attivo: chiamataPiena, alterna: alternaChiamataPiena }}
-                colonne={{ ritirate: colonneRitirate, alterna: alternaColonne }}
-                tornaAiServer={lasciaVistaChiamata}
-                condivisioneRichiesta={richiestaCondivisione}
-                condivisioneServita={condivisioneServita}
-                restrizioni={restrizioni}
-                esci={esciDallaVoce}
-                apriImpostazioni={() => setMostraImpostazioni(true)}
+                microfoniSpenti={sessione.microfoniSpenti}
+                sordine={sessione.sordine}
+                persona={personaInVoce}
+                menuAperto={menuSpazioAperto}
+                alternaMenu={() => setMenuSpazioAperto((v) => !v)}
+                menu={
+                  impostazioni && (
+                    <MenuSpazio
+                      spazio={spazioAperto}
+                      impostazioni={impostazioni}
+                      silenzia={(minuti) => silenzia(spazioAperto.id, minuti)}
+                      riattiva={() => riattiva(spazioAperto.id)}
+                      apriImpostazioniSpazio={(sezione) => setImpostazioniSpazio(sezione ?? '')}
+                      apriInviti={() => setImpostazioniSpazio('inviti')}
+                      apriEventi={() => setMostraEventi('guarda')}
+                      creaEvento={() => setMostraEventi('crea')}
+                      segnaLetto={() => {
+                        void api.segnaSpazioLetto(spazioAperto.id).then(mondo.ricarica)
+                      }}
+                      abbandona={() => setConfermaAbbandono(spazioAperto)}
+                      chiudi={() => setMenuSpazioAperto(false)}
+                    />
+                  )
+                }
               />
-            ) : conversazioneAperta ? (
-              <Diretto
-                api={api}
-                conversazione={conversazioneAperta}
-                chat={chatDiretta}
-                io={utente}
-                profili={profili}
-                chiamata={chiamataAperta}
-                chiamando={chiamando}
-                telefona={() => void telefona(conversazioneAperta.id)}
-                riaggancia={() => void riaggancia(conversazioneAperta.id)}
-                mostraAnteprimeLink={impostazioni.mostraAnteprimeLink ?? true}
-              />
-            ) : (
-              <div className="flex flex-1 flex-col items-center justify-center gap-1 text-center">
-                <p className="text-testo-2">Nessuna conversazione aperta.</p>
-                <p className="text-sm text-testo-3">
-                  Con il + nella colonna a sinistra si scrive a chiunque abbia un account qui.
-                </p>
-              </div>
-            )}
-          </main>
-        </>
-      ) : spazioAperto ? (
-        <>
-          {/* Bordo e sfondo stanno qui e non sulla colonna: la riga verticale
-              deve correre dall'alto al basso senza spezzarsi dove finisce
-              l'elenco dei canali e comincia la barra della voce. */}
-          <div
-            className={`colonna-collassabile w-[calc(100%-4rem)] shrink-0 border-r border-bordo bg-fondo-2 md:w-60 ${
-              navigazioneMobileAperta ? 'flex' : 'hidden md:flex'
-            } ${colonneRitirate ? 'colonna-collassata' : ''}`}
-            style={{ width: colonneRitirate ? 0 : undefined }}
-            inert={colonneRitirate}
-          >
-          <div ref={colonna} className="flex w-[calc(100vw-4rem)] shrink-0 flex-col md:w-60">
-            <ColonnaCanali
-              spazio={spazioAperto}
-              apertoId={canaleAperto?.id ?? null}
-              inVoce={inVoce}
-              scegli={(canale) => {
-                setCanaleApertoId(canale.id)
-                setNavigazioneMobileAperta(false)
-              }}
-              entraInVoce={(canale) => {
-                setNavigazioneMobileAperta(false)
-                entraInVoce(canale)
-              }}
-              parlanti={sessione.parlanti}
-              esciDallaVoce={() => void esciDallaVoce()}
-              crea={async (dati) => {
-                await api.creaCanale(spazioAperto.id, dati)
-                mondo.ricarica()
-              }}
-              elimina={async (canale) => {
-                if (canale.id === inVoce) await esciDallaVoce()
-                await api.eliminaCanale(canale.id)
-                mondo.ricarica()
-              }}
-              apriRicerca={() => setMostraRicerca(true)}
-              gestisciIscritti={(canale) => setIscrittiDi(canale)}
-              modificaCanale={async (canale, modifiche) => {
-                await api.aggiornaCanale(canale.id, modifiche)
-                mondo.ricarica()
-              }}
-              profili={profili}
-              microfoniSpenti={sessione.microfoniSpenti}
-              sordine={sessione.sordine}
-              persona={personaInVoce}
-              menuAperto={menuSpazioAperto}
-              alternaMenu={() => setMenuSpazioAperto((v) => !v)}
-              menu={
-                impostazioni && (
-                  <MenuSpazio
-                    spazio={spazioAperto}
-                    impostazioni={impostazioni}
-                    silenzia={(minuti) => silenzia(spazioAperto.id, minuti)}
-                    riattiva={() => riattiva(spazioAperto.id)}
-                    apriImpostazioniSpazio={(sezione) => setImpostazioniSpazio(sezione ?? '')}
-                    apriInviti={() => setImpostazioniSpazio('inviti')}
-                    apriEventi={() => setMostraEventi('guarda')}
-                    creaEvento={() => setMostraEventi('crea')}
-                    segnaLetto={() => {
-                      void api.segnaSpazioLetto(spazioAperto.id).then(mondo.ricarica)
-                    }}
-                    abbandona={() => setConfermaAbbandono(spazioAperto)}
-                    chiudi={() => setMenuSpazioAperto(false)}
-                  />
-                )
-              }
-            />
 
-          </div>
-          </div>
+            </div>
+            </div>
 
-          <main
-            ref={finestra}
-            className={`${navigazioneMobileAperta ? 'hidden md:flex' : 'flex'} min-w-0 flex-1 flex-col`}
-          >
-            {!guardaLaChiamata && (
-              <BarraMobile
-                titolo={canaleAperto ? `${canaleAperto.tipo === 'testo' ? '#' : ''}${canaleAperto.nome}` : spazioAperto.nome}
-                apri={() => setNavigazioneMobileAperta(true)}
-              />
-            )}
-            <StrisciaProblemi />
-            {avviso && (
-              <div className="p-3">
-                <Avviso tono="attenzione">
-                  <div className="flex items-start gap-3">
-                    <p className="min-w-0 flex-1">{avviso}</p>
-                    <BottoneIcona
-                      tono="fantasma"
-                      title="Chiudi l'avviso"
-                      className="h-7 w-7 shrink-0"
-                      onClick={() => setAvviso(null)}
-                    >
-                      <Chiudi className="h-3.5 w-3.5" />
-                    </BottoneIcona>
-                  </div>
-                </Avviso>
-              </div>
-            )}
-            {mondo.errore && (
-              <div className="p-3">
+            <main
+              ref={finestra}
+              className={`${navigazioneMobileAperta ? 'hidden md:flex' : 'flex'} min-w-0 flex-1 flex-col`}
+            >
+              {!guardaLaChiamata && (
+                <BarraMobile
+                  titolo={canaleAperto ? `${canaleAperto.tipo === 'testo' ? '#' : ''}${canaleAperto.nome}` : spazioAperto.nome}
+                  apri={() => setNavigazioneMobileAperta(true)}
+                />
+              )}
+              <StrisciaProblemi />
+              {avviso && (
+                <div className="p-3">
+                  <Avviso tono="attenzione">
+                    <div className="flex items-start gap-3">
+                      <p className="min-w-0 flex-1">{avviso}</p>
+                      <BottoneIcona
+                        tono="fantasma"
+                        title="Chiudi l'avviso"
+                        className="h-7 w-7 shrink-0"
+                        onClick={() => setAvviso(null)}
+                      >
+                        <Chiudi className="h-3.5 w-3.5" />
+                      </BottoneIcona>
+                    </div>
+                  </Avviso>
+                </div>
+              )}
+              {mondo.errore && (
+                <div className="p-3">
+                  <Avviso>{mondo.errore}</Avviso>
+                </div>
+              )}
+
+              {salaCanale && ingresso ? (
+                <Sala
+                  api={api}
+                  ingresso={ingresso}
+                  sessione={sessione}
+                  impostazioni={impostazioni}
+                  profili={profili}
+                  moderatore={puo(canaleVocale?.permessiMiei, 'manageVoiceMembers')}
+                  salvaImpostazioni={salva}
+                  chatVocale={chatVocale}
+                  canaleVocale={canaleVocale}
+                  utente={utente}
+                  media={media}
+                  schermoIntero={{ attivo: chiamataPiena, alterna: alternaChiamataPiena }}
+                  colonne={{ ritirate: colonneRitirate, alterna: alternaColonne }}
+                  tornaAiServer={lasciaVistaChiamata}
+                  condivisioneRichiesta={richiestaCondivisione}
+                  condivisioneServita={condivisioneServita}
+                  restrizioni={restrizioni}
+                  esci={esciDallaVoce}
+                  apriImpostazioni={() => setMostraImpostazioni(true)}
+                />
+              ) : canaleAperto?.tipo === 'testo' ? (
+                <Chat
+                  api={api}
+                  canale={canaleAperto}
+                  chat={chat}
+                  io={utente}
+                  profili={profili}
+                  mostraAnteprimeLink={impostazioni.mostraAnteprimeLink ?? true}
+                  accantoAllaLinguetta
+                />
+              ) : canaleAperto?.tipo === 'voce' ? (
+                <AtrioVocale
+                  canale={canaleAperto}
+                  profili={profili}
+                  entra={() => entraInVoce(canaleAperto)}
+                />
+              ) : (
+                <div className="flex flex-1 flex-col items-center justify-center gap-1 text-center">
+                  <p className="text-testo-2">Scegli un canale a sinistra.</p>
+                  <p className="text-sm text-testo-3">
+                    Quelli con il # si leggono, quelli con l'altoparlante si ascoltano.
+                  </p>
+                </div>
+              )}
+            </main>
+          </>
+        ) : (
+          <div className="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center">
+            {/* L'errore prima di tutto. Senza, un elenco che non arriva resta
+                "carico…" per sempre: il motivo c'era, e non lo leggeva nessuno
+                perche' l'unico posto in cui si mostrava era la colonna di destra,
+                che senza spazi aperti non viene disegnata. */}
+            {mondo.errore ? (
+              <>
                 <Avviso>{mondo.errore}</Avviso>
-              </div>
-            )}
-
-            {salaCanale && ingresso ? (
-              <Sala
-                api={api}
-                ingresso={ingresso}
-                sessione={sessione}
-                impostazioni={impostazioni}
-                profili={profili}
-                moderatore={puo(canaleVocale?.permessiMiei, 'manageVoiceMembers')}
-                salvaImpostazioni={salva}
-                chatVocale={chatVocale}
-                canaleVocale={canaleVocale}
-                utente={utente}
-                media={media}
-                schermoIntero={{ attivo: chiamataPiena, alterna: alternaChiamataPiena }}
-                colonne={{ ritirate: colonneRitirate, alterna: alternaColonne }}
-                tornaAiServer={lasciaVistaChiamata}
-                condivisioneRichiesta={richiestaCondivisione}
-                condivisioneServita={condivisioneServita}
-                restrizioni={restrizioni}
-                esci={esciDallaVoce}
-                apriImpostazioni={() => setMostraImpostazioni(true)}
-              />
-            ) : canaleAperto?.tipo === 'testo' ? (
-              <Chat
-                api={api}
-                canale={canaleAperto}
-                chat={chat}
-                io={utente}
-                profili={profili}
-                mostraAnteprimeLink={impostazioni.mostraAnteprimeLink ?? true}
-                accantoAllaLinguetta
-              />
-            ) : canaleAperto?.tipo === 'voce' ? (
-              <AtrioVocale
-                canale={canaleAperto}
-                profili={profili}
-                entra={() => entraInVoce(canaleAperto)}
-              />
+                <button className="text-sm text-testo-3 underline" onClick={mondo.ricarica}>
+                  riprova
+                </button>
+              </>
+            ) : mondo.spazi === null ? (
+              <span className="respiro text-testo-3">carico…</span>
             ) : (
-              <div className="flex flex-1 flex-col items-center justify-center gap-1 text-center">
-                <p className="text-testo-2">Scegli un canale a sinistra.</p>
+              <>
+                <p className="text-testo-2">Non c'e' ancora nessuno spazio.</p>
                 <p className="text-sm text-testo-3">
-                  Quelli con il # si leggono, quelli con l'altoparlante si ascoltano.
+                  Creane uno con il + nella colonna a sinistra: nasce privato, e lo vedi solo tu
+                  finche' non inviti qualcuno.
                 </p>
-              </div>
+              </>
             )}
-          </main>
-        </>
-      ) : (
-        <div className="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center">
-          {/* L'errore prima di tutto. Senza, un elenco che non arriva resta
-              "carico…" per sempre: il motivo c'era, e non lo leggeva nessuno
-              perche' l'unico posto in cui si mostrava era la colonna di destra,
-              che senza spazi aperti non viene disegnata. */}
-          {mondo.errore ? (
-            <>
-              <Avviso>{mondo.errore}</Avviso>
-              <button className="text-sm text-testo-3 underline" onClick={mondo.ricarica}>
-                riprova
-              </button>
-            </>
-          ) : mondo.spazi === null ? (
-            <span className="respiro text-testo-3">carico…</span>
-          ) : (
-            <>
-              <p className="text-testo-2">Non c'e' ancora nessuno spazio.</p>
-              <p className="text-sm text-testo-3">
-                Creane uno con il + nella colonna a sinistra: nasce privato, e lo vedi solo tu
-                finche' non inviti qualcuno.
-              </p>
-            </>
-          )}
-        </div>
-      )}
+          </div>
+        )}
+      </div>
 
       {/* -- I pannelli sopra a tutto ------------------------------------- */}
 

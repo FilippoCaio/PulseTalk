@@ -911,6 +911,10 @@ export function rotteSpazi(app, { db, config, presenze, eventi }) {
       return {
         gettone,
         sfuUrl: config.sfuUrl,
+        // La regola sulle registrazioni arriva insieme al gettone e non da una
+        // rotta a parte: e' una cosa della stanza in cui si sta entrando, e
+        // deve essere in mano al client prima che il pulsante esista.
+        registrazione: config.registrazione,
         canale: {
           id: esito.canale.id,
           nome: esito.canale.nome,

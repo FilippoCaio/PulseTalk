@@ -490,6 +490,67 @@ export class TalkDb {
     return fuori;
   }
 
+  // -- Il registro delle registrazioni ---------------------------------------
+
+  /** Apre la riga e torna il suo numero: il client lo tiene per chiuderla. */
+  apriRegistrazione({ canale, chi, cosa, presenti = 0, consensi = 0 }) {
+    return this.sql
+      .prepare(
+        `INSERT INTO registrazioni (canale, chi, cosa, avviata, presenti, consensi)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+      .run(canale, chi, cosa, ora(), presenti, consensi).lastInsertRowid;
+  }
+
+  /**
+   * La chiude, se e' di chi lo chiede ed e' ancora aperta.
+   *
+   * Solo la propria: chiudere quella di un altro vorrebbe dire scrivere nel
+   * registro che qualcuno ha smesso di registrare quando non e' vero.
+   */
+  chiudiRegistrazione(id, chi) {
+    return this.sql
+      .prepare('UPDATE registrazioni SET chiusa = ? WHERE id = ? AND chi = ? AND chiusa IS NULL')
+      .run(ora(), id, chi).changes;
+  }
+
+  /** Il registro di un canale, dal piu' recente, col nome di chi ha registrato. */
+  registrazioniDi(canale, quante = 100) {
+    return this.sql
+      .prepare(
+        `SELECT r.id, r.canale, r.chi, r.cosa, r.avviata, r.chiusa, r.presenti, r.consensi,
+                u.nome AS nome
+           FROM registrazioni r
+           JOIN utenti u ON u.id = r.chi
+          WHERE r.canale = ?
+          ORDER BY r.id DESC
+          LIMIT ?`,
+      )
+      .all(canale, quante);
+  }
+
+  /**
+   * Il registro di tutti i canali di uno spazio, dal piu' recente.
+   *
+   * Serve alla domanda che si fa dopo - «chi ha registrato qui dentro» - che
+   * non e' mai di un canale solo: chi la fa non si ricorda in quale stanza
+   * fosse, si ricorda il giorno.
+   */
+  registrazioniDelloSpazio(spazio, quante = 200) {
+    return this.sql
+      .prepare(
+        `SELECT r.id, r.canale, r.chi, r.cosa, r.avviata, r.chiusa, r.presenti, r.consensi,
+                u.nome AS nome, c.nome AS canaleNome
+           FROM registrazioni r
+           JOIN utenti u ON u.id = r.chi
+           JOIN canali c ON c.id = r.canale
+          WHERE c.spazio = ?
+          ORDER BY r.id DESC
+          LIMIT ?`,
+      )
+      .all(spazio, quante);
+  }
+
   // -- Le ore nei canali vocali ----------------------------------------------
 
   /**

@@ -41,14 +41,31 @@ const RAGGIO_RIPOSO = 'rounded-[12px] group-hover:rounded-[6px]'
 const RAGGIO_RIPOSO_SOLO = 'rounded-[12px] hover:rounded-[6px]'
 
 /**
- * La colonna delle icone, a sinistra di tutto.
+ * La riga delle icone, in cima a tutto.
  *
- * Stretta apposta: e' un indice, non un elenco. Il nome per esteso compare
+ * Bassa apposta: e' un indice, non un elenco. Il nome per esteso compare
  * passandoci sopra, perche' con quattro spazi le iniziali bastano e con venti
- * un elenco di nomi occuperebbe un quarto dello schermo per sempre.
+ * un elenco di nomi occuperebbe una fascia di schermo per sempre.
  *
- * Il pallino a sinistra dice quale e' aperto e dove ci sono cose da leggere:
- * sono le due sole informazioni che servono guardando da lontano.
+ * ## Perche' orizzontale, e in cima
+ *
+ * Era una colonna a sinistra, come in Discord, ed e' la prima cosa che si vede
+ * aprendo l'applicazione: la forma di quella colonna *e'* il modo in cui si
+ * riconosce da quale programma si viene. Sopra, e in orizzontale, gli spazi
+ * diventano quello che sono davvero — delle linguette fra cui si passa — e
+ * lasciano alla sinistra dello schermo una colonna sola invece di due.
+ *
+ * Il guadagno non e' di gusto: sotto ai 1200 pixel due colonne piu' la sala
+ * erano tre cose che si contendevano la larghezza, e la larghezza e' quella
+ * che serve alla chiamata. In cima, la riga costa 56 pixel di altezza a
+ * tutti e non toglie niente a nessuno in larghezza.
+ *
+ * ## Il segno di quale e' aperto
+ *
+ * La barretta che stava a sinistra dell'icona adesso sta **sotto**: e' la
+ * sottolineatura di una linguetta, che e' il segno che tutti hanno gia'
+ * imparato per «sei qui» in orizzontale. Alta quanto la barretta era larga, e
+ * larga quanto quella era alta: la stessa quantita' di inchiostro, girata.
  */
 export default function BarraSpazi({
   spazi,
@@ -136,12 +153,14 @@ export default function BarraSpazi({
   }
 
   return (
-    <nav className={`flex w-16 shrink-0 flex-col items-center gap-2 overflow-y-auto border-r border-bordo bg-fondo py-3 ${className}`}>
+    <nav
+      className={`flex h-16 w-full shrink-0 items-center gap-2 overflow-x-auto overflow-y-hidden border-b border-bordo bg-fondo px-3 ${className}`}
+    >
       {/* Il server vero, sopra a tutto e separato da una riga: cambiarlo
           cambia *tutto* quello che sta sotto — spazi, canali, persone,
           messaggi — e una cosa che ha quel peso non sta in mezzo alle altre. */}
       {intestazione}
-      {intestazione && <span className="my-0.5 h-px w-8 shrink-0 bg-bordo" />}
+      {intestazione && <span className="mx-0.5 h-8 w-px shrink-0 bg-bordo" />}
 
       {/* I messaggi diretti stanno in cima, sopra alla riga: non sono un
           server, e metterli in mezzo agli altri li farebbe sembrare tali. */}
@@ -149,11 +168,11 @@ export default function BarraSpazi({
         onClick={apriDiretti}
         title="Messaggi diretti"
         aria-label="Messaggi diretti"
-        className="group relative flex h-12 w-12 items-center justify-center"
+        className="group relative flex h-12 w-12 shrink-0 items-center justify-center"
       >
         <span
-          className={`absolute -left-3 w-1 rounded-r-full bg-testo transition-all ${
-            direttiAperti ? 'h-8' : direttiNonLetti > 0 ? 'h-2' : 'h-0'
+          className={`absolute -bottom-2 h-1 rounded-t-full bg-testo transition-all ${
+            direttiAperti ? 'w-8' : direttiNonLetti > 0 ? 'w-2' : 'w-0'
           }`}
         />
         <span
@@ -172,7 +191,7 @@ export default function BarraSpazi({
         )}
       </button>
 
-      <span className="my-0.5 h-px w-8 shrink-0 bg-bordo" />
+      <span className="mx-0.5 h-8 w-px shrink-0 bg-bordo" />
 
       {spazi.map((spazio) => {
         const daLeggere = spazio.canali.reduce((somma, c) => somma + c.nonLetti, 0)
@@ -193,13 +212,13 @@ export default function BarraSpazi({
             // Niente `title`: il cartellino dice gia' tutto, e i due insieme
             // farebbero comparire due riquadri sovrapposti dopo un secondo.
             aria-label={spazio.nome}
-            className="group relative flex h-12 w-12 items-center justify-center"
+            className="group relative flex h-12 w-12 shrink-0 items-center justify-center"
           >
-            {/* Il segno a sinistra: alto quando e' aperto, un punto quando ha
-                da leggere, niente quando non c'e' niente da dire. */}
+            {/* Il segno sotto: largo quando e' aperto, un punto quando ha da
+                leggere, niente quando non c'e' niente da dire. */}
             <span
-              className={`absolute -left-3 w-1 rounded-r-full bg-testo transition-all ${
-                attivo ? 'h-8' : daLeggere > 0 ? 'h-2' : 'h-0'
+              className={`absolute -bottom-2 h-1 rounded-t-full bg-testo transition-all ${
+                attivo ? 'w-8' : daLeggere > 0 ? 'w-2' : 'w-0'
               }`}
             />
             <span
@@ -275,7 +294,7 @@ export default function BarraSpazi({
         onClick={apriAmici}
         title={richieste > 0 ? `Amici — ${richieste} in attesa` : 'Amici'}
         aria-label="Amici"
-        className="relative flex h-10 w-10 items-center justify-center rounded-lg bg-fondo-2 text-testo-2 transition-colors hover:bg-fondo-3 hover:text-testo"
+        className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-fondo-2 text-testo-2 transition-colors hover:bg-fondo-3 hover:text-testo"
       >
         <Utenti />
         {richieste > 0 && (
@@ -291,7 +310,7 @@ export default function BarraSpazi({
       <button
         onClick={apriProfilo}
         title={utente.nome}
-        className="relative h-10 w-10 rounded-full ring-2 ring-transparent transition-all hover:ring-vivo"
+        className="relative h-10 w-10 shrink-0 rounded-full ring-2 ring-transparent transition-all hover:ring-vivo"
       >
         {utente.avatar ? (
           <img src={utente.avatar} alt="" className="h-full w-full rounded-full object-cover" />
@@ -306,9 +325,14 @@ export default function BarraSpazi({
         <PallinoStato stato={utente.stato ?? 'online'} className="h-3 w-3" fondo="var(--color-fondo)" />
       </button>
 
+      {/* `fixed` e non `absolute`: da quando la barra e' una riga alta
+          cinquanta pixel, un velo ancorato a lei sarebbe una striscia, e la
+          finestrella dentro finirebbe schiacciata e tagliata. Ancorata alla
+          finestra copre tutto, che e' quello che una richiesta modale deve
+          fare. */}
       {creando && (
         <div
-          className="velo absolute inset-0 z-30 flex items-center justify-center bg-black/70 p-6 backdrop-blur-sm"
+          className="velo fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-6 backdrop-blur-sm"
           onClick={() => setCreando(false)}
         >
           <div

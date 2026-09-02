@@ -1177,9 +1177,28 @@ export interface Restrizione {
   da: { id: number; nome: string | null } | null
 }
 
+/**
+ * A quali condizioni si puo' registrare, su questo server.
+ *
+ *   libera            chiunque, e chi non acconsente resta fuori dall'audio
+ *   consenso-di-tutti non parte finche' qualcuno non ha risposto, e si ferma
+ *                     da sola se entra chi non ha detto di si'
+ *   vietata           il pulsante non c'e'
+ */
+export type RegolaRegistrazione = 'libera' | 'consenso-di-tutti' | 'vietata'
+
 export interface Ingresso {
   gettone: string
   sfuUrl: string
+  /**
+   * La regola sulle registrazioni, decisa da chi amministra il server.
+   *
+   * Arriva con il gettone e non da una rotta a parte: e' una cosa della stanza
+   * in cui si sta entrando, e il pulsante deve saperla prima di esistere.
+   * Assente sui server piu' vecchi di questa funzione, e li' vale `libera` -
+   * cioe' quello che facevano.
+   */
+  registrazione?: RegolaRegistrazione
   canale: { id: number; nome: string; spazio: number; soloAscolto: boolean }
   /**
    * Presente solo per le chiamate fra due persone.
