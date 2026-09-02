@@ -317,7 +317,18 @@ export default function BarraSpazi({
           non si disegna piu' - la riga la fa la colonna, una sola - quel pixel
           di anticipo e' diventato un pixel di fondo scuro spalmato sopra alla
           riga: la copriva invece di cominciare dopo. */}
-      <div className="barra-spazi flex h-full min-w-0 flex-1 items-stretch gap-0.5 overflow-x-auto pr-2">
+      {/* Dodici pixel fra una linguetta e l'altra, e non e' una misura di
+          gusto: e' quella che serve al raccordo per starci.
+
+          Il raccordo della linguetta aperta e' largo diciotto pixel e sporge
+          **fuori** dal suo fianco - deve, e' una curva che va a prendere la
+          riga - quindi mangia lo spazio del vicino. Con due pixel di distanza
+          arrivava sopra all'icona accanto e le tagliava l'angolo: si vedeva un
+          gradino quadrato dentro a un cerchio, che e' il difetto che si nota
+          prima di capire cosa sia. Dodici piu' i sei di imbottitura del vicino
+          fanno esattamente diciotto: il raccordo finisce dove comincia l'icona
+          accanto, e non un pixel oltre. */}
+      <div className="barra-spazi flex h-full min-w-0 flex-1 items-stretch gap-3 overflow-x-auto pr-2">
         {spazi.map((spazio, indice) => {
           const daLeggere = spazio.canali.reduce((somma, c) => somma + c.nonLetti, 0)
           const attivo = spazio.id === aperto
@@ -373,12 +384,26 @@ export default function BarraSpazi({
                       // che e' esattamente sotto di lui.
                       indice === 0 ? 'linguetta-tab-prima' : ''
                     }`
-                  : 'border-transparent hover:bg-fondo/50'
+                  : 'border-transparent'
               }`}
             >
+              {/* Sotto al cursore si accende l'icona, non la linguetta.
+
+                  Prima si schiariva il fondo di tutta la linguetta, e il
+                  risultato era una forma quasi identica a quella dello spazio
+                  aperto: passando sopra a un altro server sembrava di averlo
+                  gia' aperto, e con due forme uguali affiancate non si capiva
+                  piu' quale fosse quella vera. Peggio ancora accanto alla
+                  linguetta aperta, il cui raccordo passa sopra al vicino e su
+                  quel fondo lasciava uno scalino.
+
+                  La linguetta e' il segno di «sei qui» e non deve dirlo
+                  nessun'altra cosa. Il passaggio del cursore lo dice l'anello
+                  attorno all'icona, che e' un segno piu' piccolo e non si
+                  confonde con niente. */}
               <span
-                className={`relative flex h-10 w-10 items-center justify-center text-base font-semibold transition-all ${
-                  attivo ? RAGGIO_SCELTO : RAGGIO_RIPOSO
+                className={`relative z-10 flex h-10 w-10 items-center justify-center text-base font-semibold transition-all ${
+                  attivo ? RAGGIO_SCELTO : `${RAGGIO_RIPOSO} ring-0 ring-testo/20 group-hover:ring-4`
                 }`}
                 style={{
                   background: attivo ? 'var(--color-vivo)' : coloreDi(`s${spazio.id}`),
