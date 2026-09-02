@@ -38,6 +38,9 @@ const api = {
   preparaCattura: (scelta: SceltaCattura): Promise<void> =>
     ipcRenderer.invoke(IPC.preparaCattura, scelta),
 
+  /** La nostra finestra, come sorgente di cattura. Vedi `IPC.sorgenteFinestra`. */
+  sorgenteFinestra: (): Promise<string | null> => ipcRenderer.invoke(IPC.sorgenteFinestra),
+
   /**
    * L'audio della condivisione preso dal processo, non dalle casse.
    *

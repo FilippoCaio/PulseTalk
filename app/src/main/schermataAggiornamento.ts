@@ -226,13 +226,38 @@ export async function mostraSchermataAggiornamento(
   )
 
   await new Promise<void>((risolvi) => {
+    /**
+     * Si passa di qui una volta sola, e mai su una finestra morta.
+     *
+     * Le due strade - `ready-to-show` e il secondo di attesa - sono una la
+     * rete dell'altra, quindi la seconda va spenta appena la prima arriva.
+     * Prima non lo era, e quel timer rimasto acceso e' esattamente il difetto
+     * che chiudeva l'applicazione con un errore subito dopo l'aggiornamento:
+     * la finestrella compare, la finestra vera finisce di caricare in meno di
+     * un secondo e la fa chiudere, poi il timer arriva a scadenza e chiama
+     * `show()` su un oggetto che Electron ha gia' distrutto. Il tempo che ci
+     * mette la finestra vera a caricare decide se succede o no, ed e' il
+     * motivo per cui capitava su una macchina e non sull'altra.
+     *
+     * Il controllo su `isDestroyed` resta anche dopo lo spegnimento del
+     * timer: fra `ready-to-show` e questa riga la finestra puo' essere morta
+     * comunque, e da qui non si e' padroni di quel momento.
+     */
+    let ritardo: NodeJS.Timeout | null = null
+    let fatta = false
+
     const vai = (): void => {
-      finestra.show()
+      if (fatta) return
+      fatta = true
+      if (ritardo) clearTimeout(ritardo)
+      finestra.removeListener('ready-to-show', vai)
+      if (!finestra.isDestroyed()) finestra.show()
       risolvi()
     }
+
     if (!finestra.isDestroyed() && finestra.webContents.isLoading()) {
       finestra.once('ready-to-show', vai)
-      setTimeout(vai, 1000)
+      ritardo = setTimeout(vai, 1000)
     } else {
       vai()
     }

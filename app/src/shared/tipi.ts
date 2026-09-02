@@ -14,6 +14,15 @@ export type { ServerCollegato } from './collegamenti'
 export const IPC = {
   sorgenti: 'sorgenti',
   preparaCattura: 'prepara-cattura',
+  /**
+   * L'identificativo di cattura della nostra stessa finestra.
+   *
+   * Serve a una cosa sola: registrare la chiamata cosi' com'e' sullo schermo,
+   * riquadri e nomi compresi. Il selettore delle sorgenti non lo offre — nessuno
+   * condivide PulseTalk dentro PulseTalk — e cercarla per nome fra le finestre
+   * aperte vorrebbe dire indovinare fra due copie dell'applicazione.
+   */
+  sorgenteFinestra: 'sorgente-finestra',
   leggiImpostazioni: 'leggi-impostazioni',
   scriviImpostazioni: 'scrivi-impostazioni',
   impostazioniCambiate: 'impostazioni-cambiate',

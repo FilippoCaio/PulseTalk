@@ -23,10 +23,11 @@ import {
  * un'altra conversazione, con altre persone dentro — cioe' esattamente il tipo
  * di consenso che non e' un consenso.
  *
- * ## Due attributi, e sono due cose diverse
+ * ## Tre attributi, e sono tre cose diverse
  *
  *   `rec-consenso`  la mia voce puo' entrare in una registrazione
  *   `rec-attiva`    sto registrando io, adesso
+ *   `rec-cosa`      cosa sto registrando: la chiamata, o una condivisione
  *
  * Il secondo non e' una gentilezza: con la registrazione che gira dentro a un
  * client, l'unico modo che gli altri hanno di saperlo e' che quel client lo
@@ -34,16 +35,60 @@ import {
  * fianco — e non c'e' niente da fare. Cio' che si puo' fare e' rendere
  * impossibile non accorgersene quando la strada onesta viene usata.
  *
- * ## Cosa NON fa
+ * Il terzo e' arrivato dopo, ed e' un attributo nuovo invece di un valore
+ * diverso dentro a `rec-attiva` di proposito: le versioni di prima leggono
+ * quell'attributo cercando esattamente «si», e scriverci «chiamata» avrebbe
+ * spento la barra rossa a chi non ha ancora aggiornato. Su una funzione che
+ * esiste per farsi vedere, un cambio che la rende invisibile a meta' stanza e'
+ * il peggiore dei difetti. Chi non lo manda viene letto come «schermo», che e'
+ * l'unica cosa che quelle versioni sapevano fare.
  *
- * Non registra le persone: registra **uno schermo condiviso** con sotto le
- * voci. Senza niente da guardare non c'e' niente da registrare, e il pulsante
- * non compare — una registrazione di sole voci sarebbe un'altra funzione, con
- * altre domande da farsi.
+ * ## Cosa si registra
+ *
+ * Due cose, e sono diverse fra loro:
+ *
+ *   una condivisione   la traccia che sta gia' arrivando. Nel file c'e' il
+ *                      contenuto e nient'altro: niente riquadri, niente facce.
+ *   la chiamata        la finestra di PulseTalk cosi' com'e'. Dentro ci
+ *                      finisce anche chi ha la camera accesa, e per questo la
+ *                      barra lo dice a chiare lettere invece di lasciarlo
+ *                      scoprire a chi riceve il file.
+ *
+ * Il consenso resta quello che era — riguarda **le voci**, che sono l'unica
+ * cosa che questo modulo mescola. Le immagini non si mescolano: o si registra
+ * quella finestra o non la si registra, e l'unica difesa vera e' che tutti
+ * sappiano che sta succedendo.
  */
 
 const CONSENSO = 'rec-consenso'
 const ATTIVA = 'rec-attiva'
+const COSA = 'rec-cosa'
+
+/** La chiamata cosi' com'e' sullo schermo, oppure una condivisione sola. */
+export type CosaSiRegistra = 'chiamata' | 'schermo'
+
+/** Cosa si e' scelto di registrare, deciso da chi preme il pulsante. */
+export interface Bersaglio {
+  cosa: CosaSiRegistra
+  /** Come chiamarlo nella barra: «la chiamata», «lo schermo di Marco». */
+  nome: string
+  /** L'immagine che finisce nel file. */
+  video: MediaStreamTrack
+  /**
+   * Vero se la traccia l'abbiamo catturata noi.
+   *
+   * Cambia una cosa sola, ma va saputa: alla fine si spegne. Quella di una
+   * condivisione appartiene a LiveKit e la stanno guardando anche gli altri —
+   * fermarla vorrebbe dire spegnere la condivisione a tutti smettendo di
+   * registrare.
+   */
+  nostra: boolean
+  /**
+   * Da chi prendere l'audio delle condivisioni: un'identita' sola, oppure
+   * `null` per chiunque stia condividendo, anche fra dieci minuti.
+   */
+  contenutoDi: string | null
+}
 
 export interface Registratore {
   /** Vero se questa macchina sa registrare: senza, l'interfaccia non offre niente. */
@@ -60,15 +105,15 @@ export interface Registratore {
   rispondi: (si: boolean) => void
   /** Le identita' di chi ha detto di si', me compreso. */
   acconsentono: Set<string>
-  /** I nomi di chi sta registrando adesso. Vuoto quasi sempre. */
-  registrano: string[]
-  /** Sto registrando io. */
-  mia: boolean
+  /** Chi sta registrando adesso, e cosa. Vuoto quasi sempre. */
+  registrano: { nome: string; cosa: CosaSiRegistra }[]
+  /** Cosa sto registrando io, se sto registrando. */
+  mia: { cosa: CosaSiRegistra; nome: string } | null
   /** Da quanti secondi. Zero se non e' in corso. */
   secondi: number
   /** Quante voci stanno entrando nel file adesso. */
   vociDentro: number
-  avvia: (schermo: MediaStreamTrack, sistema: MediaStreamTrack | null) => void
+  avvia: (bersaglio: Bersaglio) => void
   ferma: () => void
 }
 
@@ -78,18 +123,20 @@ export function usaRegistrazione(
 ): Registratore {
   const [consensoMio, setConsensoMio] = useState<boolean | null>(null)
   const [acconsentono, setAcconsentono] = useState<Set<string>>(new Set())
-  const [registrano, setRegistrano] = useState<string[]>([])
+  const [registrano, setRegistrano] = useState<{ nome: string; cosa: CosaSiRegistra }[]>([])
   const [secondi, setSecondi] = useState(0)
   const [vociDentro, setVociDentro] = useState(0)
   /**
-   * Sto registrando io.
+   * Cosa sto registrando io, se sto registrando.
    *
    * Uno stato e non `corrente.current !== null`: un ref non fa ridisegnare, e
    * il pulsante sarebbe rimasto "Registra" per tutta la registrazione.
    */
-  const [mia, setMia] = useState(false)
+  const [mia, setMia] = useState<{ cosa: CosaSiRegistra; nome: string } | null>(null)
 
   const corrente = useRef<Registrazione | null>(null)
+  /** Cosa si sta registrando: serve a `ferma` e all'audio dei contenuti. */
+  const bersaglio = useRef<Bersaglio | null>(null)
 
   /**
    * Chi acconsente, riletto da capo a ogni cambiamento.
@@ -106,7 +153,14 @@ export function usaRegistrazione(
       new Set(tutti.filter((p) => p.attributes?.[CONSENSO] === 'si').map((p) => p.identity))
     )
     setRegistrano(
-      tutti.filter((p) => p.attributes?.[ATTIVA] === 'si').map((p) => p.name || p.identity)
+      tutti
+        .filter((p) => p.attributes?.[ATTIVA] === 'si')
+        .map((p) => ({
+          nome: p.name || p.identity,
+          // Chi non lo manda registra uno schermo: e' cio' che facevano tutte
+          // le versioni prima che la chiamata intera si potesse registrare.
+          cosa: p.attributes?.[COSA] === 'chiamata' ? 'chiamata' : ('schermo' as CosaSiRegistra)
+        }))
     )
     const mio = stanza.localParticipant.attributes?.[CONSENSO]
     setConsensoMio(mio === 'si' ? true : mio === 'no' ? false : null)
@@ -183,6 +237,29 @@ export function usaRegistrazione(
       if (!tutti.some((p) => p.identity === identita)) registrazione.escludi(identita)
     }
     setVociDentro(registrazione.vociDentro().length)
+
+    /**
+     * L'audio delle condivisioni, con la stessa riconciliazione delle voci.
+     *
+     * Non chiede il consenso a nessuno — e' contenuto, non e' la voce di una
+     * persona — ma entra ed esce dal vivo per la stessa ragione pratica: chi
+     * condivide puo' accendere l'audio dopo, e registrando la chiamata intera
+     * le condivisioni cominciano e finiscono mentre il file gia' scorre.
+     */
+    const contenutoDi = bersaglio.current?.contenutoDi ?? null
+    const contenuti = new Set(registrazione.contenutiDentro())
+
+    for (const p of tutti) {
+      const suono = p.getTrackPublication(Track.Source.ScreenShareAudio)?.track?.mediaStreamTrack
+      const deveEsserci = !!suono && (contenutoDi === null || p.identity === contenutoDi)
+      if (deveEsserci && !contenuti.has(p.identity)) {
+        registrazione.includiContenuto(p.identity, suono!)
+      }
+      if (!deveEsserci && contenuti.has(p.identity)) registrazione.escludiContenuto(p.identity)
+    }
+    for (const identita of contenuti) {
+      if (!tutti.some((p) => p.identity === identita)) registrazione.escludiContenuto(identita)
+    }
   }, [acconsentono, stanza, mia, secondi])
 
   /**
@@ -204,12 +281,13 @@ export function usaRegistrazione(
   }, [mia])
 
   const annuncia = useCallback(
-    (attiva: boolean): void => {
+    (cosa: CosaSiRegistra | null): void => {
       if (!stanza) return
       void stanza.localParticipant
         .setAttributes({
           ...stanza.localParticipant.attributes,
-          [ATTIVA]: attiva ? 'si' : ''
+          [ATTIVA]: cosa ? 'si' : '',
+          [COSA]: cosa ?? ''
         })
         .catch(() => {
           // Se l'annuncio non passa, la registrazione non parte: registrare
@@ -222,24 +300,52 @@ export function usaRegistrazione(
 
   const ferma = useCallback((): void => {
     const registrazione = corrente.current
+    const cosa = bersaglio.current
     corrente.current = null
-    setMia(false)
+    bersaglio.current = null
+    setMia(null)
     setSecondi(0)
     setVociDentro(0)
-    annuncia(false)
-    if (!registrazione) return
+    annuncia(null)
+
+    /**
+     * La cattura della finestra e' roba nostra e va spenta: lasciarla accesa
+     * vorrebbe dire tenersi un flusso video che nessuno guarda piu'. Quella di
+     * una condivisione no — e' di LiveKit, e la stanno guardando anche gli
+     * altri: fermarla spegnerebbe la condivisione a tutta la stanza.
+     *
+     * Dopo il registratore e non prima: una traccia che finisce fa fermare il
+     * registratore per conto suo, ed e' esattamente mentre gli si sta
+     * chiedendo l'ultimo pezzo.
+     */
+    const spegniLaNostra = (): void => {
+      if (cosa?.nostra) cosa.video.stop()
+    }
+
+    if (!registrazione) {
+      spegniLaNostra()
+      return
+    }
     void registrazione.ferma().then((dati) => {
+      spegniLaNostra()
       if (dati) salvaRegistrazione(dati, nomeCanale)
     })
   }, [annuncia, nomeCanale])
 
   const avvia = useCallback(
-    (schermo: MediaStreamTrack, sistema: MediaStreamTrack | null): void => {
-      if (corrente.current || !sapRegistrare()) return
-      corrente.current = avviaRegistrazione({ video: schermo, sistema })
-      setMia(true)
+    (scelto: Bersaglio): void => {
+      if (corrente.current || !sapRegistrare()) {
+        // La traccia era stata catturata per una registrazione che non parte:
+        // lasciarla accesa vorrebbe dire tenersi una cattura dello schermo di
+        // cui nessuno sa piu' niente.
+        if (scelto.nostra) scelto.video.stop()
+        return
+      }
+      corrente.current = avviaRegistrazione({ video: scelto.video })
+      bersaglio.current = scelto
+      setMia({ cosa: scelto.cosa, nome: scelto.nome })
       setSecondi(0)
-      annuncia(true)
+      annuncia(scelto.cosa)
 
       // Chi preme registra acconsente, e va detto invece di darlo per scontato
       // in silenzio: prima la propria voce restava fuori dal file finche' non
@@ -256,7 +362,7 @@ export function usaRegistrazione(
 
       // Se chi condivide smette, la registrazione finisce da sola: continuare
       // su una traccia morta scriverebbe minuti di nero.
-      schermo.addEventListener('ended', () => ferma(), { once: true })
+      scelto.video.addEventListener('ended', () => ferma(), { once: true })
     },
     [annuncia, ferma, consensoMio, rispondi]
   )
@@ -266,11 +372,16 @@ export function usaRegistrazione(
   // sarebbe la peggiore delle risposte.
   useEffect(() => () => {
     const registrazione = corrente.current
+    const cosa = bersaglio.current
     corrente.current = null
+    bersaglio.current = null
     if (registrazione) {
       void registrazione.ferma().then((dati) => {
+        if (cosa?.nostra) cosa.video.stop()
         if (dati) salvaRegistrazione(dati, nomeCanale)
       })
+    } else if (cosa?.nostra) {
+      cosa.video.stop()
     }
     // Volutamente senza dipendenze: deve girare allo smontaggio e basta.
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -372,6 +372,9 @@ function agganciaCanali(): void {
     ricordaScelta(scelta)
   })
 
+  // Electron lo sa senza cercare: e' la stessa finestra che sta chiedendo.
+  ipcMain.handle(IPC.sorgenteFinestra, () => finestra?.getMediaSourceId() ?? null)
+
   // L'audio della condivisione preso dal processo invece che dalle casse.
   // Senza finestra non c'e' nessuno a cui mandare i campioni, e la cattura non
   // ha motivo di partire.

@@ -77,6 +77,16 @@ export interface Ponte {
   preparaCattura(scelta: SceltaCattura): Promise<void>
 
   /**
+   * La finestra di PulseTalk vista da fuori, per registrare la chiamata.
+   *
+   * Nel browser torna nulla, e non per pigrizia: una pagina non puo' guardare
+   * se stessa senza passare dalla finestra di Chrome, cioe' senza chiedere a
+   * chi registra di scegliere a mano la scheda giusta. Li' si registra una
+   * condivisione e basta.
+   */
+  sorgenteFinestra(): Promise<string | null>
+
+  /**
    * L'audio di una condivisione preso dal processo giusto, non dalle casse.
    *
    * Esiste solo dentro Electron su Windows, ed e' cio' che distingue "l'audio
@@ -157,6 +167,7 @@ function ponteElettrone(api: NonNullable<Window['pulsetalk']>): Ponte {
     },
     sorgenti: () => api.sorgenti(),
     preparaCattura: (scelta) => api.preparaCattura(scelta),
+    sorgenteFinestra: () => api.sorgenteFinestra(),
     avviaAudioProcesso: (sorgenteId) => api.avviaAudioProcesso(sorgenteId),
     fermaAudioProcesso: (id) => api.fermaAudioProcesso(id),
     onAudioProcessoDati: (callback) => api.onAudioProcessoDati(callback),
@@ -301,6 +312,7 @@ function ponteBrowser(): Ponte {
     audioPerApplicazione: false,
     sorgenti: async () => [],
     preparaCattura: async () => {},
+    sorgenteFinestra: async () => null,
     avviaAudioProcesso: async () => ({ errore: "Solo nell'applicazione per Windows." }),
     fermaAudioProcesso: () => {},
     onAudioProcessoDati: () => () => {},

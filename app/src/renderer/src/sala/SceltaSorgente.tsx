@@ -168,8 +168,14 @@ export default function SceltaSorgente({
       className="velo fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-0 backdrop-blur-sm sm:p-6"
       onClick={chiudi}
     >
+      {/* Largo 72rem e non 64: e' la larghezza che serve alla riga dei
+          settaggi per stare su una riga sola. A 64rem mancavano una decina di
+          pixel, e Annulla e Condividi finivano a capo da soli mentre le
+          tendine restavano sopra — due righe per un pannello mezzo vuoto. Il
+          soprappiu' non e' sprecato: se lo prendono le anteprime, che sono la
+          scelta vera. */}
       <div
-        className="pannello flex h-full max-h-[46rem] w-full max-w-5xl flex-col overflow-hidden border border-bordo bg-fondo-2 sm:rounded-2xl"
+        className="pannello flex h-full max-h-[46rem] w-full max-w-6xl flex-col overflow-hidden border border-bordo bg-fondo-2 sm:rounded-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Titolo e schede sulla stessa riga: due righe separate costavano
@@ -323,7 +329,14 @@ export default function SceltaSorgente({
         )}
 
         {/* I settaggi: una riga sola, tendine e interruttori. Il dettaglio sta
-            dentro, e nel titolo che compare passandoci sopra. */}
+            dentro, e nel titolo che compare passandoci sopra.
+
+            `flex-wrap` e' rimasto, ma come rete e non come comportamento: sul
+            telefono, dove il pannello e' largo quanto lo schermo, andare a
+            capo e' l'unica cosa sensata. Sul desktop non deve succedere mai, e
+            a tenerlo su una riga sola sono due cose insieme — il pannello piu'
+            largo qui sopra, e le etichette delle tendine che spariscono sotto
+            ai 1280 pixel di finestra. */}
         <div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-bordo px-5 py-3">
           {!soloAudio && (
             <Tendina
@@ -495,12 +508,16 @@ function Tendina({
       <button
         onClick={() => setAperta((v) => !v)}
         title={`${etichetta}: ${titolo}`}
-        className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors ${
+        className={`flex items-center gap-2 whitespace-nowrap rounded-lg border px-3 py-2 text-sm transition-colors ${
           aperta ? 'border-vivo bg-vivo/10' : 'border-bordo bg-fondo hover:border-fondo-3'
         }`}
       >
         <span className="shrink-0 text-testo-3 [&>svg]:h-4 [&>svg]:w-4">{icona}</span>
-        <span className="text-testo-3">{etichetta}</span>
+        {/* L'etichetta e' la prima cosa che si sacrifica quando la finestra e'
+            stretta: dice la categoria, che l'icona gia' suggerisce e il titolo
+            ripete per esteso. Il valore invece e' l'unica cosa che non si
+            deduce da niente, e resta sempre. */}
+        <span className="hidden text-testo-3 xl:inline">{etichetta}</span>
         <span className="text-testo">{valore}</span>
         <Giu className={`h-3.5 w-3.5 shrink-0 text-testo-3 ${aperta ? 'rotate-180' : ''}`} />
       </button>
@@ -551,7 +568,7 @@ function Interruttore({
       onClick={premi}
       title={titolo}
       aria-pressed={acceso}
-      className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors ${
+      className={`flex items-center gap-2 whitespace-nowrap rounded-lg border px-3 py-2 text-sm transition-colors ${
         acceso ? 'border-vivo bg-vivo/10 text-testo' : 'border-bordo bg-fondo text-testo-3 hover:border-fondo-3'
       }`}
     >

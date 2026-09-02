@@ -1,9 +1,11 @@
 /**
- * Registrare uno schermo condiviso, con sotto le voci di chi ha detto di si'.
+ * Registrare cio' che si sta guardando, con sotto le voci di chi ha detto di si'.
  *
- * Il video e' la traccia che sta gia' arrivando: non si ricattura niente, si
- * registra esattamente cio' che si sta guardando. L'audio invece si costruisce,
- * ed e' li' che sta tutto il senso di questo file.
+ * Il video arriva gia' pronto da fuori: o e' la traccia di una condivisione,
+ * che sta gia' passando davanti agli occhi di tutti, o e' la cattura della
+ * nostra finestra quando si registra la chiamata intera — vedi
+ * `catturaChiamata.ts`. Qui non si sceglie: si registra quello che viene dato.
+ * L'audio invece si costruisce, ed e' li' che sta tutto il senso di questo file.
  *
  * ## Il mescolatore e' il consenso
  *
@@ -46,6 +48,15 @@ export interface Registrazione {
   includi(identita: string, traccia: MediaStreamTrack): void
   /** La stacca. Da qui in poi quella persona non e' piu' nel file. */
   escludi(identita: string): void
+  /** Le chiavi dell'audio dei contenuti attaccati adesso. */
+  contenutiDentro(): string[]
+  /**
+   * Attacca l'audio di una condivisione: non e' la voce di nessuno, e' cio'
+   * che si e' scelto di mostrare. Il consenso su quello l'ha gia' dato chi ha
+   * premuto «condividi».
+   */
+  includiContenuto(chiave: string, traccia: MediaStreamTrack): void
+  escludiContenuto(chiave: string): void
   /** Chiude e restituisce il girato. Null se non e' uscito niente. */
   ferma(): Promise<Blob | null>
 }
@@ -75,19 +86,10 @@ export function sapRegistrare(): boolean {
 }
 
 export function avviaRegistrazione({
-  video,
-  sistema = null
+  video
 }: {
-  /** La traccia dello schermo che si sta guardando. */
+  /** L'immagine da registrare: una condivisione, o la finestra della chiamata. */
   video: MediaStreamTrack
-  /**
-   * L'audio del video condiviso, se chi condivide lo manda.
-   *
-   * Entra senza chiedere il permesso a nessuno, ed e' voluto: non e' la voce
-   * di una persona, e' il contenuto che si e' scelto di mostrare. Il consenso
-   * su quello l'ha gia' dato chi ha premuto "condividi".
-   */
-  sistema?: MediaStreamTrack | null
 }): Registrazione {
   const contesto = new AudioContext()
 
@@ -98,28 +100,38 @@ export function avviaRegistrazione({
 
   const sorgenti = new Map<string, MediaStreamAudioSourceNode>()
 
-  const attacca = (chiave: string, traccia: MediaStreamTrack): void => {
-    if (sorgenti.has(chiave)) return
+  /**
+   * L'audio dei contenuti, in una mappa tutta sua.
+   *
+   * Due mappe e non una: le chiavi della prima sono identita' di persone, e
+   * infilarci dentro qualcosa che persona non e' obbligherebbe a inventare un
+   * prefisso che nessuna identita' possa avere, e poi a ricordarsi di filtrarlo
+   * ovunque. Separate, il problema non esiste — `vociDentro` conta le voci
+   * perche' dentro ci sono solo quelle, e nessun `escludi` puo' staccare per
+   * sbaglio l'audio di una condivisione mentre toglie il consenso a qualcuno.
+   *
+   * Entrano ed escono dal vivo come le voci, e per un motivo pratico: chi
+   * condivide puo' aggiungere l'audio dopo aver cominciato, e registrando la
+   * chiamata intera le condivisioni vanno e vengono per tutto il tempo.
+   */
+  const contenuti = new Map<string, MediaStreamAudioSourceNode>()
+
+  const attacca = (
+    dove: Map<string, MediaStreamAudioSourceNode>,
+    chiave: string,
+    traccia: MediaStreamTrack
+  ): void => {
+    if (dove.has(chiave)) return
     const sorgente = contesto.createMediaStreamSource(new MediaStream([traccia]))
     sorgente.connect(mescolatore)
-    sorgenti.set(chiave, sorgente)
+    dove.set(chiave, sorgente)
   }
 
-  /**
-   * L'audio del contenuto, tenuto fuori dalla mappa delle voci.
-   *
-   * Una variabile a parte e non una chiave riservata dentro a `sorgenti`: le
-   * chiavi di quella mappa sono identita' di persone, e infilarci dentro
-   * qualcosa che persona non e' obbliga a inventare un prefisso che nessuna
-   * identita' possa avere, e poi a ricordarsi di filtrarlo ovunque. Fuori, il
-   * problema non esiste: `vociDentro` conta le voci perche' dentro ci sono
-   * solo quelle, e nessun `escludi` puo' staccare per sbaglio l'audio del
-   * video mentre toglie il consenso a qualcuno.
-   */
-  let sorgenteSistema: MediaStreamAudioSourceNode | null = null
-  if (sistema) {
-    sorgenteSistema = contesto.createMediaStreamSource(new MediaStream([sistema]))
-    sorgenteSistema.connect(mescolatore)
+  const stacca = (dove: Map<string, MediaStreamAudioSourceNode>, chiave: string): void => {
+    const sorgente = dove.get(chiave)
+    if (!sorgente) return
+    sorgente.disconnect()
+    dove.delete(chiave)
   }
 
   const pezzi: Blob[] = []
@@ -147,14 +159,15 @@ export function avviaRegistrazione({
 
     vociDentro: () => [...sorgenti.keys()],
 
-    includi: attacca,
+    includi: (identita, traccia) => attacca(sorgenti, identita, traccia),
 
-    escludi(identita) {
-      const sorgente = sorgenti.get(identita)
-      if (!sorgente) return
-      sorgente.disconnect()
-      sorgenti.delete(identita)
-    },
+    escludi: (identita) => stacca(sorgenti, identita),
+
+    contenutiDentro: () => [...contenuti.keys()],
+
+    includiContenuto: (chiave, traccia) => attacca(contenuti, chiave, traccia),
+
+    escludiContenuto: (chiave) => stacca(contenuti, chiave),
 
     async ferma() {
       if (chiusa) return null
@@ -163,15 +176,28 @@ export function avviaRegistrazione({
       const finito = new Promise<void>((risolvi) => {
         registratore.onstop = () => risolvi()
       })
-      // `stop()` su un registratore gia' fermo lancia: succede se la traccia
-      // dello schermo e' finita da sola perche' chi condivideva ha smesso.
-      if (registratore.state !== 'inactive') registratore.stop()
-      else return null
-      await finito
+      /**
+       * `stop()` su un registratore gia' fermo lancia, e capita davvero:
+       * quando la traccia finisce da sola — chi condivideva ha smesso, o si e'
+       * chiusa la cattura della finestra — Chromium ferma il registratore per
+       * conto suo un istante prima che arrivi la richiesta.
+       *
+       * Prima quel caso tornava `null`, cioe' buttava via l'intera
+       * registrazione proprio nella situazione per cui era stata scritta la
+       * scrittura a pezzi di un secondo: i pezzi c'erano tutti, ed erano gia'
+       * sul posto. Adesso si aspetta solo se c'e' qualcosa da aspettare, e il
+       * file si consegna comunque.
+       */
+      if (registratore.state !== 'inactive') {
+        registratore.stop()
+        await finito
+      }
 
-      for (const sorgente of sorgenti.values()) sorgente.disconnect()
+      for (const sorgente of [...sorgenti.values(), ...contenuti.values()]) {
+        sorgente.disconnect()
+      }
       sorgenti.clear()
-      sorgenteSistema?.disconnect()
+      contenuti.clear()
       await contesto.close().catch(() => {})
 
       if (pezzi.length === 0) return null
