@@ -21,6 +21,8 @@ import {
   AltoparlanteMuto,
   Camera,
   CameraSpenta,
+  Cuffie,
+  CuffieSpente,
   Esci,
   Fumetto,
   Giu,
@@ -58,6 +60,8 @@ const RITARDO_NASCONDI_MS = 3000
  */
 export default function OverlayChiamata({
   microfonoAcceso,
+  sordina,
+  alternaSordina,
   cameraAccesa,
   puoTrasmettere,
   schermiAttivi,
@@ -97,6 +101,9 @@ export default function OverlayChiamata({
   esci
 }: {
   microfonoAcceso: boolean
+  /** Le cuffie chiuse: non si sente e non si e' sentiti. */
+  sordina: boolean
+  alternaSordina: () => void
   cameraAccesa: boolean
   puoTrasmettere: boolean
   schermiAttivi: { id: string; etichetta: string }[]
@@ -214,7 +221,7 @@ export default function OverlayChiamata({
 }): React.JSX.Element {
   const [visibile, setVisibile] = useState(true)
   const [aperto, setAperto] = useState<
-    'microfono' | 'camera' | 'condivisioni' | 'audio' | 'registra' | null
+    'microfono' | 'ascolto' | 'camera' | 'condivisioni' | 'audio' | 'registra' | null
   >(
     null
   )
@@ -562,6 +569,16 @@ export default function OverlayChiamata({
             }}
           />
         )}
+        {aperto === 'ascolto' && (
+          <MenuAscolto
+            impostazioni={impostazioni}
+            salva={salva}
+            apriImpostazioni={() => {
+              setAperto(null)
+              apriImpostazioni()
+            }}
+          />
+        )}
         {aperto === 'camera' && (
           <MenuCamera impostazioni={impostazioni} salva={salva} accesa={cameraAccesa} />
         )}
@@ -634,6 +651,28 @@ export default function OverlayChiamata({
               premi={alternaMicrofono}
             >
               {microfonoAcceso ? <Microfono /> : <MicrofonoSpento />}
+            </Tasto>
+          </ConFreccia>
+
+          {/* Le cuffie, subito dopo il microfono.
+
+              Sono la stessa domanda dall'altro lato - cosa entra, cosa esce -
+              e finche' stavano solo nel pannello in fondo alla colonna
+              bisognava uscire dalla chiamata con gli occhi per spegnere
+              l'ascolto. Adesso sono nei due posti, ma lo stato e' uno solo: il
+              pulsante non tiene niente di suo, legge e scrive `sordina` come fa
+              quello di la'. */}
+          <ConFreccia
+            aperto={aperto === 'ascolto'}
+            etichetta="Ascolto: dispositivo e volume in uscita"
+            apri={() => setAperto(aperto === 'ascolto' ? null : 'ascolto')}
+          >
+            <Tasto
+              tono={sordina ? 'male' : 'normale'}
+              titolo={sordina ? 'Riattiva tutto' : 'Silenzia tutto: non senti e non ti sentono'}
+              premi={alternaSordina}
+            >
+              {sordina ? <CuffieSpente /> : <Cuffie />}
             </Tasto>
           </ConFreccia>
 
@@ -949,6 +988,16 @@ function Etichetta({ children }: { children: React.ReactNode }): React.JSX.Eleme
 const CLASSI_SELECT =
   'w-full rounded-lg border border-bordo bg-fondo px-2 py-1.5 text-xs text-testo focus:border-vivo focus:outline-none'
 
+/**
+ * Le due meta' dell'audio, ognuna sotto alla sua freccetta.
+ *
+ * Prima ce n'era una sola, sotto al microfono, e conteneva tutto: chi voleva
+ * cambiare altoparlante lo trovava sotto all'icona del microfono, che e'
+ * l'ultimo posto in cui uno lo cerca. Da quando in questa barra c'e' anche il
+ * pulsante delle cuffie, ognuno apre la sua: `lato` e' il filtro, e il
+ * componente sotto e' lo stesso — due copie di quei controlli sarebbero due
+ * posti dove il volume puo' divergere.
+ */
 function MenuMicrofono({
   impostazioni,
   salva,
@@ -961,6 +1010,28 @@ function MenuMicrofono({
   return (
     <Pannello>
       <ControlliAudio
+        lato="entrata"
+        impostazioni={impostazioni}
+        salva={salva}
+        apriImpostazioni={apriImpostazioni}
+      />
+    </Pannello>
+  )
+}
+
+function MenuAscolto({
+  impostazioni,
+  salva,
+  apriImpostazioni
+}: {
+  impostazioni: Impostazioni
+  salva: (m: Partial<Impostazioni>) => void
+  apriImpostazioni: () => void
+}): React.JSX.Element {
+  return (
+    <Pannello>
+      <ControlliAudio
+        lato="uscita"
         impostazioni={impostazioni}
         salva={salva}
         apriImpostazioni={apriImpostazioni}

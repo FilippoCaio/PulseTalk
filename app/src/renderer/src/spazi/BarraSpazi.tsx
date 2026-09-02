@@ -309,7 +309,7 @@ export default function BarraSpazi({
           Funziona perche' sotto agli spazi comincia esattamente la schermata
           della chiamata, che e' di quel colore: e' la stessa geometria del
           separatore qui sopra, guardata dall'altro lato. */}
-      <div className="barra-spazi flex h-full min-w-0 flex-1 items-stretch gap-1 overflow-x-auto pr-2">
+      <div className="barra-spazi flex h-full min-w-0 flex-1 items-stretch gap-0.5 overflow-x-auto pr-2">
         {spazi.map((spazio, indice) => {
           const daLeggere = spazio.canali.reduce((somma, c) => somma + c.nonLetti, 0)
           const attivo = spazio.id === aperto
@@ -340,7 +340,16 @@ export default function BarraSpazi({
                  linguetta aperta sarebbe due pixel piu' larga delle altre e
                  tutte quelle a destra scatterebbero di lato a ogni cambio di
                  spazio. */
-              className={`group relative mt-2 flex h-[calc(100%-0.5rem)] shrink-0 items-center justify-center rounded-t-xl border border-b-0 px-2.5 pb-2 transition-colors ${
+              /* Sei pixel attorno all'icona, sopra e ai lati.
+
+                 Le tre misure non sono libere: l'icona deve restare centrata a
+                 32 pixel, come tutte le altre della riga. Con la linguetta che
+                 comincia a 6 e finisce in fondo, l'imbottitura di sotto deve
+                 valere 6 perche' il centro del contenuto ricada li' - e' la
+                 stessa somma vista da dentro. Cambiarne una senza rifare il
+                 conto sposta le icone degli spazi e le lascia storte rispetto
+                 al piu' e al ritratto. */
+              className={`group relative mt-1.5 flex h-[calc(100%-0.375rem)] shrink-0 items-center justify-center rounded-t-xl border border-b-0 px-1.5 pb-1.5 transition-colors ${
                 attivo
                   ? `linguetta-tab border-bordo bg-fondo ${
                       // La prima non ha il raccordo a sinistra: li' non c'e'

@@ -33,9 +33,13 @@ import {
  * riguardavano la persona e non la stanza. Senza, erano due file di quadrati
  * identici divise da un confine che non si vedeva piu'.
  *
- * Le cuffie che silenziano tutto stanno qui e in nessun altro posto. Nella
- * barra della chiamata non ci sono apposta: due pulsanti per lo stesso stato
- * vogliono dire due posti da tenere d'accordo, e prima o poi uno dei due mente.
+ * Le cuffie che silenziano tutto adesso stanno anche nella barra della
+ * chiamata. Erano solo qui, e la regola era buona - due pulsanti per lo stesso
+ * stato sono due posti da tenere d'accordo - ma il prezzo era peggiore del
+ * rischio: per spegnere l'ascolto mentre si guardava la chiamata bisognava
+ * andare a cercarlo in un pannello che nel frattempo si e' anche messo a
+ * comparire e sparire. I due pulsanti non tengono niente di proprio: leggono e
+ * scrivono lo stesso `sordina`, quindi non c'e' niente che possa divergere.
  */
 export default function PannelloVoce({
   canale,
@@ -100,7 +104,7 @@ export default function PannelloVoce({
     // 19rem quando c'e' uno spazio aperto e 64 pixel quando non c'e', e la
     // finestra non cambia di un pixel fra i due casi. Cio' che sta dentro deve
     // guardare il proprio contenitore, non lo schermo.
-    <div className="@container space-y-1.5 border-t border-bordo bg-fondo-2/95 p-1.5 backdrop-blur">
+    <div className="@container border-t border-bordo bg-fondo-2/95 p-1.5 backdrop-blur">
       {/* Dove si sta parlando, e come si torna a guardarlo.
 
           Due righe e non una: il canale in grande, lo spazio sotto in piccolo.
@@ -206,7 +210,25 @@ export default function PannelloVoce({
           quindi non si andrebbe a capo mai - e nella colonna stretta le cinque
           scatole si schiaccerebbero in fessure da pochi pixel invece di
           impilarsi. */}
-      <div className="rounded-2xl border border-bordo bg-fondo-3/40 p-1.5">
+      {/* I comandi si ritirano quando si torna a guardare la chiamata.
+
+          Una griglia da una riga sola che passa da `0fr` a `1fr`: e' l'unico
+          modo di far scorrere un'altezza che non si conosce - il numero di
+          pulsanti cambia con i permessi, e una `max-height` scritta a mano o
+          taglia o lascia un vuoto. Il figlio con `overflow-hidden` e' cio' che
+          rende la riga tagliabile mentre si chiude.
+
+          Lo stacco dalla riga verde sta dentro alla parte che si chiude
+          (`pt-1.5` sul figlio): fuori resterebbe un gradino di sei pixel sotto
+          alla riga verde anche a comandi ritirati. */}
+      <div
+        className={`grid transition-[grid-template-rows,opacity] duration-200 ease-out ${
+          guardando ? 'grid-rows-[0fr] opacity-0' : 'grid-rows-[1fr] opacity-100'
+        }`}
+        inert={guardando}
+      >
+        <div className="overflow-hidden">
+          <div className="mt-1.5 rounded-2xl border border-bordo bg-fondo-3/40 p-1.5">
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="relative flex grow basis-9">
             <Scatola
@@ -291,6 +313,8 @@ export default function PannelloVoce({
             <SchermoCondividi />
           </Scatola>
 
+            </div>
+          </div>
         </div>
       </div>
     </div>

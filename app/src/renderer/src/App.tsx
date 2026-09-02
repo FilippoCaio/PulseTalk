@@ -1492,15 +1492,19 @@ export default function App(): React.JSX.Element {
           di stringersi, e non e' una scelta di gusto — dentro ha una tendina
           che si apre verso l'alto, e un contenitore che taglia cio' che esce
           (`overflow: hidden`) la mozzerebbe a meta' ogni volta. */}
-      {/* Solo mentre si guarda altrove.
+      {/* La riga verde c'e' sempre, i comandi solo mentre si guarda altrove.
 
-          Dentro alla chiamata questi comandi ci sono gia', in fondo alla sala e
-          piu' grandi: due file di pulsanti per le stesse cose, a dieci
-          centimetri l'una dall'altra, sono due file da tenere d'accordo e una
-          da premere per sbaglio. Questo pannello serve quando la chiamata non
-          si vede - si sta leggendo un canale, si e' passati a un altro server -
-          ed e' esattamente li' che compare. */}
-      {inVoce && utente && !guardaLaChiamata && (
+          Sono due cose diverse e vale la pena tenerle separate. La riga verde
+          dice *dove* si sta parlando e come uscirne, e serve anche - anzi
+          soprattutto - mentre si e' dentro alla chiamata: e' il filo che
+          riporta indietro. I cinque comandi invece dentro alla chiamata ci sono
+          gia', in fondo alla sala e piu' grandi, e due file di pulsanti per le
+          stesse cose sono due file da tenere d'accordo e una da premere per
+          sbaglio.
+
+          Sono i comandi a scorrere via, non il pannello: chi lo decide e'
+          `guardando`, dentro al pannello. */}
+      {inVoce && utente && (
         <div
           className={`pannello-scorrevole absolute bottom-0 left-0 z-20 ${
             navigazioneMobileAperta ? 'block' : 'hidden md:block'

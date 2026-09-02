@@ -1181,6 +1181,8 @@ export default function Sala({
           tenere d'accordo e nessuno che sa quale comanda. */}
       <OverlayChiamata
         microfonoAcceso={sessione.microfonoAcceso}
+        sordina={sessione.sordina}
+        alternaSordina={sessione.alternaSordina}
         cameraAccesa={sessione.cameraAccesa}
         puoTrasmettere={ingresso.permessi.puoTrasmettere}
         schermiAttivi={sessione.schermiAttivi}

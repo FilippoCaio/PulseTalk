@@ -110,16 +110,18 @@ export default function Chat({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {intestazione ?? (
-        <header className={`flex items-baseline gap-3 border-b border-bordo px-5 py-3 ${margine}`}>
-          <h1 className="font-medium">
-            <span className="text-testo-3">#</span> {canale.nome}
-          </h1>
-          {canale.argomento && (
-            <p className="min-w-0 truncate text-sm text-testo-3">{canale.argomento}</p>
-          )}
-        </header>
-      )}
+      {/* Nessuna intestazione di serie.
+
+          C'era una riga con il cancelletto, il nome del canale, l'argomento e
+          un filo di separazione sotto. Diceva una cosa che la colonna a
+          sinistra dice gia' - quale canale e' aperto ce l'ha evidenziato - e la
+          diceva prendendosi cinquanta pixel di altezza in cima a ogni
+          conversazione, cioe' due messaggi in meno a schermo per sempre.
+
+          Chi ha davvero qualcosa da mettere qui la passa: i messaggi diretti ci
+          mettono la persona con cui si sta parlando, che invece non e' scritta
+          da nessun'altra parte. */}
+      {intestazione}
 
       <div
         ref={scorrevole}
