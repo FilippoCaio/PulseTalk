@@ -309,15 +309,15 @@ export default function BarraSpazi({
           Funziona perche' sotto agli spazi comincia esattamente la schermata
           della chiamata, che e' di quel colore: e' la stessa geometria del
           separatore qui sopra, guardata dall'altro lato. */}
-      {/* `-ml-px`: la prima linguetta deve cadere **sopra** al bordo della
-          colonna, non accanto.
+      {/* La fila comincia esattamente dove finisce la colonna qui sotto, e
+          nemmeno un pixel prima.
 
-          Il bordo di quella colonna sta dentro ai suoi 15rem - box-border - e
-          occupa l'ultimo pixel; il bordo sinistro della linguetta invece parte
-          dal primo pixel dopo. Senza questo spostamento le due righe verticali
-          sono adiacenti e non sovrapposte, e si vede: un gradino di un pixel
-          proprio nel punto in cui la linguetta dovrebbe diventare la riga. */}
-      <div className="barra-spazi -ml-px flex h-full min-w-0 flex-1 items-stretch gap-0.5 overflow-x-auto pr-2">
+          C'era un `-ml-px`, e serviva a far cadere il bordo sinistro della
+          prima linguetta *sopra* al bordo della colonna. Da quando quel bordo
+          non si disegna piu' - la riga la fa la colonna, una sola - quel pixel
+          di anticipo e' diventato un pixel di fondo scuro spalmato sopra alla
+          riga: la copriva invece di cominciare dopo. */}
+      <div className="barra-spazi flex h-full min-w-0 flex-1 items-stretch gap-0.5 overflow-x-auto pr-2">
         {spazi.map((spazio, indice) => {
           const daLeggere = spazio.canali.reduce((somma, c) => somma + c.nonLetti, 0)
           const attivo = spazio.id === aperto

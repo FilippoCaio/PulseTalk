@@ -593,16 +593,16 @@ textarea {
  * gradiente radiale con i bordi netti. Il cerchio ha il centro nell'angolo
  * esterno, e i tre colori dicono le tre cose che ci sono in quel quadratino:
  *
- *   entro i 5 pixel   il fondo della barra, che e' cio' che sta di la';
- *   fra 5 e 6         un pixel del colore del bordo: e' la riga che curva;
- *   oltre i 6         il fondo della linguetta, che continua sotto.
+ *   entro i 17 pixel  il fondo della barra, che e' cio' che sta di la';
+ *   fra 17 e 18       un pixel del colore del bordo: e' la riga che curva;
+ *   oltre i 18        il fondo della linguetta, che continua sotto.
  *
- * Sei pixel, cioe' il raggio dell'icona dello spazio quando e' scelta. A dieci
- * erano una curva piu' larga di tutto cio' che le sta attorno: la linguetta
- * sembrava poggiata su due mensole invece che piegata. Le tre curve che si
- * vedono insieme - l'icona, gli angoli di sopra della linguetta e questi
- * raccordi - hanno adesso tutte lo stesso raggio, ed e' quello che le fa
- * leggere come un pezzo solo.
+ * Diciotto pixel, cioe' lo stesso raggio degli angoli di sopra. Una linguetta
+ * ha due curve per lato - quella con cui si stacca dalla barra e quella con
+ * cui ci rientra - e se non sono uguali si vede subito: sembra una forma
+ * disegnata a mano libera invece che un pezzo piegato. Il raggio di sopra a
+ * sua volta viene dall'icona (dodici) piu' l'imbottitura (sei), quindi tutta
+ * la sagoma nasce da una misura sola.
  *
  * Un gradiente e non un SVG perche' e' una forma sola, ripetuta due volte e
  * specchiata, e vive nei colori del tema: un SVG andrebbe ridipinto a mano a
@@ -614,19 +614,19 @@ textarea {
   content: '';
   position: absolute;
   bottom: 0;
-  width: 6px;
-  height: 6px;
+  width: 18px;
+  height: 18px;
   pointer-events: none;
 }
 
 .linguetta-tab::before {
-  left: -6px;
+  left: -18px;
   background: radial-gradient(
     circle at 0 0,
-    var(--color-fondo-2) 5px,
-    var(--color-bordo) 5px,
-    var(--color-bordo) 6px,
-    var(--color-fondo) 6px
+    var(--color-fondo-2) 17px,
+    var(--color-bordo) 17px,
+    var(--color-bordo) 18px,
+    var(--color-fondo) 18px
   );
 }
 
@@ -665,13 +665,13 @@ textarea {
 }
 
 .linguetta-tab::after {
-  right: -6px;
+  right: -18px;
   background: radial-gradient(
     circle at 100% 0,
-    var(--color-fondo-2) 5px,
-    var(--color-bordo) 5px,
-    var(--color-bordo) 6px,
-    var(--color-fondo) 6px
+    var(--color-fondo-2) 17px,
+    var(--color-bordo) 17px,
+    var(--color-bordo) 18px,
+    var(--color-fondo) 18px
   );
 }
 
