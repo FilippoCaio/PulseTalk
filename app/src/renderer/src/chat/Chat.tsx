@@ -132,7 +132,7 @@ export default function Chat({
         // orizzontale in fondo alla chat. Dichiararlo toglie quella barra dai
         // casi possibili; che poi non ci sia niente da nascondere lo garantisce
         // il contenuto, che adesso va a capo invece di allargarsi.
-        className={`min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4 py-3 ${margine}`}
+        className={`sfuma-bordi min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-4 py-3 ${margine}`}
       >
         {chat.caricando && chat.messaggi.length === 0 && (
           <p className="respiro py-8 text-center text-sm text-testo-3">carico…</p>

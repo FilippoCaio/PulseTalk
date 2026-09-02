@@ -589,14 +589,20 @@ textarea {
  * tagliarla. Un angolo retto fa sembrare la scheda incollata sopra; un angolo
  * concavo la fa sembrare la stessa lamiera piegata.
  *
- * Come e' fatto: due quadratini da dieci pixel appoggiati ai fianchi, e dentro
- * a ognuno un gradiente radiale con i bordi netti. Il cerchio ha il centro
- * nell'angolo esterno, e i tre colori dicono le tre cose che ci sono in quel
- * quadratino:
+ * Come e' fatto: due quadratini appoggiati ai fianchi, e dentro a ognuno un
+ * gradiente radiale con i bordi netti. Il cerchio ha il centro nell'angolo
+ * esterno, e i tre colori dicono le tre cose che ci sono in quel quadratino:
  *
- *   entro i 9 pixel   il fondo della barra, che e' cio' che sta di la';
- *   fra 9 e 10        un pixel del colore del bordo: e' la riga che curva;
- *   oltre i 10        il fondo della linguetta, che continua sotto.
+ *   entro i 5 pixel   il fondo della barra, che e' cio' che sta di la';
+ *   fra 5 e 6         un pixel del colore del bordo: e' la riga che curva;
+ *   oltre i 6         il fondo della linguetta, che continua sotto.
+ *
+ * Sei pixel, cioe' il raggio dell'icona dello spazio quando e' scelta. A dieci
+ * erano una curva piu' larga di tutto cio' che le sta attorno: la linguetta
+ * sembrava poggiata su due mensole invece che piegata. Le tre curve che si
+ * vedono insieme - l'icona, gli angoli di sopra della linguetta e questi
+ * raccordi - hanno adesso tutte lo stesso raggio, ed e' quello che le fa
+ * leggere come un pezzo solo.
  *
  * Un gradiente e non un SVG perche' e' una forma sola, ripetuta due volte e
  * specchiata, e vive nei colori del tema: un SVG andrebbe ridipinto a mano a
@@ -608,19 +614,19 @@ textarea {
   content: '';
   position: absolute;
   bottom: 0;
-  width: 10px;
-  height: 10px;
+  width: 6px;
+  height: 6px;
   pointer-events: none;
 }
 
 .linguetta-tab::before {
-  left: -10px;
+  left: -6px;
   background: radial-gradient(
     circle at 0 0,
-    var(--color-fondo-2) 9px,
-    var(--color-bordo) 9px,
-    var(--color-bordo) 10px,
-    var(--color-fondo) 10px
+    var(--color-fondo-2) 5px,
+    var(--color-bordo) 5px,
+    var(--color-bordo) 6px,
+    var(--color-fondo) 6px
   );
 }
 
@@ -638,13 +644,13 @@ textarea {
 }
 
 .linguetta-tab::after {
-  right: -10px;
+  right: -6px;
   background: radial-gradient(
     circle at 100% 0,
-    var(--color-fondo-2) 9px,
-    var(--color-bordo) 9px,
-    var(--color-bordo) 10px,
-    var(--color-fondo) 10px
+    var(--color-fondo-2) 5px,
+    var(--color-bordo) 5px,
+    var(--color-bordo) 6px,
+    var(--color-fondo) 6px
   );
 }
 
@@ -687,6 +693,33 @@ textarea {
     var(--color-bordo) 9px,
     var(--color-bordo) 10px,
     var(--color-fondo-2) 10px
+  );
+}
+
+/*
+ * La sfumatura in cima e in fondo alla conversazione.
+ *
+ * Da quando la chat non ha piu' un'intestazione, i messaggi cominciano
+ * direttamente sotto alla riga delle linguette: senza niente in mezzo, quello
+ * che scorre viene tagliato di netto contro il bordo, e a meta' di una faccia
+ * o di una riga di testo si legge come un difetto di disegno invece che come
+ * la fine dello spazio disponibile.
+ *
+ * Una maschera e non una sfumatura appoggiata sopra: un velo con il colore del
+ * fondo funziona finche' il fondo e' uno solo, e qui dietro ci sono immagini,
+ * riquadri e citazioni. La maschera toglie opacita' al contenuto vero, quindi
+ * sfuma su qualunque cosa ci sia.
+ *
+ * Diciotto pixel: abbastanza da ammorbidire una riga di testo, troppo pochi
+ * per nascondere qualcosa che si stava leggendo.
+ */
+.sfuma-bordi {
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 18px,
+    #000 calc(100% - 18px),
+    transparent 100%
   );
 }
 

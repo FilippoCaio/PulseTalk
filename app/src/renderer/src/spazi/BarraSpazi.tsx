@@ -309,7 +309,15 @@ export default function BarraSpazi({
           Funziona perche' sotto agli spazi comincia esattamente la schermata
           della chiamata, che e' di quel colore: e' la stessa geometria del
           separatore qui sopra, guardata dall'altro lato. */}
-      <div className="barra-spazi flex h-full min-w-0 flex-1 items-stretch gap-0.5 overflow-x-auto pr-2">
+      {/* `-ml-px`: la prima linguetta deve cadere **sopra** al bordo della
+          colonna, non accanto.
+
+          Il bordo di quella colonna sta dentro ai suoi 15rem - box-border - e
+          occupa l'ultimo pixel; il bordo sinistro della linguetta invece parte
+          dal primo pixel dopo. Senza questo spostamento le due righe verticali
+          sono adiacenti e non sovrapposte, e si vede: un gradino di un pixel
+          proprio nel punto in cui la linguetta dovrebbe diventare la riga. */}
+      <div className="barra-spazi -ml-px flex h-full min-w-0 flex-1 items-stretch gap-0.5 overflow-x-auto pr-2">
         {spazi.map((spazio, indice) => {
           const daLeggere = spazio.canali.reduce((somma, c) => somma + c.nonLetti, 0)
           const attivo = spazio.id === aperto
@@ -349,7 +357,7 @@ export default function BarraSpazi({
                  stessa somma vista da dentro. Cambiarne una senza rifare il
                  conto sposta le icone degli spazi e le lascia storte rispetto
                  al piu' e al ritratto. */
-              className={`group relative mt-1.5 flex h-[calc(100%-0.375rem)] shrink-0 items-center justify-center rounded-t-xl border border-b-0 px-1.5 pb-1.5 transition-colors ${
+              className={`group relative mt-1.5 flex h-[calc(100%-0.375rem)] shrink-0 items-center justify-center rounded-t-[6px] border border-b-0 px-1.5 pb-1.5 transition-colors ${
                 attivo
                   ? `linguetta-tab border-bordo bg-fondo ${
                       // La prima non ha il raccordo a sinistra: li' non c'e'
