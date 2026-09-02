@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import {
   IPC,
   type Impostazioni,
+  type PersonaOverlay,
   type PreparazioneAggiornamento,
   type Puntata,
   type SceltaCattura,
@@ -40,6 +41,19 @@ const api = {
 
   /** La nostra finestra, come sorgente di cattura. Vedi `IPC.sorgenteFinestra`. */
   sorgenteFinestra: (): Promise<string | null> => ipcRenderer.invoke(IPC.sorgenteFinestra),
+
+  /**
+   * Cosa mostrare nell'overlay.
+   *
+   * `send` e non `invoke`: sono notizie e non domande, e non c'e' niente da
+   * aspettare indietro. Se l'overlay e' spento il processo principale le butta
+   * via, e va bene cosi' - la finestra non deve sapere se qualcuno stia
+   * guardando per raccontare com'e' fatta la chiamata.
+   */
+  overlay: {
+    persone: (elenco: PersonaOverlay[]): void => ipcRenderer.send(IPC.overlayPersone, elenco),
+    voci: (ids: string[]): void => ipcRenderer.send(IPC.overlayVoci, ids)
+  },
 
   /**
    * L'audio della condivisione preso dal processo, non dalle casse.

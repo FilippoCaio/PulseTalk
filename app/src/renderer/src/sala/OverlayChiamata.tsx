@@ -4,6 +4,7 @@ import ControlliAudio from '../ControlliAudio'
 import { LinguettaColonne } from '../LinguettaColonne'
 import type { AudioCondiviso, AudioRemoto } from '../lib/usaSessione'
 import { scegli, usaDispositivi, vociTendina } from '../lib/usaDispositivi'
+import { scriviTempoInsieme } from '../lib/usaTempoInsieme'
 import {
   Altoparlante,
   AltoparlanteMuto,
@@ -59,6 +60,7 @@ export default function OverlayChiamata({
   riascoltoAttivo,
   secondiRiascolto,
   nomeCanale,
+  secondiInsieme,
   quantePersone,
   soloAscolto,
   collegando,
@@ -106,6 +108,15 @@ export default function OverlayChiamata({
   riascoltoAttivo: boolean
   secondiRiascolto: number
   nomeCanale: string
+  /**
+   * Da quanti secondi si sta insieme qui dentro, o nulla se non si sa.
+   *
+   * Conta dall'ingresso del **primo**, non dal nostro: vedi
+   * `lib/usaTempoInsieme.ts`. Nullo quando la stanza non ha ancora risposto,
+   * e allora accanto al nome non c'e' niente invece di uno zero che sembra un
+   * cronometro fermo.
+   */
+  secondiInsieme: number | null
   quantePersone: number
   soloAscolto: boolean
   /** La linea sta rientrando: si dice, e sparisce da solo quando torna. */
@@ -349,7 +360,25 @@ export default function OverlayChiamata({
         <div className="pointer-events-auto flex min-w-0 items-center gap-2 rounded-2xl border border-bordo bg-fondo-2/95 px-3 py-2 shadow-xl shadow-black/40 backdrop-blur">
           <Altoparlante className="h-4 w-4 shrink-0 text-testo-3" />
           <div className="min-w-0">
-            <h1 className="truncate text-sm leading-tight font-medium">{nomeCanale}</h1>
+            {/* Il nome, e da quanto si sta qui.
+
+                Verde e non grigio come la riga sotto: e' l'unica cosa in
+                questa barra che cambia da sola mentre la si guarda, e il
+                colore serve a farla leggere come «sta succedendo adesso»
+                invece che come un'altra etichetta. Sulla stessa riga del nome
+                perche' e' del canale che dice l'eta', non della chiamata di
+                chi guarda. */}
+            <div className="flex min-w-0 items-baseline gap-2">
+              <h1 className="truncate text-sm leading-tight font-medium">{nomeCanale}</h1>
+              {secondiInsieme !== null && (
+                <span
+                  className="numeri shrink-0 text-[11px] leading-tight text-ok"
+                  title="Da quando e' entrato il primo. Si azzera quando il canale resta vuoto."
+                >
+                  {scriviTempoInsieme(secondiInsieme)}
+                </span>
+              )}
+            </div>
             <p className="flex items-center gap-1.5 text-[11px] leading-tight text-testo-3">
               {quantePersone === 1 ? 'sei solo qui' : `${quantePersone} persone`}
               {soloAscolto && ' · palco'}

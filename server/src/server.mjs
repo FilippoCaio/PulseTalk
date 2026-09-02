@@ -24,6 +24,7 @@ import Fastify from 'fastify';
 import { agganciaAutenticazione } from './auth.mjs';
 import { avviaScadenzaCanali } from './canali-temporanei.mjs';
 import { creaChiamate } from './chiamate.mjs';
+import { avviaOreLavoro } from './ore-lavoro.mjs';
 import { leggiConfig } from './config.mjs';
 import { ambienteEffettivo } from './impostazioni-istanza.mjs';
 import { TalkDb } from './db.mjs';
@@ -40,6 +41,7 @@ import { creaGeneratoreImmagini, elencoGeneratori } from './provider/generazione
 import { creaUnsplash } from './provider/immagini.mjs';
 import { rotteAllegati, spazzaAllegati, spazzaParziali } from './routes/allegati.mjs';
 import { rotteAdmin, rotteChiaveAi } from './routes/admin.mjs';
+import { rotteOre } from './routes/ore.mjs';
 import { rotteAi } from './routes/ai.mjs';
 import { rotteAutoWriter } from './routes/autowriter.mjs';
 import { rotteBot } from './routes/bot.mjs';
@@ -269,6 +271,13 @@ export async function creaTalk(configIniziale, { ambiente = process.env } = {}) 
 
   const fermaScadenze = await avviaScadenzaCanali({ db, presenze, eventi, log: app.log });
   app.addHook('onClose', async () => fermaScadenze());
+
+  // Il cartellino. Il modulo parte sempre; e' il singolo battito a guardare se
+  // le impostazioni di lavoro sono accese, cosi' accenderle dal pannello le
+  // accende davvero senza riavviare il container.
+  const ore = avviaOreLavoro({ db, presenze, servizi, config, log: app.log });
+  rotteOre(app, { servizi, ore, config });
+  app.addHook('onClose', async () => ore.ferma());
 
   app.get('/salute', async () => ({ ok: true, ascolto: eventi.quanti }));
 

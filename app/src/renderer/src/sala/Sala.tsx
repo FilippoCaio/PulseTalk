@@ -14,6 +14,8 @@ import { ErroreApi, type Api, type SessioneAutoWriter } from '../lib/api'
 import { MAX_CONDIVISIONI_GUARDATE } from '../lib/usaSessione'
 import type { Riquadro as DatiRiquadro, Sessione } from '../lib/usaSessione'
 import { usaMisura } from '../lib/misura'
+import { usaOverlay } from '../lib/usaOverlay'
+import { usaTempoInsieme } from '../lib/usaTempoInsieme'
 import { usaSpostamento } from '../lib/animazioni'
 import { ponte } from '../ponte'
 import { Chiudi, Matita, Pausa, Play, Riavvolgi, SchermoCondividi, SchermoStop } from '../icone'
@@ -226,6 +228,18 @@ export default function Sala({
         (posto.get(b.id) ?? ordine.length + sessione.riquadri.indexOf(b))
     )
   }, [sessione.riquadri, ordine])
+
+  // L'overlay: le facce sopra a tutto quando la finestra e' ridotta a icona.
+  // Da qui esce solo il racconto di chi c'e' e chi parla; se e quando si veda
+  // lo decide il processo principale, che e' l'unico a sapere com'e' messa la
+  // finestra. Gli passa l'elenco di partenza e non quello riordinato a mano:
+  // l'ordine dei riquadri e' una cosa di questa griglia.
+  usaOverlay(sessione.riquadri, profili)
+
+  // Da quanto si sta insieme qui dentro: lo dice l'ora d'ingresso del primo,
+  // che la SFU manda con ogni partecipante. Vive qui perche' qui c'e' la
+  // stanza; a mostrarlo e' la barra alta, accanto al nome del canale.
+  const secondiInsieme = usaTempoInsieme(sessione.stanza)
 
   /** Trascinato uno sopra a un altro, i due si scambiano di posto. */
   const scambia = (da: string, a: string): void => {
@@ -1166,6 +1180,7 @@ export default function Sala({
         riascoltoAttivo={sessione.riascoltoAttivo}
         secondiRiascolto={impostazioni.secondiRiascolto || 30}
         nomeCanale={ingresso.canale.nome}
+        secondiInsieme={secondiInsieme}
         quantePersone={persone.length}
         soloAscolto={ingresso.canale.soloAscolto}
         collegando={collegando}

@@ -31,10 +31,14 @@ import {
   Esci,
   Ingranaggio,
   Persona,
+  Calendario,
   Scintille,
   Scudo,
-  Tavolozza
+  Tavolozza,
+  Utenti
 } from './icone'
+import ImpostazioniOverlay from './ImpostazioniOverlay'
+import { MieOre } from './Ore'
 import { ImpostazioniServer, MiaAi } from './ChiaviAi'
 import Aspetto from './Aspetto'
 import ScegliLingua from './atrio/ScegliLingua'
@@ -496,9 +500,15 @@ export default function PannelloImpostazioni({
               </>
             )}
 
+            {pagina === 'overlay' && (
+              <ImpostazioniOverlay impostazioni={impostazioni} utente={utente} salva={salva} />
+            )}
+
             {pagina === 'aspetto' && <Aspetto impostazioni={impostazioni} salva={salva} />}
 
             {pagina === 'ai' && <MiaAi api={api} />}
+
+            {pagina === 'ore' && <MieOre api={api} />}
 
             {pagina === 'server' && utente.ruolo === 'admin' && (
               <ImpostazioniServer api={api} server={impostazioni.server} />
@@ -588,7 +598,17 @@ function memoria(secondi: number): string {
   return mb < 10 ? `${mb.toFixed(1).replace('.', ',')} MB` : `${Math.round(mb)} MB`
 }
 
-type Pagina = 'audio' | 'video' | 'aspetto' | 'profilo' | 'app' | 'account' | 'ai' | 'server'
+type Pagina =
+  | 'audio'
+  | 'video'
+  | 'overlay'
+  | 'aspetto'
+  | 'profilo'
+  | 'app'
+  | 'account'
+  | 'ai'
+  | 'ore'
+  | 'server'
 
 const PAGINE: {
   id: Pagina
@@ -599,6 +619,10 @@ const PAGINE: {
 }[] = [
   { id: 'audio', nome: 'Audio', Icona: Altoparlante },
   { id: 'video', nome: 'Video', Icona: Camera },
+  // Subito dopo le due che parlano di come si vede e si sente: l'overlay e'
+  // la terza faccia della stessa domanda - cosa si vede della chiamata, e
+  // dove - solo che riguarda i minuti in cui la finestra non si guarda.
+  { id: 'overlay', nome: 'Overlay', Icona: Utenti },
   // Fra le due che parlano di come si vede e si sente, e prima di quelle che
   // parlano di chi si e': i colori riguardano lo schermo, non l'account.
   { id: 'aspetto', nome: 'Aspetto', Icona: Tavolozza },
@@ -606,6 +630,10 @@ const PAGINE: {
   { id: 'app', nome: 'Applicazione', Icona: Ingranaggio },
   { id: 'ai', nome: 'La mia AI', Icona: Scintille },
   { id: 'account', nome: 'Account', Icona: Esci },
+  // Le proprie ore stanno fra le pagine di tutti i giorni e non fra quelle di
+  // chi amministra: sono i propri numeri, e chi lavora qui dentro deve poterli
+  // leggere senza chiedere niente a nessuno.
+  { id: 'ore', nome: 'Le mie ore', Icona: Calendario },
   // Ultima, e solo per chi amministra: e' la pagina da cui si spegne un
   // servizio per tutti, e non deve stare a un pixel da quelle di tutti i
   // giorni.

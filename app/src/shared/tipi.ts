@@ -23,6 +23,18 @@ export const IPC = {
    * aperte vorrebbe dire indovinare fra due copie dell'applicazione.
    */
   sorgenteFinestra: 'sorgente-finestra',
+  /**
+   * L'overlay: chi c'e' in chiamata, e chi sta parlando adesso.
+   *
+   * Due canali e non uno perche' le due cose hanno ritmi diversi di due ordini
+   * di grandezza. L'elenco cambia quando qualcuno entra o esce - qualche volta
+   * per chiamata - e si porta dietro le foto profilo, che sono data URL da
+   * qualche kilobyte l'una. Chi parla cambia dieci volte al minuto ed e' una
+   * lista di identita': mandare tutto insieme vorrebbe dire rispedire le foto
+   * a ogni sillaba.
+   */
+  overlayPersone: 'overlay-persone',
+  overlayVoci: 'overlay-voci',
   leggiImpostazioni: 'leggi-impostazioni',
   scriviImpostazioni: 'scrivi-impostazioni',
   impostazioniCambiate: 'impostazioni-cambiate',
@@ -381,6 +393,39 @@ export interface Impostazioni {
   tema: Tema
 
   /**
+   * L'overlay: le facce di chi e' in chiamata, sopra a tutto il resto.
+   *
+   * Compare quando la finestra e' ridotta a icona e si e' dentro a un canale
+   * vocale, e sparisce appena si torna alla finestra. E' l'unico momento in cui
+   * serve davvero: con l'applicazione davanti agli occhi, chi parla lo si vede
+   * gia'; con l'applicazione ridotta a icona - cioe' mentre si lavora, si gioca
+   * o si guarda altro - non lo si sa piu', e l'unico modo di scoprirlo e'
+   * riaprire la finestra proprio mentre qualcuno sta parlando.
+   */
+  overlay: boolean
+  overlayAvatar: DimensioneOverlay
+  overlayNomi: NomiOverlay
+  overlayUtenti: UtentiOverlay
+  /**
+   * Quante facce al massimo. Zero vuol dire nessun limite.
+   *
+   * In una stanza da venti persone l'overlay diventerebbe una colonna alta
+   * quanto lo schermo. Con un tetto, le facce sono quelle che parlano piu' di
+   * recente e le altre restano fuori: chi guarda vuole sapere chi sta parlando
+   * adesso, non avere l'elenco completo dei presenti.
+   */
+  overlayMassimo: number
+  /**
+   * Dove sta il pannello, in pixel dello schermo.
+   *
+   * Nullo finche' non lo si sposta: la prima volta si mette da solo in alto a
+   * destra dello schermo principale. Si salva trascinandolo, ed e' l'unica
+   * impostazione dell'overlay che non si tocca da un menu.
+   */
+  overlayX: number | null
+  overlayY: number | null
+
+  /**
    * In che lingua e' scritta l'interfaccia.
    *
    * Vuoto vuol dire "non ho ancora scelto", e non e' la stessa cosa di
@@ -487,8 +532,60 @@ export const IMPOSTAZIONI_INIZIALI: Impostazioni = {
   spaziSilenziati: [],
   dispositivoMusica: null,
   tema: { preset: 'pulse', colori: {} },
+
+  overlay: true,
+  overlayAvatar: 'grande',
+  overlayNomi: 'sempre',
+  overlayUtenti: 'sempre',
+  overlayMassimo: 8,
+  overlayX: null,
+  overlayY: null,
+
   lingua: ''
 }
+
+/**
+ * Una faccia nell'overlay.
+ *
+ * Colore e iniziali arrivano gia' calcolati dalla finestra invece di essere
+ * rifatti nel processo principale: la funzione che li ricava sta nel renderer
+ * (`lib/avatar.ts`) ed e' la stessa che dipinge i riquadri della sala. Due
+ * copie della stessa regola vorrebbero dire, prima o poi, la stessa persona di
+ * due colori diversi nelle due finestre.
+ */
+export interface PersonaOverlay {
+  /** L'identita' LiveKit, `u<id>`: unica, e stabile quanto la chiamata. */
+  id: string
+  nome: string
+  /** La foto profilo come data URL, oppure nulla: restano le iniziali. */
+  avatar: string | null
+  colore: string
+  iniziali: string
+  /** Il microfono spento, o la sordina: nell'overlay diventano lo stesso segno. */
+  muto: boolean
+}
+
+/** Quanto grandi le facce nell'overlay. */
+export type DimensioneOverlay = 'piccolo' | 'medio' | 'grande'
+
+/**
+ * Quanti pixel misura una faccia, per ognuna delle tre.
+ *
+ * Qui e non in `main/overlay.ts`, che pure e' l'unico a disegnarle davvero: il
+ * pannello delle impostazioni ne mostra l'anteprima, e un'anteprima che
+ * sbaglia la misura e' un'anteprima che mente su cio' che si sta scegliendo.
+ */
+export const MISURE_OVERLAY: Record<DimensioneOverlay, number> = {
+  piccolo: 28,
+  medio: 36,
+  grande: 48
+}
+
+/** Quando si legge il nome accanto alla faccia. */
+export type NomiOverlay = 'sempre' | 'parlando' | 'mai'
+
+/** Chi compare: tutti, o solo chi sta parlando adesso. */
+export type UtentiOverlay = 'sempre' | 'parlando'
 
 /** I quattro lati a cui si puo' agganciare la striscia dei riquadri. */
 export type PosizioneStriscia = 'sotto' | 'sopra' | 'sinistra' | 'destra'

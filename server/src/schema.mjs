@@ -521,6 +521,29 @@ CREATE TABLE IF NOT EXISTS impostazioni_istanza (
   aggiornato INTEGER NOT NULL,
   da         INTEGER REFERENCES utenti(id) ON DELETE SET NULL
 );
+
+-- Le ore nei canali vocali ----------------------------------------------------
+--
+-- Un totale per persona e per giorno, e nient'altro: non c'e' una riga per
+-- ingresso, non c'e' un'ora d'inizio e una di fine. Il contatore aggiunge un
+-- minuto per volta a chi e' dentro (vedi ore-lavoro.mjs), e questa forma e' la
+-- conseguenza di quella scelta - non si puo' perdere una sessione aperta
+-- perche' non esistono sessioni.
+--
+-- Il giorno e' testo AAAA-MM-GG e non un istante: e' cio' su cui si
+-- raggruppa, si ordina e si confronta, e in SQLite l'ordinamento
+-- alfabetico di quella forma e' anche quello cronologico. Un intero avrebbe
+-- voluto dire ricalcolare il fuso a ogni lettura.
+--
+-- Serve solo con le impostazioni di lavoro accese. Spente, la tabella resta
+-- vuota: il contatore guarda l'interruttore a ogni battito.
+CREATE TABLE IF NOT EXISTS ore_vocale (
+  utente  INTEGER NOT NULL REFERENCES utenti(id) ON DELETE CASCADE,
+  giorno  TEXT    NOT NULL,
+  secondi INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (utente, giorno)
+);
+CREATE INDEX IF NOT EXISTS idx_ore_giorno ON ore_vocale(giorno);
 `;
 
 /**

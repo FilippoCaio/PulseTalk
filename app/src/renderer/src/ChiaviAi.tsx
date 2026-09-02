@@ -8,6 +8,7 @@ import type {
   StatoIstanza
 } from './lib/api'
 import { Avviso, Bottone, Campo, classiInput, Conferma, Interruttore, Sezione } from './ui'
+import { OreDiTutti } from './Ore'
 import { Scintille, Spunta } from './icone'
 import { ContenutoInviti } from './atrio/Inviti'
 
@@ -177,6 +178,11 @@ export function ImpostazioniServer({
                   ))}
               </Sezione>
             ))}
+
+          {/* Le ore di tutti, sotto all'interruttore che le accende: chi
+              cerca questa tabella l'ha appena acceso, ed e' li' che la
+              cerchera' di nuovo il mese prossimo. */}
+          {categoria.id === 'lavoro' && <OreDiTutti api={api} />}
 
           {/* La prova sta in fondo alle categorie a cui si possa chiedere
               qualcosa e sentirsi rispondere. Una chiave si scrive giusta e non

@@ -156,6 +156,22 @@ export function leggiConfig(env = process.env) {
     root: resolve(root),
     dbPath: env.TALK_DB ? resolve(env.TALK_DB) : resolve(root, 'talk.db'),
 
+    /**
+     * Le impostazioni di chi usa PulseTalk per lavorare.
+     *
+     * Spente di serie, e devono restarlo: accendere un registro delle ore su
+     * un server di amici vorrebbe dire cominciare a contare quanto stanno
+     * insieme, cosa che nessuno ha chiesto. Si accendono dal pannello
+     * dell'amministratore, dove c'e' scritto per esteso cosa comincia a essere
+     * scritto sul disco.
+     */
+    lavoro: {
+      attivo: booleano(env, 'TALK_LAVORO', false),
+      // Le ore che ci si aspetta in una settimana: serve solo a dire "ne
+      // mancano tre", che e' la domanda che si fa chi guarda le proprie.
+      oreSettimana: intero(env, 'TALK_LAVORO_ORE', 40, { min: 1, max: 90 }),
+    },
+
     // Dove stanno gli aggiornamenti dell'applicazione: l'installer, la sua
     // mappa a blocchi e latest.yml, che e' l'elenco che il client legge per
     // sapere se e' vecchio.

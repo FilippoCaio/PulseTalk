@@ -3,6 +3,13 @@ import { appendFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { agganciaCattura, elencaSorgenti, ricordaScelta } from './cattura'
 import {
+  chiudiOverlay,
+  impostazioniOverlay,
+  personeOverlay,
+  preparaOverlay,
+  vociOverlay
+} from './overlay'
+import {
   audioDiProcessoDisponibile,
   avviaAudioProcesso,
   fermaAudioProcesso,
@@ -29,6 +36,7 @@ import {
 import {
   IPC,
   type Impostazioni,
+  type PersonaOverlay,
   type Puntata,
   type SceltaCattura,
   type Scorciatoia
@@ -162,6 +170,19 @@ async function creaFinestra(): Promise<void> {
 
   finestra.on('closed', () => {
     finestra = null
+  })
+
+  // L'overlay vive attaccato a questa finestra: e' lei a dire quando e'
+  // ridotta a icona, che e' la meta' della condizione perche' compaia. L'altra
+  // meta' - chi c'e' in chiamata - arriva dal renderer.
+  preparaOverlay(finestra, {
+    leggi: leggiImpostazioni,
+    scrivi: (modifiche) => {
+      const aggiornate = scriviImpostazioni(modifiche)
+      // Anche la finestra deve saperlo: il pannello delle impostazioni ha un
+      // riquadro con la posizione, e trascinando l'overlay quella cambia.
+      finestra?.webContents.send(IPC.impostazioniCambiate, aggiornate)
+    }
   })
 
   // F11 allarga la finestra e basta: quello che c'e' dentro resta com'era.
@@ -375,6 +396,17 @@ function agganciaCanali(): void {
   // Electron lo sa senza cercare: e' la stessa finestra che sta chiedendo.
   ipcMain.handle(IPC.sorgenteFinestra, () => finestra?.getMediaSourceId() ?? null)
 
+  // L'overlay. Due canali senza risposta - `send` e non `invoke` - perche' sono
+  // notizie, non domande: la finestra racconta com'e' la chiamata e non ha
+  // niente da aspettare indietro.
+  ipcMain.on(IPC.overlayPersone, (_evento, elenco: PersonaOverlay[]) => {
+    personeOverlay(Array.isArray(elenco) ? elenco : [])
+  })
+
+  ipcMain.on(IPC.overlayVoci, (_evento, ids: string[]) => {
+    vociOverlay(Array.isArray(ids) ? ids : [])
+  })
+
   // L'audio della condivisione preso dal processo invece che dalle casse.
   // Senza finestra non c'e' nessuno a cui mandare i campioni, e la cattura non
   // ha motivo di partire.
@@ -408,6 +440,10 @@ function agganciaCanali(): void {
     if (modifiche.scorciatoiaMuto !== undefined || modifiche.scorciatoiaSordina !== undefined) {
       agganciaScorciatoie(impostazioni)
     }
+
+    // L'overlay legge le sue: misura delle facce, nomi, tetto, e
+    // l'interruttore che lo accende. Cambiate qui, si vedono subito la'.
+    impostazioniOverlay(impostazioni)
 
     finestra?.webContents.send(IPC.impostazioniCambiate, impostazioni)
     return { impostazioni, errore }
@@ -560,6 +596,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on('will-quit', () => {
     globalShortcut.unregisterAll()
     chiudiPuntatori()
+    chiudiOverlay()
     // Le catture audio sono processi separati: senza questa riga una
     // condivisione interrotta dalla chiusura dell'applicazione lascerebbe in
     // giro un eseguibile che registra l'audio di qualcuno.

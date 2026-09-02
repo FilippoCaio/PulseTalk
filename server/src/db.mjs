@@ -490,6 +490,54 @@ export class TalkDb {
     return fuori;
   }
 
+  // -- Le ore nei canali vocali ----------------------------------------------
+
+  /**
+   * Aggiunge secondi al conto di quel giorno, creandolo se non c'e'.
+   *
+   * Somma invece di scrivere: il contatore batte ogni minuto e non sa - e non
+   * deve sapere - quanti minuti ci fossero gia'. Due battiti che si accavallano
+   * sommano due minuti, che e' la cosa giusta; una scrittura secca avrebbe
+   * fatto vincere l'ultimo arrivato.
+   */
+  aggiungiSecondiVocale(utente, giorno, secondi) {
+    return this.sql
+      .prepare(
+        `INSERT INTO ore_vocale (utente, giorno, secondi) VALUES (?, ?, ?)
+         ON CONFLICT(utente, giorno)
+         DO UPDATE SET secondi = ore_vocale.secondi + excluded.secondi`,
+      )
+      .run(utente, giorno, secondi).changes;
+  }
+
+  /**
+   * Le righe fra due giorni compresi, col nome di chi le ha fatte.
+   *
+   * Il nome arriva da una giunzione e non e' copiato nella tabella: chi cambia
+   * nome deve comparire col nome di adesso anche nelle settimane passate - il
+   * registro dice quante ore ha fatto una **persona**, non un nome. Nei file
+   * gia' scritti resta invece quello di allora, ed e' giusto cosi': un
+   * documento chiuso non si riscrive.
+   */
+  oreVocaleFra(da, a, utente = null) {
+    const filtro = utente ? 'AND o.utente = ?' : '';
+    const parametri = utente ? [da, a, utente] : [da, a];
+    return this.sql
+      .prepare(
+        `SELECT o.utente, o.giorno, o.secondi, u.nome
+           FROM ore_vocale o
+           JOIN utenti u ON u.id = o.utente
+          WHERE o.giorno >= ? AND o.giorno <= ? ${filtro}
+          ORDER BY u.nome, o.giorno`,
+      )
+      .all(...parametri);
+  }
+
+  /** Il primo giorno con qualcosa dentro: da li' comincia lo storico. */
+  primoGiornoVocale() {
+    return this.sql.prepare('SELECT MIN(giorno) AS giorno FROM ore_vocale').get()?.giorno ?? null;
+  }
+
   /** Chi ha scritto cosa e quando, per il pannello. Senza i valori. */
   provenienzaImpostazioni() {
     return this.sql

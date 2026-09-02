@@ -225,6 +225,25 @@ export const CAMPI_ISTANZA = [
     tipo: 'testo',
     segreta: true,
   },
+  // -- Il lavoro ------------------------------------------------------------
+  {
+    chiave: 'TALK_LAVORO',
+    gruppo: 'lavoro-ore',
+    etichetta: 'Registra le ore passate nei canali vocali',
+    aiuto:
+      "Acceso, il server segna ogni minuto chi e' in un canale vocale e lo somma al totale del giorno. Ognuno vede i propri nelle sue impostazioni; tu li vedi tutti. Spento, non si scrive niente e le righe gia' scritte restano dove sono.",
+    tipo: 'interruttore',
+  },
+  {
+    chiave: 'TALK_LAVORO_ORE',
+    gruppo: 'lavoro-ore',
+    etichetta: 'Ore attese in una settimana',
+    aiuto:
+      "Serve solo a dire «ne mancano tre»: non blocca niente e non avvisa nessuno. Da lunedi' a sabato; la domenica non si conta e la settimana ricomincia.",
+    tipo: 'testo',
+    esempio: '40',
+  },
+
   {
     chiave: 'SPOTIFY_REDIRECT_URI',
     gruppo: 'musica-app',
@@ -303,6 +322,14 @@ export const CATEGORIE_ISTANZA = [
       "Client ID e secret sono l'applicazione registrata su Spotify, e ne serve una per server — non una per persona. L'account personale si collega gia' da se': ognuno entra con il proprio quando avvia l'ascolto.",
   },
   {
+    id: 'lavoro',
+    nome: 'Lavoro',
+    sotto:
+      "Le cose che servono solo a chi usa PulseTalk per lavorare, e che su un server di amici non si accendono. Restano spente finche' non le accendi tu.",
+    senzaPersonale:
+      "Non c'e' una versione personale, e non potrebbe esserci: un registro delle ore che ognuno accende e spegne per se' non e' un registro. Chi lavora qui dentro pero' i propri numeri li vede tutti, dalle sue impostazioni, con la stessa precisione che vedi tu.",
+  },
+  {
     id: 'posta',
     nome: 'Posta',
     sotto:
@@ -355,6 +382,13 @@ export const GRUPPI_ISTANZA = [
     categoria: 'immagini',
     nome: 'Generazione in casa',
     sotto: "Immagini che non esistono ancora, fatte da una macchina della tua rete invece che da OpenAI.",
+  },
+  {
+    id: 'lavoro-ore',
+    categoria: 'lavoro',
+    nome: 'Ore nei canali vocali',
+    sotto:
+      "Quanto tempo ognuno passa in chiamata, sommato per giorno. E' l'unica impostazione di lavoro che c'e' adesso; le altre, quando serviranno, staranno qui accanto.",
   },
   {
     id: 'musica-app',

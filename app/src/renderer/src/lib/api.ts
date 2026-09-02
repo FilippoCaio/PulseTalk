@@ -158,6 +158,41 @@ export interface GruppoIstanza {
   sotto: string
 }
 
+/**
+ * Quanto ha lavorato una persona in una settimana.
+ *
+ * `giorni` e' una mappa `AAAA-MM-GG -> secondi` e ha dentro **solo i giorni in
+ * cui c'e' stato qualcosa**: i buchi sono zeri, e scriverli tutti avrebbe
+ * voluto dire far decidere al server quali giorni esistono. Quali sono i sei
+ * giorni della settimana lo dice `giorni` della risposta, che e' un'altra cosa
+ * e sta un livello piu' su.
+ */
+export interface OreDiUno {
+  utente: number
+  nome: string
+  giorni: Record<string, number>
+  secondi: number
+}
+
+/** Le proprie ore: la settimana, i suoi sei giorni, e cosa ci si aspettava. */
+export interface SettimanaMia {
+  /** Il lunedi' da cui parte. */
+  settimana: string
+  /** I sei giorni, da lunedi' a sabato. */
+  giorni: string[]
+  oreSettimana: number
+  mie: OreDiUno
+}
+
+/** Le ore di tutti, piu' l'elenco delle settimane gia' chiuse su disco. */
+export interface SettimanaTutti {
+  settimana: string
+  giorni: string[]
+  oreSettimana: number
+  persone: OreDiUno[]
+  archivio: string[]
+}
+
 export interface StatoIstanza {
   categorie: CategoriaIstanza[]
   gruppi: GruppoIstanza[]
@@ -949,6 +984,42 @@ export class Api {
     })
     if (!risposta.ok) throw new ErroreApi('allegato non disponibile', risposta.status)
     return URL.createObjectURL(await risposta.blob())
+  }
+
+  // -- Le ore nei canali vocali ----------------------------------------------
+
+  /**
+   * Le proprie ore di questa settimana, o di una passata.
+   *
+   * `null` quando il registro non e' acceso su questo server: il 404 li' non e'
+   * un guasto, e' la risposta - non esiste nessun registro da leggere - e
+   * trasformarlo in un errore rosso vorrebbe dire spaventare chi apre la
+   * pagina su un server dove nessuno conta niente.
+   */
+  async oreMie(settimana?: string): Promise<SettimanaMia | null> {
+    try {
+      return await this.chiama(
+        `/api/ore/mie${settimana ? `?settimana=${encodeURIComponent(settimana)}` : ''}`
+      )
+    } catch (errore) {
+      if (errore instanceof ErroreApi && errore.stato === 404) return null
+      throw errore
+    }
+  }
+
+  /** Le ore di tutti. Solo per chi amministra l'istanza. */
+  oreDiTutti(settimana?: string): Promise<SettimanaTutti> {
+    return this.chiama(
+      `/api/ore${settimana ? `?settimana=${encodeURIComponent(settimana)}` : ''}`
+    )
+  }
+
+  /** Chiude la settimana adesso e ne scrive il file accanto al database. */
+  chiudiSettimanaOre(settimana?: string): Promise<{ settimana: string; scritto: boolean }> {
+    return this.chiama('/api/ore/chiudi', {
+      method: 'POST',
+      body: JSON.stringify({ settimana })
+    })
   }
 
   // -- Le chiavi dei servizi esterni -----------------------------------------

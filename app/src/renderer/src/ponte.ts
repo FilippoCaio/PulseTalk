@@ -2,6 +2,7 @@ import {
   IMPOSTAZIONI_INIZIALI,
   type InformazioniClient,
   type Impostazioni,
+  type PersonaOverlay,
   type PreparazioneAggiornamento,
   type Puntata,
   type SceltaCattura,
@@ -87,6 +88,19 @@ export interface Ponte {
   sorgenteFinestra(): Promise<string | null>
 
   /**
+   * Cosa far vedere nell'overlay: chi c'e', e chi sta parlando.
+   *
+   * Nel browser non c'e' niente da fare - una pagina non puo' disegnare sopra
+   * alle finestre di altri programmi - e le due chiamate non fanno niente
+   * invece di non esistere: chi le usa sta in un componente solo, e un `if`
+   * per piattaforma in mezzo alla sala sarebbe una cosa da ricordarsi.
+   */
+  overlay: {
+    persone(elenco: PersonaOverlay[]): void
+    voci(ids: string[]): void
+  }
+
+  /**
    * L'audio di una condivisione preso dal processo giusto, non dalle casse.
    *
    * Esiste solo dentro Electron su Windows, ed e' cio' che distingue "l'audio
@@ -168,6 +182,7 @@ function ponteElettrone(api: NonNullable<Window['pulsetalk']>): Ponte {
     sorgenti: () => api.sorgenti(),
     preparaCattura: (scelta) => api.preparaCattura(scelta),
     sorgenteFinestra: () => api.sorgenteFinestra(),
+    overlay: api.overlay,
     avviaAudioProcesso: (sorgenteId) => api.avviaAudioProcesso(sorgenteId),
     fermaAudioProcesso: (id) => api.fermaAudioProcesso(id),
     onAudioProcessoDati: (callback) => api.onAudioProcessoDati(callback),
@@ -313,6 +328,7 @@ function ponteBrowser(): Ponte {
     sorgenti: async () => [],
     preparaCattura: async () => {},
     sorgenteFinestra: async () => null,
+    overlay: { persone: () => {}, voci: () => {} },
     avviaAudioProcesso: async () => ({ errore: "Solo nell'applicazione per Windows." }),
     fermaAudioProcesso: () => {},
     onAudioProcessoDati: () => () => {},
