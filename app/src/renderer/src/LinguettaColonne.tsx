@@ -26,21 +26,11 @@ import { Chevron } from './icone'
 export function LinguettaColonne({
   ritirate,
   alterna,
-  agganciata = false,
   className = '',
   style
 }: {
   ritirate: boolean
   alterna: () => void
-  /**
-   * Se sta appoggiata al bordo delle colonne, e non sopra a un video.
-   *
-   * Cambia una cosa sola: i due raccordi curvi sopra e sotto, che prendono la
-   * riga verticale del bordo e la fanno entrare nella linguetta invece di
-   * lasciarla morire contro un angolo retto. Sul video quella riga non c'e', e
-   * i raccordi sarebbero due macchie appoggiate sull'immagine di qualcuno.
-   */
-  agganciata?: boolean
   className?: string
   style?: CSSProperties
 }): React.JSX.Element {
@@ -65,9 +55,7 @@ export function LinguettaColonne({
          raccordi non seguivano, cioe' un secondo bordo dentro al primo.
 
          Sotto al cursore adesso cambia solo la freccia. */
-      className={`hidden h-16 w-5 items-center justify-center rounded-r-lg border border-l-0 border-bordo bg-fondo-2 text-testo-3 hover:text-testo md:flex ${
-        agganciata ? 'linguetta-agganciata' : ''
-      } ${className}`}
+      className={`hidden h-16 w-5 items-center justify-center rounded-r-lg border border-l-0 border-bordo bg-fondo-2 text-testo-3 hover:text-testo md:flex ${className}`}
       style={style}
     >
       <Chevron className={`h-4 w-4 ${ritirate ? '-rotate-90' : 'rotate-90'}`} />

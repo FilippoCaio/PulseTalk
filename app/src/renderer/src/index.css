@@ -643,6 +643,27 @@ textarea {
   display: none;
 }
 
+/*
+ * ...e nemmeno il proprio fianco sinistro.
+ *
+ * Li' la riga c'e' gia': e' il bordo destro della colonna, che sale fin sotto
+ * alla barra. Disegnarne un secondo un pixel piu' in la' sembrava la cosa
+ * giusta - il contorno della linguetta e' il contorno della linguetta - e non
+ * lo era: due righe da un pixel in due elementi diversi cadono su due pixel
+ * fisici diversi appena lo schermo non e' al 100%, e a 150% si vede un gradino
+ * proprio nel punto in cui le due dovrebbero essere la stessa linea. Nessuna
+ * misura in CSS lo aggiusta, perche' il salto nasce dopo, quando il browser
+ * arrotonda.
+ *
+ * Con una riga sola il problema non esiste: il fianco della linguetta e' il
+ * bordo della colonna, e sopra continua come cambio di colore fra il fondo
+ * della barra e quello della linguetta - che e' la stessa coppia di colori che
+ * si vede sotto.
+ */
+.linguetta-tab-prima {
+  border-left-color: transparent;
+}
+
 .linguetta-tab::after {
   right: -6px;
   background: radial-gradient(
@@ -651,75 +672,6 @@ textarea {
     var(--color-bordo) 5px,
     var(--color-bordo) 6px,
     var(--color-fondo) 6px
-  );
-}
-
-/*
- * La stessa cosa girata di novanta gradi, per la linguetta attaccata al bordo
- * delle colonne: li' la riga che deve curvare e' verticale, e la linguetta
- * sporge verso destra invece che verso l'alto.
- *
- * Solo quando e' agganciata a quel bordo. Dentro all'overlay della chiamata la
- * stessa linguetta galleggia sul video, e li' non c'e' nessuna riga da
- * raccordare: i due quadratini sarebbero due macchie appoggiate sopra
- * a un'immagine.
- */
-.linguetta-agganciata::before,
-.linguetta-agganciata::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  width: 10px;
-  height: 10px;
-  pointer-events: none;
-}
-
-.linguetta-agganciata::before {
-  top: -10px;
-  background: radial-gradient(
-    circle at 100% 0,
-    var(--color-fondo) 9px,
-    var(--color-bordo) 9px,
-    var(--color-bordo) 10px,
-    var(--color-fondo-2) 10px
-  );
-}
-
-.linguetta-agganciata::after {
-  bottom: -10px;
-  background: radial-gradient(
-    circle at 100% 100%,
-    var(--color-fondo) 9px,
-    var(--color-bordo) 9px,
-    var(--color-bordo) 10px,
-    var(--color-fondo-2) 10px
-  );
-}
-
-/*
- * La sfumatura in cima e in fondo alla conversazione.
- *
- * Da quando la chat non ha piu' un'intestazione, i messaggi cominciano
- * direttamente sotto alla riga delle linguette: senza niente in mezzo, quello
- * che scorre viene tagliato di netto contro il bordo, e a meta' di una faccia
- * o di una riga di testo si legge come un difetto di disegno invece che come
- * la fine dello spazio disponibile.
- *
- * Una maschera e non una sfumatura appoggiata sopra: un velo con il colore del
- * fondo funziona finche' il fondo e' uno solo, e qui dietro ci sono immagini,
- * riquadri e citazioni. La maschera toglie opacita' al contenuto vero, quindi
- * sfuma su qualunque cosa ci sia.
- *
- * Diciotto pixel: abbastanza da ammorbidire una riga di testo, troppo pochi
- * per nascondere qualcosa che si stava leggendo.
- */
-.sfuma-bordi {
-  mask-image: linear-gradient(
-    to bottom,
-    transparent 0,
-    #000 18px,
-    #000 calc(100% - 18px),
-    transparent 100%
   );
 }
 

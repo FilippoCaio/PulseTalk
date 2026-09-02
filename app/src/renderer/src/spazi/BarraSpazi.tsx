@@ -25,7 +25,7 @@ import { Fumetto, Ingranaggio, Piu, Utenti } from '../icone'
  * tondo, e il passaggio a scelto dimezza il raggio, che e' il salto che si
  * vede senza doverlo cercare.
  */
-const RAGGIO_SCELTO = 'rounded-[6px]'
+const RAGGIO_SCELTO = 'rounded-[12px]'
 /**
  * Il riposo porta con se' il suo `group-hover`, e non e' pignoleria di stile.
  *
@@ -36,9 +36,9 @@ const RAGGIO_SCELTO = 'rounded-[6px]'
  * mai e il cambio di forma sotto al cursore sparirebbe senza un errore da
  * nessuna parte. Scritte intere, invece, si vedono.
  */
-const RAGGIO_RIPOSO = 'rounded-[12px] group-hover:rounded-[6px]'
+const RAGGIO_RIPOSO = 'rounded-[12px]'
 /** Lo stesso, per chi si accende da solo invece che dentro a un `group`. */
-const RAGGIO_RIPOSO_SOLO = 'rounded-[12px] hover:rounded-[6px]'
+const RAGGIO_RIPOSO_SOLO = 'rounded-[12px]'
 
 /**
  * La riga delle icone, in cima a tutto.
@@ -357,7 +357,14 @@ export default function BarraSpazi({
                  stessa somma vista da dentro. Cambiarne una senza rifare il
                  conto sposta le icone degli spazi e le lascia storte rispetto
                  al piu' e al ritratto. */
-              className={`group relative mt-1.5 flex h-[calc(100%-0.375rem)] shrink-0 items-center justify-center rounded-t-[6px] border border-b-0 px-1.5 pb-1.5 transition-colors ${
+              /* Diciotto pixel di raggio in cima, e non e' un numero scelto a
+                 occhio: e' il raggio dell'icona - dodici - piu' i sei di
+                 imbottitura che la separano dal bordo. E' la regola che fa
+                 correre due curve parallele invece di farle stringere o
+                 allargare una rispetto all'altra, la stessa scritta accanto ai
+                 tasti della barra della chiamata. A sei sembravano piu' strette
+                 dell'icona che contengono, ed e' esattamente quello che erano. */
+              className={`group relative mt-1.5 flex h-[calc(100%-0.375rem)] shrink-0 items-center justify-center rounded-t-[18px] border border-b-0 px-1.5 pb-1.5 transition-colors ${
                 attivo
                   ? `linguetta-tab border-bordo bg-fondo ${
                       // La prima non ha il raccordo a sinistra: li' non c'e'
