@@ -593,16 +593,31 @@ textarea {
  * gradiente radiale con i bordi netti. Il cerchio ha il centro nell'angolo
  * esterno, e i tre colori dicono le tre cose che ci sono in quel quadratino:
  *
- *   entro i 17 pixel  il fondo della barra, che e' cio' che sta di la';
- *   fra 17 e 18       un pixel del colore del bordo: e' la riga che curva;
- *   oltre i 18        il fondo della linguetta, che continua sotto.
+ *   entro i 7 pixel   il fondo della barra, che e' cio' che sta di la';
+ *   fra 7 e 8         un pixel del colore del bordo: e' la riga che curva;
+ *   oltre gli 8       il fondo della linguetta, che continua sotto.
  *
- * Diciotto pixel, cioe' lo stesso raggio degli angoli di sopra. Una linguetta
- * ha due curve per lato - quella con cui si stacca dalla barra e quella con
- * cui ci rientra - e se non sono uguali si vede subito: sembra una forma
- * disegnata a mano libera invece che un pezzo piegato. Il raggio di sopra a
- * sua volta viene dall'icona (dodici) piu' l'imbottitura (sei), quindi tutta
- * la sagoma nasce da una misura sola.
+ * OTTO PIXEL, E PRIMA ERANO DICIOTTO. Il raccordo sporge **fuori** dal fianco
+ * della linguetta - deve, e' una curva che va a prendere la riga - e per tutta
+ * la sua larghezza ci dipinge il fondo scuro della pagina. Diciotto pixel di
+ * quel fondo appoggiati fuori dal fianco sinistro non erano un raccordo, erano
+ * una lastra: uno scalino di sfondo staccato dalla linguetta, ed e' la cosa
+ * che si vedeva per prima guardando la barra.
+ *
+ * Sono anche il motivo per cui i server stavano lontani. Un raccordo largo R
+ * non deve arrivare sull'icona del vicino, e il vicino ha sei pixel di
+ * imbottitura prima della sua: serve almeno R meno sei di stacco fra una
+ * linguetta e l'altra. A diciotto voleva dire dodici di stacco e ventiquattro
+ * fra le icone; a otto ne bastano due, e le icone scendono a sedici.
+ * Stringere i tasti e togliere lo sforo non erano due lavori: erano lo stesso
+ * numero guardato da due parti.
+ *
+ * Il prezzo, detto chiaro: sopra il raggio resta diciotto - viene dall'icona
+ * (dodici) piu' l'imbottitura (sei), ed e' quello che fa correre la curva
+ * della linguetta parallela a quella dell'icona che contiene - mentre sotto
+ * adesso e' otto. Le due curve non sono piu' uguali, e prima lo erano apposta.
+ * Ma un raccordo di sotto grande quanto quello di sopra puo' esistere solo con
+ * i server lontani: o l'uno o gli altri, e qui e' stata scelta la distanza.
  *
  * Un gradiente e non un SVG perche' e' una forma sola, ripetuta due volte e
  * specchiata, e vive nei colori del tema: un SVG andrebbe ridipinto a mano a
@@ -614,19 +629,19 @@ textarea {
   content: '';
   position: absolute;
   bottom: 0;
-  width: 18px;
-  height: 18px;
+  width: 8px;
+  height: 8px;
   pointer-events: none;
 }
 
 .linguetta-tab::before {
-  left: -18px;
+  left: -8px;
   background: radial-gradient(
     circle at 0 0,
-    var(--color-fondo-2) 17px,
-    var(--color-bordo) 17px,
-    var(--color-bordo) 18px,
-    var(--color-fondo) 18px
+    var(--color-fondo-2) 7px,
+    var(--color-bordo) 7px,
+    var(--color-bordo) 8px,
+    var(--color-fondo) 8px
   );
 }
 
@@ -665,13 +680,48 @@ textarea {
 }
 
 .linguetta-tab::after {
-  right: -18px;
+  right: -8px;
   background: radial-gradient(
     circle at 100% 0,
-    var(--color-fondo-2) 17px,
-    var(--color-bordo) 17px,
-    var(--color-bordo) 18px,
-    var(--color-fondo) 18px
+    var(--color-fondo-2) 7px,
+    var(--color-bordo) 7px,
+    var(--color-bordo) 8px,
+    var(--color-fondo) 8px
+  );
+}
+
+/*
+ * La conversazione sfuma in cima e in fondo invece di finire tagliata.
+ *
+ * Un elenco che scorre dentro a un riquadro netto taglia la riga di sopra e
+ * quella di sotto a meta' altezza, e mezza riga di testo mozzata sul bordo si
+ * legge come un difetto di disegno: l'occhio prova a finirla e non puo'. Con
+ * una sfumatura la riga se ne va prima di arrivare al taglio, e il movimento
+ * si legge come «continua di la'» invece che «e' finito qui».
+ *
+ * Una maschera e non un velo appoggiato sopra. Un velo del colore del fondo
+ * funziona solo finche' il fondo e' uno solo, e qui dietro passano immagini,
+ * riquadri delle citazioni, allegati e messaggi evidenziati: sopra a
+ * un'immagine il velo si vedrebbe come una banda grigia. La maschera invece
+ * toglie opacita' al contenuto vero, quindi sfuma su qualunque cosa ci sia
+ * sotto.
+ *
+ * Ventiquattro pixel: abbastanza da spegnere una riga di testo prima del
+ * bordo, troppo pochi per nascondere qualcosa che si stava leggendo. Sono il
+ * doppio dei dodici di imbottitura del riquadro, quindi la sfumatura comincia
+ * dov'e' il bordo del testo e si spegne poco dentro.
+ *
+ * La classe stava gia' addosso al riquadro della chat: la regola era sparita
+ * per sbaglio insieme al CSS della freccetta delle colonne, e da allora
+ * l'attributo c'era ma non faceva niente.
+ */
+.sfuma-bordi {
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 24px,
+    #000 calc(100% - 24px),
+    transparent 100%
   );
 }
 

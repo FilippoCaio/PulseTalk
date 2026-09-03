@@ -317,18 +317,25 @@ export default function BarraSpazi({
           non si disegna piu' - la riga la fa la colonna, una sola - quel pixel
           di anticipo e' diventato un pixel di fondo scuro spalmato sopra alla
           riga: la copriva invece di cominciare dopo. */}
-      {/* Dodici pixel fra una linguetta e l'altra, e non e' una misura di
-          gusto: e' quella che serve al raccordo per starci.
+      {/* Due pixel fra una linguetta e l'altra, e non e' una misura di gusto:
+          e' quella che serve al raccordo per starci.
 
-          Il raccordo della linguetta aperta e' largo diciotto pixel e sporge
-          **fuori** dal suo fianco - deve, e' una curva che va a prendere la
-          riga - quindi mangia lo spazio del vicino. Con due pixel di distanza
-          arrivava sopra all'icona accanto e le tagliava l'angolo: si vedeva un
-          gradino quadrato dentro a un cerchio, che e' il difetto che si nota
-          prima di capire cosa sia. Dodici piu' i sei di imbottitura del vicino
-          fanno esattamente diciotto: il raccordo finisce dove comincia l'icona
-          accanto, e non un pixel oltre. */}
-      <div className="barra-spazi flex h-full min-w-0 flex-1 items-stretch gap-3 overflow-x-auto pr-2">
+          Il raccordo della linguetta aperta sporge **fuori** dal suo fianco -
+          deve, e' una curva che va a prendere la riga - quindi mangia lo
+          spazio del vicino, e per tutta la sua larghezza ci dipinge il fondo
+          scuro della pagina. La regola e' sempre la stessa: il raccordo non
+          deve arrivare sull'icona accanto, il vicino ha sei pixel di
+          imbottitura prima della sua, quindi lo stacco vale il raccordo meno
+          sei.
+
+          Cambiato il raccordo, cambia lo stacco. Era largo diciotto e serviva
+          dodici di stacco, cioe' ventiquattro fra un'icona e l'altra: i server
+          stavano lontani per far posto a una curva, e quella curva era anche
+          la lastra di sfondo che si vedeva sporgere dal fianco sinistro della
+          linguetta. A otto ne bastano due, e le icone tornano a sedici. Due
+          piu' i sei del vicino fanno esattamente otto: il raccordo finisce
+          dove comincia l'icona accanto, e non un pixel oltre. */}
+      <div className="barra-spazi flex h-full min-w-0 flex-1 items-stretch gap-0.5 overflow-x-auto pr-2">
         {spazi.map((spazio, indice) => {
           const daLeggere = spazio.canali.reduce((somma, c) => somma + c.nonLetti, 0)
           const attivo = spazio.id === aperto
