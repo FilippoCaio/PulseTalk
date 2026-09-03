@@ -105,6 +105,42 @@ jobs:
       # legato a questa scelta — il feed dichiarato dal server vince su quello
       # incorporato, ed e' il motivo per cui questa riga non e' una decisione
       # presa per tutti.
+      # I `-c.publish.*` qui sotto si FONDONO con il blocco `publish:` del file,
+      # non lo sostituiscono, e quel blocco dichiara il provider `generic` con
+      # il suo `url:` segnaposto. Il risultato e' provider `github` con dentro
+      # una chiave che GithubOptions non prevede: nessuno dei rami dello schema
+      # combacia, electron-builder rifiuta la configurazione e si ferma prima di
+      # impacchettare - `configuration.publish.provider must be equal to
+      # constant`, che e' il modo in cui un `oneOf` dice "non sei nessuno di
+      # questi".
+      #
+      # Non e' mai stato un problema fuori di qui: `rilascia-nas.ps1` passa
+      # `provider=generic`, cioe' lo stesso del file, e le due parti si fondono
+      # senza urtarsi. Passa da questa strada solo la CI, e questa strada e'
+      # rimasta rotta dalla 0.3.2 - il commit che ha aggiunto il blocco
+      # `publish:` - fino alla 0.11.9, senza che nessuno se ne accorgesse:
+      # nel frattempo gli installer sono sempre stati costruiti in locale.
+      #
+      # Togliere la riga basta, e si toglie qui invece che nel file perche' il
+      # segnaposto serve a tutte le altre strade. Il controllo prima del `sed`
+      # non e' cortesia: se un domani quell'indirizzo cambia, senza il
+      # controllo il `sed` non troverebbe niente, non direbbe niente, e si
+      # tornerebbe a un'Action rossa con lo stesso errore di oggi.
+      - name: Il feed dell'aggiornamento e' GitHub, non il segnaposto
+        working-directory: app
+        shell: bash
+        run: |
+          set -eu
+          atteso='  url: https://esempio.invalid/aggiornamenti'
+          if ! grep -qxF "$atteso" electron-builder.yml; then
+            echo "Il segnaposto del feed non e' piu' quello che questo passo si aspetta."
+            echo "Guarda il blocco publish: di app/electron-builder.yml e aggiorna qui."
+            grep -A3 '^publish:' electron-builder.yml
+            exit 1
+          fi
+          grep -vxF "$atteso" electron-builder.yml > .eb.tmp && mv .eb.tmp electron-builder.yml
+          grep -A2 '^publish:' electron-builder.yml
+
       - name: L'installer
         working-directory: app
         run: >
