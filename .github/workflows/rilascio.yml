@@ -141,13 +141,35 @@ jobs:
           grep -vxF "$atteso" electron-builder.yml > .eb.tmp && mv .eb.tmp electron-builder.yml
           grep -A2 '^publish:' electron-builder.yml
 
+      # LE VIRGOLETTE SONO PORTANTI, e sono la meta' del difetto che teneva
+      # ferma questa Action.
+      #
+      # Un passo `run:` senza `shell:` su un runner Windows finisce a
+      # PowerShell, che davanti a `-c.publish.provider=github` non vede un
+      # argomento solo: lo spezza, e a electron-builder arriva `-c` con dentro
+      # il resto. `-c` e' l'abbreviazione di `--config`, quindi si mette a
+      # cercare un FILE di nome `.publish.repo=PulseTalk` e muore con un ENOENT
+      # che del vero motivo non dice niente - dei tre vince l'ultimo, ed e'
+      # l'unico che si vede nell'errore.
+      #
+      # Fra virgolette PowerShell li passa interi. Non e' una scoperta di oggi:
+      # `rilascia-nas.ps1` fa la stessa chiamata e le virgolette ce le ha gia',
+      # riga per riga. Qui mancavano, e qui e' l'unico posto in cui questa
+      # chiamata passa da PowerShell senza uno script davanti.
+      #
+      # I due difetti erano impilati, e il primo nascondeva il secondo: finche'
+      # gli argomenti si spezzavano, electron-builder non arrivava nemmeno a
+      # leggere `electron-builder.yml`, quindi il conflitto fra `provider:
+      # github` e l'`url:` del segnaposto - quello che toglie il passo qui
+      # sopra - non poteva neppure manifestarsi. Aggiustarne uno solo lascia
+      # l'Action rossa, con un errore diverso.
       - name: L'installer
         working-directory: app
         run: >
           npx electron-builder --win
-          -c.publish.provider=github
-          -c.publish.owner=${{ github.repository_owner }}
-          -c.publish.repo=${{ github.event.repository.name }}
+          "-c.publish.provider=github"
+          "-c.publish.owner=${{ github.repository_owner }}"
+          "-c.publish.repo=${{ github.event.repository.name }}"
           --publish never
 
       - name: Il pacchetto del server
